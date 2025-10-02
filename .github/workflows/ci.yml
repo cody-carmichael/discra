@@ -17,5 +17,5 @@ jobs:
           cache: maven
 
       - name: Build & test (Maven)
-        working-directory: discra-api
+        working-directory: discra/discra-api
         run: mvn -B clean verify

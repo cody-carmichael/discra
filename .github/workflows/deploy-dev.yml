@@ -10,7 +10,7 @@ permissions:
 env:
   AWS_REGION: us-east-1            # change if needed
   STACK_NAME: discra-api-dev
-  WORKING_DIR: discra-api          # folder that contains template.yaml
+  WORKING_DIR: discra/discra-api          # folder that contains template.yaml
 
 jobs:
   deploy:
@@ -29,7 +29,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev  # <-- paste your Role ARN
+          role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev  
           role-session-name: discra-deploy-dev
 
       - name: SAM validate

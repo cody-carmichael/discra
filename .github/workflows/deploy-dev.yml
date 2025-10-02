@@ -2,22 +2,21 @@ name: Deploy Dev
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: {}
 
 permissions:
   id-token: write     # required for OIDC
   contents: read
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-east-1            # change if needed
   STACK_NAME: discra-api-dev
+  WORKING_DIR: discra          # folder that contains template.yaml
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -26,34 +25,11 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Detect SAM working directory
-        shell: bash
-        run: |
-          set -e
-          echo "pwd: $(pwd)"
-          echo "--- top level ---"; ls -la
-          for d in "discra-api" "discra/discra-api" "." ; do
-            if [ -f "$d/template.yaml" ]; then
-              echo "Found template.yaml in: $d"
-              echo "WORKING_DIR=$d" >> $GITHUB_ENV
-              exit 0
-            fi
-          done
-          FOUND="$(find . -maxdepth 4 -type f -name template.yaml | head -n1)"
-          if [ -n "$FOUND" ]; then
-            DIR="$(dirname "$FOUND")"
-            echo "Found template.yaml by search in: $DIR"
-            echo "WORKING_DIR=$DIR" >> $GITHUB_ENV
-            exit 0
-          fi
-          echo "ERROR: template.yaml not found" >&2
-          exit 1
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
+          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/GitHubActions-Discra-Deploy-Dev  # <-- paste your Role ARN
           role-session-name: discra-deploy-dev
 
       - name: SAM validate

@@ -2,14 +2,12 @@ name: CI
 on:
   pull_request:
     branches: [ main ]
-  workflow_dispatch: {}
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -18,25 +16,6 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Detect SAM working directory
-        shell: bash
-        run: |
-          set -e
-          for d in "discra-api" "discra/discra-api" "." ; do
-            if [ -f "$d/pom.xml" ] || [ -f "$d/template.yaml" ]; then
-              echo "WORKING_DIR=$d" >> $GITHUB_ENV
-              exit 0
-            fi
-          done
-          FOUND="$(find . -maxdepth 4 -type f \( -name pom.xml -o -name template.yaml \) | head -n1)"
-          if [ -n "$FOUND" ]; then
-            DIR="$(dirname "$FOUND")"
-            echo "WORKING_DIR=$DIR" >> $GITHUB_ENV
-            exit 0
-          fi
-          echo "ERROR: could not locate Maven/SAM project" >&2
-          exit 1
-
       - name: Build & test (Maven)
-        working-directory: ${{ env.WORKING_DIR }}
+        working-directory: discra
         run: mvn -B clean verify

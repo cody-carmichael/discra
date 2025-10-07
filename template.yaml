@@ -8,7 +8,7 @@ Globals:
     MemorySize: 512
     Timeout: 10
     Tracing: Active
-	RetentionInDays: 14
+    RetentionInDays: 14
 	Tags:
 	      App: Discra
 	      Env: dev
@@ -71,3 +71,4 @@ Outputs:
     Value: !Sub
       - "${Endpoint}/dev/health"
       - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+

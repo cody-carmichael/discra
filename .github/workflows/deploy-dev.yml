@@ -1,20 +1,10 @@
-name: Deploy Dev
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch: {}
-
-permissions:
-  id-token: write
-  contents: read
-
-env:
-  AWS_REGION: us-east-1
-  STACK_NAME: discra-api-dev
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,7 +18,6 @@ jobs:
 
       - name: Detect SAM template
         id: detect
-        shell: bash
         run: |
           set -euo pipefail
           echo "PWD=$(pwd)"
@@ -43,7 +32,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
           role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
           role-session-name: discra-deploy-dev
 
@@ -51,22 +40,20 @@ jobs:
         run: aws sts get-caller-identity
 
       - name: SAM validate
-        shell: bash
         run: sam validate --lint -t "$TEMPLATE_PATH"
 
       - name: Build (SAM)
-        shell: bash
         run: sam build -t "$TEMPLATE_PATH" --parallel
 
       - name: Deploy (SAM)
-        shell: bash
         run: |
           sam deploy \
             -t "$TEMPLATE_PATH" \
-            --stack-name "$STACK_NAME" \
-            --region "$AWS_REGION" \
+            --stack-name discra-api-dev \
+            --region us-east-1 \
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3
+
 

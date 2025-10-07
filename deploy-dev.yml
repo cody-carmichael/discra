@@ -31,6 +31,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev  # <-- paste your Role ARN
           role-session-name: discra-deploy-dev
+          
+      - name: Who am I? (STS)
+        run: aws sts get-caller-identity
+
 
       - name: SAM validate
         working-directory: ${{ env.WORKING_DIR }}
@@ -50,3 +54,4 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3
+

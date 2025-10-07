@@ -2,21 +2,22 @@ name: Deploy Dev
 on:
   push:
     branches: [ main ]
+  workflow_dispatch: {}
 
 permissions:
-  id-token: write     # required for OIDC
+  id-token: write
   contents: read
 
 env:
-  AWS_REGION: us-east-1            # change if needed
+  AWS_REGION: us-east-1
   STACK_NAME: discra-api-dev
-  WORKING_DIR: discra-api          # folder that contains template.yaml
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -25,28 +26,47 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Detect SAM template
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PWD=$(pwd)"
+          echo "Top level:"; ls -la
+          TEMPLATE="$(find . -maxdepth 5 -type f -name template.yaml | head -n1)"
+          if [ -z "$TEMPLATE" ]; then
+            echo "No template.yaml found"; exit 1
+          fi
+          echo "TEMPLATE_PATH=$TEMPLATE" >> $GITHUB_ENV
+          echo "Found template at: $TEMPLATE"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev  # <-- paste your Role ARN
+          role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
           role-session-name: discra-deploy-dev
 
+      - name: Who am I? (STS)
+        run: aws sts get-caller-identity
+
       - name: SAM validate
-        working-directory: ${{ env.WORKING_DIR }}
-        run: sam validate --lint
+        shell: bash
+        run: sam validate --lint -t "$TEMPLATE_PATH"
 
       - name: Build (SAM)
-        working-directory: ${{ env.WORKING_DIR }}
-        run: sam build --parallel
+        shell: bash
+        run: sam build -t "$TEMPLATE_PATH" --parallel
 
       - name: Deploy (SAM)
-        working-directory: ${{ env.WORKING_DIR }}
+        shell: bash
         run: |
           sam deploy \
-            --stack-name $STACK_NAME \
-            --region $AWS_REGION \
+            -t "$TEMPLATE_PATH" \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3
+

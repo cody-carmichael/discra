@@ -35,6 +35,13 @@ jobs:
       - name: Who am I? (STS)
         run: aws sts get-caller-identity
 
+      - name: Show GitHub OIDC context
+        run: |
+          echo "GITHUB_REF=$GITHUB_REF"
+          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
+          echo "GITHUB_HEAD_REF=$GITHUB_HEAD_REF"
+          echo "GITHUB_BASE_REF=$GITHUB_BASE_REF"
+
 
       - name: SAM validate
         working-directory: ${{ env.WORKING_DIR }}
@@ -54,4 +61,5 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3
+
 

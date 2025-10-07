@@ -2,12 +2,14 @@ name: CI
 on:
   pull_request:
     branches: [ main ]
+  workflow_dispatch: {}
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -16,6 +18,20 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Detect Maven project
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PWD=$(pwd)"
+          echo "Top level:"; ls -la
+          POM="$(find . -maxdepth 5 -type f -name pom.xml | head -n1)"
+          if [ -z "$POM" ]; then
+            echo "No pom.xml found"; exit 1
+          fi
+          echo "POM_PATH=$POM" >> $GITHUB_ENV
+          echo "Found pom at: $POM"
+
       - name: Build & test (Maven)
-        working-directory: discra-api
-        run: mvn -B clean verify
+        shell: bash
+        run: mvn -B -f "$POM_PATH" clean verify

@@ -11,6 +11,7 @@ permissions:
 env:
   AWS_REGION: us-east-1
   STACK_NAME: discra-api-dev
+  TEMPLATE_PATH: template.yaml
 
 jobs:
   deploy:

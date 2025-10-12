@@ -1,6 +1,16 @@
 ﻿AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Discra API - Tracer Bullet Step 1 (dev)
+Description: Discra API - dev (Step 3 config + first protected endpoint)
+
+Parameters:
+  Version:
+    Type: String
+    Default: 0.0.1-tracer
+    Description: Deployed version string (use Git SHA in CI)
+  AdminToken:
+    Type: String
+    NoEcho: true
+    Description: Admin token for /admin routes (dev only)
 
 Globals:
   Function:
@@ -8,17 +18,19 @@ Globals:
     MemorySize: 512
     Timeout: 10
     Tracing: Active
-  RetentionInDays: 14
-  Tags:
-        App: Discra
-        Env: dev
-        Owner: Cody
-  Architectures: [ x86_64 ]
+    Architectures: [ x86_64 ]
+    Environment:
+      Variables:
+        VERSION: !Ref Version
+    Tags:
+      App: Discra
+      Env: dev
+      Owner: Cody
   Api:
     Cors:
       AllowOrigins: "'*'"
       AllowMethods: "'GET,OPTIONS'"
-      AllowHeaders: "'content-type'"
+      AllowHeaders: "'content-type,x-admin-token'"
 
 Resources:
   DiscraApi:
@@ -30,7 +42,6 @@ Resources:
   HealthFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: discra-api-health-dev
       CodeUri: .
       Handler: com.discra.api.HealthHandler::handleRequest
       Events:
@@ -42,20 +53,36 @@ Resources:
             Method: GET
       Tags: { App: Discra, Env: dev }
 
-    VersionFunction:
-      Type: AWS::Serverless::Function
-      Properties:
-        CodeUri: .
-        Handler: com.discra.api.VersionHandler::handleRequest
-        Events:
-          VersionGet:
-            Type: HttpApi
-            Properties:
-              ApiId: !Ref DiscraApi
-              Path: /version
-              Method: GET
-        Tags: { App: Discra, Env: dev }
+  VersionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: com.discra.api.VersionHandler::handleRequest
+      Events:
+        VersionGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /version
+            Method: GET
+      Tags: { App: Discra, Env: dev }
 
+  AdminPingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: com.discra.api.AdminPingHandler::handleRequest
+      Environment:
+        Variables:
+          ADMIN_TOKEN: !Ref AdminToken
+      Events:
+        AdminPingGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /admin/ping
+            Method: GET
+      Tags: { App: Discra, Env: dev }
 
 Outputs:
   ApiId:
@@ -71,4 +98,18 @@ Outputs:
     Value: !Sub
       - "${Endpoint}/dev/health"
       - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+  VersionUrl:
+    Description: Full URL for GET /version
+    Value: !Sub
+      - "${Endpoint}/dev/version"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+  AdminPingUrl:
+    Description: Full URL for GET /admin/ping
+    Value: !Sub
+      - "${Endpoint}/dev/admin/ping"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+
 

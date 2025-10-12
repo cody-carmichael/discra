@@ -39,6 +39,7 @@ jobs:
     env:
       STACK_NAME: discra-api-dev
       TEMPLATE_PATH: template.yaml
+      AWS_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
 

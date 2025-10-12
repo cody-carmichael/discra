@@ -38,7 +38,7 @@ jobs:
     needs: build-test
     env:
       STACK_NAME: discra-api-dev
-      TEMPLATE_PATH: discra-api/template.yaml
+      TEMPLATE_PATH: template.yaml
     steps:
       - uses: actions/checkout@v4
 

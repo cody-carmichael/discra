@@ -26,22 +26,30 @@ jobs:
           java-version: '21'
           cache: maven
 
-      # Find the SAM template anywhere in the repo
+      - name: Install AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      # Optional: show layout for quick troubleshooting
+      - name: Debug repo layout
+        run: |
+          echo "PWD=$(pwd)"
+          ls -la
+          find . -maxdepth 5 -type f -iregex '.*/template\.ya?ml$' -print
+
       - name: Detect SAM template
         id: detect
         shell: bash
         run: |
           set -euo pipefail
-          echo "Workspace: $GITHUB_WORKSPACE"
-          FOUND="$(find . -maxdepth 5 -type f -name template.yaml | head -n1)"
-          if [ -z "$FOUND" ]; then
-            echo "No template.yaml found"; exit 1
+          FOUND="$(find . -maxdepth 5 -type f -iregex '.*/template\.ya\?ml$' | head -n1 || true)"
+          if [ -z "${FOUND:-}" ]; then
+            echo "❌ No template.yaml/yml found"; exit 1
           fi
           DIR="$(dirname "$FOUND")"
           echo "Template: $FOUND"
           echo "ProjectDir: $DIR"
-          echo "TEMPLATE_PATH=$FOUND" >> $GITHUB_ENV
-          echo "PROJECT_DIR=$DIR"     >> $GITHUB_ENV
+          echo "TEMPLATE_PATH=$FOUND" >> "$GITHUB_ENV"
+          echo "PROJECT_DIR=$DIR"     >> "$GITHUB_ENV"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -51,11 +59,9 @@ jobs:
           role-session-name: discra-deploy-dev
 
       - name: SAM validate
-        shell: bash
         run: sam validate --lint -t "$TEMPLATE_PATH"
 
       - name: Build (SAM)
-        shell: bash
         run: sam build -t "$TEMPLATE_PATH" --parallel
 
       - name: Deploy (SAM)
@@ -68,7 +74,9 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --resolve-s3
-            --parameter-overrides Version="${GITHUB_SHA}" AdminToken="${{ secrets.ADMIN_TOKEN }}"
+            --resolve-s3 \
+            --parameter-overrides \
+              Version="${GITHUB_SHA}" \
+              AdminToken="${{ secrets.ADMIN_TOKEN }}"
 
 

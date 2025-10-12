@@ -69,5 +69,6 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3
+            --parameter-overrides Version="${GITHUB_SHA}" AdminToken="${{ secrets.ADMIN_TOKEN }}"
 
 

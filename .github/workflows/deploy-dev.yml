@@ -37,30 +37,13 @@ jobs:
           ls -la
           find . -maxdepth 5 -type f -iregex '.*/template\.ya?ml$' -print
 
-      - name: Detect SAM template
-        id: detect
-        shell: bash
-        run: |
-          set -euo pipefail
-          FOUND="$(find . -maxdepth 5 -type f -iregex '.*/template\.ya\?ml$' | head -n1 || true)"
-          if [ -z "${FOUND:-}" ]; then
-            echo "❌ No template.yaml/yml found"; exit 1
-          fi
-          DIR="$(dirname "$FOUND")"
-          echo "Template: $FOUND"
-          echo "ProjectDir: $DIR"
-          echo "TEMPLATE_PATH=$FOUND" >> "$GITHUB_ENV"
-          echo "PROJECT_DIR=$DIR"     >> "$GITHUB_ENV"
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
          role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
          role-session-name: discra-deploy-dev
          aws-region: us-east-1
-
-
-
+         
       - name: SAM validate
         run: sam validate --lint -t "$TEMPLATE_PATH"
 

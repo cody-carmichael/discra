@@ -54,27 +54,28 @@ jobs:
 
       - name: Verify template exists
         run: |
-          echo "Expecting $TEMPLATE_PATH"
-          test -f "$TEMPLATE_PATH" || { echo "Missing template at $TEMPLATE_PATH"; ls -la .; exit 1; }
+          echo "Using TEMPLATE_PATH=${{ env.TEMPLATE_PATH }}"
+           test -f "${{ env.TEMPLATE_PATH }}" || { echo "Missing at ${{ env.TEMPLATE_PATH }}"; ls -la .; exit 1; }
 
       - name: SAM validate
-        run: sam validate --lint -t "$TEMPLATE_PATH"
+        run: sam validate --lint -t "${{ env.TEMPLATE_PATH }}"
 
       - name: Build (SAM)
-        run: sam build -t "$TEMPLATE_PATH" --parallel
+        run: sam build -t "${{ env.TEMPLATE_PATH }}" --parallel
 
       - name: Deploy (SAM)
         shell: bash
         run: |
-          sam deploy \
-            -t "$TEMPLATE_PATH" \
-            --stack-name "$STACK_NAME" \
-            --region "$AWS_REGION" \
-            --capabilities CAPABILITY_IAM \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --resolve-s3 \
-            --parameter-overrides \
-              Version="${GITHUB_SHA}" \
-              AdminToken="${{ secrets.ADMIN_TOKEN }}"
+         sam deploy \
+          -t "${{ env.TEMPLATE_PATH }}" \
+          --stack-name "${{ env.STACK_NAME }}" \
+          --region "${{ env.AWS_REGION }}" \
+          --capabilities CAPABILITY_IAM \
+          --no-confirm-changeset \
+          --no-fail-on-empty-changeset \
+          --resolve-s3 \
+          --parameter-overrides \
+          Version="${GITHUB_SHA}" \
+          AdminToken="${{ secrets.ADMIN_TOKEN }}"
+
 

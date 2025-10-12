@@ -30,20 +30,35 @@ jobs:
       - name: Install AWS SAM CLI
         uses: aws-actions/setup-sam@v2
 
-      # Optional: show layout for quick troubleshooting
       - name: Debug repo layout
         run: |
           echo "PWD=$(pwd)"
           ls -la
-          find . -maxdepth 5 -type f -iregex '.*/template\.ya?ml$' -print
+          find . -maxdepth 5 -type f \( -iname template.yaml -o -iname template.yml \) -print
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-         role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
-         role-session-name: discra-deploy-dev
-         aws-region: us-east-1
-         
+          role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
+          role-session-name: discra-deploy-dev
+          aws-region: us-east-1
+
+      - name: Debug GitHub context
+        run: |
+          echo "workflow file path: .github/workflows/deploy-dev.yml"
+          echo "repo:  ${{ github.repository }}"
+          echo "ref:   ${{ github.ref }}"
+          echo "event: ${{ github.event_name }}"
+
+      - name: Show credentials step from workflow file
+        run: |
+          sed -n '1,220p' .github/workflows/deploy-dev.yml | nl -ba
+
+      - name: Verify template exists
+        run: |
+          echo "Expecting $TEMPLATE_PATH"
+          test -f "$TEMPLATE_PATH" || { echo "Missing template at $TEMPLATE_PATH"; ls -la .; exit 1; }
+
       - name: SAM validate
         run: sam validate --lint -t "$TEMPLATE_PATH"
 
@@ -64,5 +79,4 @@ jobs:
             --parameter-overrides \
               Version="${GITHUB_SHA}" \
               AdminToken="${{ secrets.ADMIN_TOKEN }}"
-
 

@@ -2,38 +2,77 @@ name: CI
 on:
   pull_request:
     branches: [ main ]
+  push:
+    branches: [ main ]       # add this so deploy can run on push
   workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-        working-directory: .
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-
       - name: Detect Maven project
         id: detect
         run: |
           set -euo pipefail
           echo "PWD=$(pwd)"
-          echo "Top level:"; ls -la
           POM="$(find . -maxdepth 5 -type f -name pom.xml | head -n1)"
-          if [ -z "$POM" ]; then
-            echo "No pom.xml found"; exit 1
-          fi
+          if [ -z "$POM" ]; then echo "No pom.xml found"; exit 1; fi
           echo "POM_PATH=$POM" >> $GITHUB_ENV
           echo "Found pom at: $POM"
-
       - name: Build & test (Maven)
         run: mvn -B -f "$POM_PATH" clean verify
+
+  deploy-dev:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: build-test
+    env:
+      STACK_NAME: discra-api-dev
+      TEMPLATE_PATH: discra-api/template.yaml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Debug paths
+        run: |
+          echo "PWD=$(pwd)"
+          echo "TEMPLATE_PATH=$TEMPLATE_PATH"
+          test -f "$TEMPLATE_PATH" && echo "Found template ✅" || (echo "Missing template ❌" && exit 1)
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install SAM CLI
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install aws-sam-cli
+          sam --version
+
+      - name: SAM Validate
+        run: sam validate -t "$TEMPLATE_PATH"
+
+      - name: SAM Deploy (Dev)
+        run: |
+          sam deploy \
+            -t "$TEMPLATE_PATH" \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --resolve-s3 \
+            --parameter-overrides \
+              Version="${GITHUB_SHA}" \
+              AdminToken="${{ secrets.ADMIN_TOKEN }}"

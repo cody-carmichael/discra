@@ -55,9 +55,11 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
-          role-session-name: discra-deploy-dev
+         role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
+         role-session-name: discra-deploy-dev
+         aws-region: us-east-1
+
+
 
       - name: SAM validate
         run: sam validate --lint -t "$TEMPLATE_PATH"

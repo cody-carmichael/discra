@@ -1,4 +1,5 @@
 name: Deploy Dev
+
 on:
   push:
     branches: [ main ]
@@ -20,17 +21,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Prove we're editing the right file and that there are no tabs/stray dashes
-      - name: Show current workflow file (pre-creds)
+      - name: Show repo tree & template snippet
         run: |
-          echo "repo:  ${{ github.repository }}"
-          echo "ref:   ${{ github.ref }}"
-          echo "event: ${{ github.event_name }}"
-          echo "workflow (display name): ${{ github.workflow }}"
-          echo "--- .github/workflows/deploy-dev.yml ---"
-          nl -ba .github/workflows/deploy-dev.yml | sed -n '1,200p'
-          echo "Checking for TAB characters (should be empty):"
-          grep -nP "\t" .github/workflows/deploy-dev.yml || echo "<no tabs found>"
+          pwd
+          ls -la
+          echo "----- template.yaml (first 80 lines) -----"
+          sed -n '1,80p' template.yaml
+
+      - name: Detect BOM in template.yaml (must be UTF-8 without BOM)
+        shell: bash
+        run: |
+          bytes=$(head -c 3 template.yaml | od -An -t u1 | tr -d ' ')
+          if [ "$bytes" = "239187191" ]; then
+            echo "❌ template.yaml has a UTF-8 BOM; CloudFormation will treat AWSTemplateFormatVersion as \ufeffAWSTemplateFormatVersion and fail."
+            exit 1
+          fi
+          echo "✅ No BOM detected."
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -42,40 +48,50 @@ jobs:
       - name: Install AWS SAM CLI
         uses: aws-actions/setup-sam@v2
 
+      - name: SAM version
+        run: sam --version
+
+      # If your template uses CodeUri: . (recommended), SAM will do the Maven build.
+      # If you switched to a Makefile flow, keep BuildMethod: makefile and SAM will call your Makefile targets.
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
+          aws-region: ${{ env.AWS_REGION }}
           role-session-name: discra-deploy-dev
-          aws-region: us-east-1
 
       - name: Who am I?
         run: aws sts get-caller-identity
 
-      - name: Verify template exists
-        run: |
-          echo "Using TEMPLATE_PATH=${{ env.TEMPLATE_PATH }}"
-           test -f "${{ env.TEMPLATE_PATH }}" || { echo "Missing at ${{ env.TEMPLATE_PATH }}"; ls -la .; exit 1; }
-
       - name: SAM validate
-        run: sam validate --lint -t "${{ env.TEMPLATE_PATH }}"
+        run: sam validate --lint -t "$TEMPLATE_PATH"
 
-      - name: Build (SAM)
-        run: sam build -t "${{ env.TEMPLATE_PATH }}" --parallel
+      - name: SAM build (no cache)
+        run: sam build -t "$TEMPLATE_PATH" --no-cached
 
-      - name: Deploy (SAM)
+      - name: Verify handler classes present in SAM-built jars
         shell: bash
         run: |
-         sam deploy \
-          -t "${{ env.TEMPLATE_PATH }}" \
-          --stack-name "${{ env.STACK_NAME }}" \
-          --region "${{ env.AWS_REGION }}" \
-          --capabilities CAPABILITY_IAM \
-          --no-confirm-changeset \
-          --no-fail-on-empty-changeset \
-          --resolve-s3 \
-          --parameter-overrides \
-          Version="${GITHUB_SHA}" \
-          AdminToken="${{ secrets.ADMIN_TOKEN }}"
+          set -euo pipefail
+          HJAR=$(ls .aws-sam/build/HealthFunction/*.jar | head -n1)
+          VJAR=$(ls .aws-sam/build/VersionFunction/*.jar | head -n1)
+          echo "Inspecting:"
+          echo "  $HJAR"
+          echo "  $VJAR"
+          jar tf "$HJAR" | grep -q 'com/discra/api/HealthHandler.class'  || { echo '❌ Missing HealthHandler.class in HealthFunction jar';  exit 1; }
+          jar tf "$VJAR" | grep -q 'com/discra/api/VersionHandler.class' || { echo '❌ Missing VersionHandler.class in VersionFunction jar'; exit 1; }
+          echo "✅ Handler classes found in SAM-built jars."
+
+      - name: Deploy (SAM)
+        run: |
+          sam deploy \
+            -t "$TEMPLATE_PATH" \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --resolve-s3
 
 

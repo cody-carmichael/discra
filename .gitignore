@@ -1,3 +1,6 @@
 # SAM / Maven build outputs
 .aws-sam/
 target/
+
+# Local SAM config (dev only)
+/samconfig.toml

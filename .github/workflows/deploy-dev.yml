@@ -51,14 +51,11 @@ jobs:
       - name: SAM version
         run: sam --version
 
-      # If your template uses CodeUri: . (recommended), SAM will do the Maven build.
-      # If you switched to a Makefile flow, keep BuildMethod: makefile and SAM will call your Makefile targets.
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
           role-session-name: discra-deploy-dev
 
       - name: Who am I?

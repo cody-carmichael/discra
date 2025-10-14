@@ -45,6 +45,17 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Pre-build with Maven
+        run: |
+          mvn -B -DskipTests package
+          echo "=== target contents ==="
+          ls -la target || true
+          echo "=== handler classes in jar ==="
+          for j in target/*.jar; do
+            echo ">> $j"
+            jar tf "$j" | grep -E 'com/discra/api/(HealthHandler|VersionHandler|AdminPingHandler)\.class' || true
+          done
+
       - name: Install AWS SAM CLI
         uses: aws-actions/setup-sam@v2
 

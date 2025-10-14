@@ -80,14 +80,14 @@ jobs:
           set -euo pipefail
 
           echo "=== Build tree (top levels) ==="
-          find .aws-sam/build -maxdepth 3 -type d -print || true
+          find .aws-sam/build -maxdepth 4 -type d -print || true
 
           # helper to search for a class either as a loose .class under classes/
           # or packaged inside any jar under the function build dir
           have_class () {
             local classpath="$1"   # e.g., com/discra/api/HealthHandler.class
             # 1) look for loose class
-            if find .aws-sam/build -path "*/classes/${classpath}" | grep -q . ; then
+            if find .aws-sam/build -type f -path "*/${classpath}" | grep -q . ; then
               return 0
             fi
             # 2) look inside any jars

@@ -3,7 +3,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <!-- These names are cosmetic; they do NOT affect your Java package -->
+  <!-- names here are cosmetic; they don't affect your Java package -->
   <groupId>com.discra</groupId>
   <artifactId>discra</artifactId>
   <version>1.0.0</version>
@@ -35,18 +35,18 @@
   </dependencies>
 
   <build>
-    <!-- Produce target/app.jar -->
+    <!-- produce target/app.jar -->
     <finalName>app</finalName>
 
     <plugins>
-      <!-- Ensure a normal jar is produced -->
+      <!-- make sure a normal jar is always created -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.3.0</version>
       </plugin>
 
-      <!-- Create a fat jar with your classes + deps, but keep the name "app.jar" -->
+      <!-- fat jar that *replaces* the main artifact (still named app.jar) -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
@@ -57,7 +57,7 @@
             <goals><goal>shade</goal></goals>
             <configuration>
               <createDependencyReducedPom>false</createDependencyReducedPom>
-              <finalName>app</finalName> <!-- stays target/app.jar -->
+              <finalName>app</finalName>
               <shadedArtifactAttached>false</shadedArtifactAttached>
             </configuration>
           </execution>
@@ -75,6 +75,7 @@
     </plugins>
   </build>
 </project>
+
 
 
 

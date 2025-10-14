@@ -2,7 +2,7 @@ name: Deploy Dev
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
@@ -45,17 +45,6 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Pre-build with Maven
-        run: |
-          mvn -B -DskipTests package
-          echo "=== target contents ==="
-          ls -la target || true
-          echo "=== handler classes in jar ==="
-          for j in target/*.jar; do
-            echo ">> $j"
-            jar tf "$j" | grep -E 'com/discra/api/(HealthHandler|VersionHandler|AdminPingHandler)\.class' || true
-          done
-
       - name: Install AWS SAM CLI
         uses: aws-actions/setup-sam@v2
 
@@ -77,7 +66,7 @@ jobs:
 
       - name: SAM build (no cache)
         run: sam build -t "$TEMPLATE_PATH" --no-cached
-      
+
       - name: Show SAM build outputs
         run: |
           echo "=== .aws-sam/build tree ==="
@@ -85,25 +74,44 @@ jobs:
           echo "=== JARs found ==="
           find .aws-sam/build -type f -name '*.jar' -print || true
 
-      - name: Verify handler classes present in SAM-built jars
+      - name: Verify handlers exist in SAM build
+        shell: bash
         run: |
           set -euo pipefail
-          JARS=$(find .aws-sam/build -type f -name '*.jar' || true)
-          if [ -z "$JARS" ]; then
-           echo "❌ No jars produced by SAM build. Check the Maven step and SAM --debug logs above."
-           exit 1
-          fi
-          echo "$JARS" | sed 's/^/  /'
-          need_health=1; need_version=1; need_admin=1
-          for j in $JARS; do
-           jar tf "$j" | grep -q 'com/discra/api/HealthHandler.class'  && need_health=0
-           jar tf "$j" | grep -q 'com/discra/api/VersionHandler.class' && need_version=0
-           jar tf "$j" | grep -q 'com/discra/api/AdminPingHandler.class' && need_admin=0
+
+          echo "=== Build tree (top levels) ==="
+          find .aws-sam/build -maxdepth 3 -type d -print || true
+
+          # helper to search for a class either as a loose .class under classes/
+          # or packaged inside any jar under the function build dir
+          have_class () {
+            local classpath="$1"   # e.g., com/discra/api/HealthHandler.class
+            # 1) look for loose class
+            if find .aws-sam/build -path "*/classes/${classpath}" | grep -q . ; then
+              return 0
+            fi
+            # 2) look inside any jars
+            local jars
+            jars=$(find .aws-sam/build -type f -name '*.jar' || true)
+            if [ -n "$jars" ]; then
+              for j in $jars; do
+                if jar tf "$j" | grep -q "^${classpath}$" ; then
+                  return 0
+                fi
+              done
+            fi
+            return 1
+          }
+
+          for C in HealthHandler VersionHandler AdminPingHandler; do
+            CP="com/discra/api/${C}.class"
+            if have_class "$CP"; then
+              echo "✅ Found $CP"
+            else
+              echo "❌ Missing $CP in SAM build output"
+              exit 1
+            fi
           done
-          [ $need_health  -eq 0 ] || { echo '❌ Missing HealthHandler.class';  exit 1; }
-          [ $need_version -eq 0 ] || { echo '❌ Missing VersionHandler.class'; exit 1; }
-          [ $need_admin   -eq 0 ] || { echo '❌ Missing AdminPingHandler.class'; exit 1; }
-          echo "✅ Handler classes found."
 
       - name: Deploy (SAM)
         run: |

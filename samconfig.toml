@@ -16,6 +16,11 @@ lint = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
+stack_name = "discra-api-dev"
+s3_prefix = "discra-api-dev"
+region = "us-east-1"
+parameter_overrides = "Version=\"0.0.2-admin-ping\""
+image_repositories = []
 
 [default.package.parameters]
 resolve_s3 = true

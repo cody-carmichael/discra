@@ -66,19 +66,33 @@ jobs:
 
       - name: SAM build (no cache)
         run: sam build -t "$TEMPLATE_PATH" --no-cached
+      
+      - name: Show SAM build outputs
+        run: |
+          echo "=== .aws-sam/build tree ==="
+          find .aws-sam/build -maxdepth 3 -type d -print || true
+          echo "=== JARs found ==="
+          find .aws-sam/build -type f -name '*.jar' -print || true
 
       - name: Verify handler classes present in SAM-built jars
-        shell: bash
         run: |
           set -euo pipefail
-          HJAR=$(ls .aws-sam/build/HealthFunction/*.jar | head -n1)
-          VJAR=$(ls .aws-sam/build/VersionFunction/*.jar | head -n1)
-          echo "Inspecting:"
-          echo "  $HJAR"
-          echo "  $VJAR"
-          jar tf "$HJAR" | grep -q 'com/discra/api/HealthHandler.class'  || { echo '❌ Missing HealthHandler.class in HealthFunction jar';  exit 1; }
-          jar tf "$VJAR" | grep -q 'com/discra/api/VersionHandler.class' || { echo '❌ Missing VersionHandler.class in VersionFunction jar'; exit 1; }
-          echo "✅ Handler classes found in SAM-built jars."
+          JARS=$(find .aws-sam/build -type f -name '*.jar' || true)
+          if [ -z "$JARS" ]; then
+           echo "❌ No jars produced by SAM build. Check the Maven step and SAM --debug logs above."
+           exit 1
+          fi
+          echo "$JARS" | sed 's/^/  /'
+          need_health=1; need_version=1; need_admin=1
+          for j in $JARS; do
+           jar tf "$j" | grep -q 'com/discra/api/HealthHandler.class'  && need_health=0
+           jar tf "$j" | grep -q 'com/discra/api/VersionHandler.class' && need_version=0
+           jar tf "$j" | grep -q 'com/discra/api/AdminPingHandler.class' && need_admin=0
+          done
+          [ $need_health  -eq 0 ] || { echo '❌ Missing HealthHandler.class';  exit 1; }
+          [ $need_version -eq 0 ] || { echo '❌ Missing VersionHandler.class'; exit 1; }
+          [ $need_admin   -eq 0 ] || { echo '❌ Missing AdminPingHandler.class'; exit 1; }
+          echo "✅ Handler classes found."
 
       - name: Deploy (SAM)
         run: |
@@ -90,5 +104,6 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3
+
 
 

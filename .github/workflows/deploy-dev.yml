@@ -2,12 +2,16 @@ name: Deploy Dev
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch: {}
 
 permissions:
   id-token: write
   contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: true
 
 env:
   AWS_REGION: us-east-1
@@ -26,12 +30,12 @@ jobs:
           pwd
           ls -la
           echo "----- template.yaml (first 80 lines) -----"
-          sed -n '1,80p' template.yaml
+          sed -n '1,80p' "$TEMPLATE_PATH"
 
       - name: Detect BOM in template.yaml (must be UTF-8 without BOM)
         shell: bash
         run: |
-          bytes=$(head -c 3 template.yaml | od -An -t u1 | tr -d ' ')
+          bytes=$(head -c 3 "$TEMPLATE_PATH" | od -An -t u1 | tr -d ' ')
           if [ "$bytes" = "239187191" ]; then
             echo "❌ template.yaml has a UTF-8 BOM; CloudFormation will treat AWSTemplateFormatVersion as \ufeffAWSTemplateFormatVersion and fail."
             exit 1
@@ -48,81 +52,88 @@ jobs:
       - name: Install AWS SAM CLI
         uses: aws-actions/setup-sam@v2
 
-      - name: SAM version
-        run: sam --version
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::422814825143:role/GitHubActions-Discra-Deploy-Dev
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
           role-session-name: discra-deploy-dev
 
       - name: Who am I?
         run: aws sts get-caller-identity
 
-      - name: SAM validate
-        run: sam validate --lint -t "$TEMPLATE_PATH"
-
+      # ✅ Build first
       - name: SAM build (no cache)
-        run: sam build -t "$TEMPLATE_PATH" --no-cached
+        run: sam build -t "$TEMPLATE_PATH" --no-cached --debug
+
+      # ✅ Then validate the built template
+      - name: SAM validate (built)
+        run: sam validate --lint --template-file .aws-sam/build/template.yaml
 
       - name: Show SAM build outputs
         run: |
           echo "=== .aws-sam/build tree ==="
-          find .aws-sam/build -maxdepth 3 -type d -print || true
-          echo "=== JARs found ==="
-          find .aws-sam/build -type f -name '*.jar' -print || true
+          find .aws-sam/build -maxdepth 4 -type d -print || true
+          echo "=== Handler classes found ==="
+          find .aws-sam/build -type f -path '*/com/discra/api/*Handler.class' -print || true
 
       - name: Verify handlers exist in SAM build
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "=== Build tree (top levels) ==="
-          find .aws-sam/build -maxdepth 4 -type d -print || true
-
-          # helper to search for a class either as a loose .class under classes/
-          # or packaged inside any jar under the function build dir
           have_class () {
-            local classpath="$1"   # e.g., com/discra/api/HealthHandler.class
-            # 1) look for loose class
-            if find .aws-sam/build -type f -path "*/${classpath}" | grep -q . ; then
-              return 0
-            fi
-            # 2) look inside any jars
-            local jars
-            jars=$(find .aws-sam/build -type f -name '*.jar' || true)
+            local classpath="$1"
+            if find .aws-sam/build -type f -path "*/${classpath}" | grep -q . ; then return 0; fi
+            local jars; jars=$(find .aws-sam/build -type f -name '*.jar' || true)
             if [ -n "$jars" ]; then
               for j in $jars; do
-                if jar tf "$j" | grep -q "^${classpath}$" ; then
-                  return 0
-                fi
+                if jar tf "$j" | grep -q "^${classpath}$" ; then return 0; fi
               done
             fi
             return 1
           }
-
           for C in HealthHandler VersionHandler AdminPingHandler; do
             CP="com/discra/api/${C}.class"
-            if have_class "$CP"; then
-              echo "✅ Found $CP"
-            else
-              echo "❌ Missing $CP in SAM build output"
-              exit 1
-            fi
+            if have_class "$CP"; then echo "✅ Found $CP"; else echo "❌ Missing $CP"; exit 1; fi
           done
+
+      # Avoid CFN stack lock
+      - name: Wait if stack update is in progress
+        run: |
+          set -euo pipefail
+          STACK="${STACK_NAME}"
+          get_status() {
+            aws cloudformation describe-stacks --stack-name "$STACK" \
+              --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "NOT_FOUND"
+          }
+          STATUS="$(get_status)"
+          echo "Current status: $STATUS"
+          case "$STATUS" in
+            CREATE_IN_PROGRESS)
+              aws cloudformation wait stack-create-complete --stack-name "$STACK"
+              ;;
+            UPDATE_IN_PROGRESS|UPDATE_COMPLETE_CLEANUP_IN_PROGRESS|UPDATE_ROLLBACK_IN_PROGRESS|UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS)
+              aws cloudformation wait stack-update-complete --stack-name "$STACK" || {
+                echo "Update wait failed. Recent events:"; aws cloudformation describe-stack-events --stack-name "$STACK" --max-items 25; exit 1; }
+              ;;
+            *) echo "Proceeding with deploy...";;
+          esac
 
       - name: Deploy (SAM)
         run: |
           sam deploy \
-            -t "$TEMPLATE_PATH" \
+            --template-file .aws-sam/build/template.yaml \
             --stack-name "$STACK_NAME" \
             --region "$AWS_REGION" \
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --resolve-s3
+            --resolve-s3 \
+            --force-upload \
+            --parameter-overrides \
+              Version="${{ github.sha }}" \
+              AdminToken="${{ secrets.ADMIN_TOKEN }}"
+
 
 
 

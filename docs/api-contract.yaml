@@ -1,0 +1,598 @@
+openapi: 3.0.3
+info:
+  title: Discra API
+  version: 0.1.0
+  description: >
+    API contract for Discra (Admin, Dispatcher, Driver).
+    Times are ISO-8601 UTC. IDs are server-generated strings.
+
+servers:
+  - url: https://{apiId}.execute-api.us-east-1.amazonaws.com/dev
+    variables:
+      apiId:
+        default: m50fjhgrn7
+
+tags:
+  - name: Public
+  - name: Admin
+  - name: Dispatcher
+  - name: Driver
+
+paths:
+  /health:
+    get:
+      tags: [Public]
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOk'}
+              examples:
+                ok:
+                  value:
+                    success: true
+                    data: { status: "ok" }
+                    error: null
+                    timestamp: "2025-10-16T20:05:00Z"
+
+  /version:
+    get:
+      tags: [Public]
+      summary: Version
+      responses:
+        '200':
+          description: Version info
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOk'}
+              examples:
+                version:
+                  value:
+                    success: true
+                    data: { version: "0.0.1-tracer" }
+                    error: null
+                    timestamp: "2025-10-16T20:05:00Z"
+
+  /admin/ping:
+    get:
+      tags: [Admin]
+      summary: Admin ping
+      security: [{ AdminAuth: [] }]
+      responses:
+        '200':
+          description: Admin API alive
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOk'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/seats:
+    get:
+      tags: [Admin]
+      summary: Get seat usage and limits
+      security: [{ AdminAuth: [] }]
+      responses:
+        '200':
+          description: Seats info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeOkSeatInfo'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+    post:
+      tags: [Admin]
+      summary: Purchase additional seats
+      security: [{ AdminAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SeatPurchaseRequest'}
+            examples:
+              addDrivers:
+                value: { seatType: "driver", quantity: 3 }
+      responses:
+        '201':
+          description: Seats updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeOkSeatInfo'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/dispatchers:
+    get:
+      tags: [Admin]
+      summary: List dispatchers
+      security: [{ AdminAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursor'
+      responses:
+        '200':
+          description: List of dispatchers
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkUserList'}
+    post:
+      tags: [Admin]
+      summary: Create a dispatcher
+      security: [{ AdminAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserCreateRequest'}
+      responses:
+        '201':
+          description: Dispatcher created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkUser'}
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/dispatchers/{userId}:
+    delete:
+      tags: [Admin]
+      summary: Remove a dispatcher
+      security: [{ AdminAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/drivers:
+    get:
+      tags: [Admin]
+      summary: List drivers
+      security: [{ AdminAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursor'
+      responses:
+        '200':
+          description: List of drivers
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkUserList'}
+    post:
+      tags: [Admin]
+      summary: Create a driver
+      security: [{ AdminAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserCreateRequest'}
+      responses:
+        '201':
+          description: Driver created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkUser'}
+
+  /admin/drivers/{userId}:
+    delete:
+      tags: [Admin]
+      summary: Remove a driver
+      security: [{ AdminAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '204': { description: Removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /dispatcher/jobs:
+    post:
+      tags: [Dispatcher]
+      summary: Create a job
+      security: [{ DispatcherAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobCreateRequest'}
+      responses:
+        '201':
+          description: Job created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkJob'}
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    get:
+      tags: [Dispatcher]
+      summary: List jobs
+      security: [{ DispatcherAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/driverId'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursor'
+      responses:
+        '200':
+          description: Jobs page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkJobList'}
+
+  /dispatcher/jobs/{jobId}/assign:
+    post:
+      tags: [Dispatcher]
+      summary: Assign a job to a driver
+      security: [{ DispatcherAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobAssignRequest'}
+      responses:
+        '200':
+          description: Assigned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkJob'}
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /dispatcher/jobs/{jobId}:
+    patch:
+      tags: [Dispatcher]
+      summary: Update job details
+      security: [{ DispatcherAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobUpdateRequest'}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkJob'}
+
+  /driver/jobs:
+    get:
+      tags: [Driver]
+      summary: Get my jobs
+      security: [{ DriverAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/cursor'
+      responses:
+        '200':
+          description: Jobs for driver
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkJobList'}
+
+  /driver/jobs/{jobId}/accept:
+    post:
+      tags: [Driver]
+      summary: Accept a job
+      security: [{ DriverAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkJob'}
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /driver/jobs/{jobId}/status:
+    post:
+      tags: [Driver]
+      summary: Update job status
+      security: [{ DriverAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobStatusUpdateRequest'}
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvelopeOkJob'}
+
+  /driver/location:
+    post:
+      tags: [Driver]
+      summary: Update driver location
+      security: [{ DriverAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LocationUpdateRequest' }
+      responses:
+        '204':
+          description: Location recorded
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    AdminAuth:
+      type: apiKey
+      in: header
+      name: x-admin-token
+    DispatcherAuth:
+      type: apiKey
+      in: header
+      name: x-dispatcher-token
+    DriverAuth:
+      type: apiKey
+      in: header
+      name: x-driver-token
+
+  parameters:
+    limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+      description: Opaque cursor for pagination.
+    status:
+      name: status
+      in: query
+      schema:
+        type: string
+        enum: [pending, assigned, en_route, delivered, failed]
+    driverId:
+      name: driverId
+      in: query
+      schema: { type: string }
+    userId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, example: "USR-1ABCD" }
+    jobId:
+      name: jobId
+      in: path
+      required: true
+      schema: { type: string, example: "JOB-3XYZ9" }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, maxLength: 128 }
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErr' }
+    Unauthorized:
+      description: Missing/invalid token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErr' }
+    Conflict:
+      description: Conflict (e.g., duplicate idempotent request)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErr' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErr' }
+
+  schemas:
+    ErrorObject:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: "INVALID_TOKEN" }
+        message: { type: string, example: "Admin token missing or invalid" }
+        details:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    EnvelopeOk:
+      type: object
+      required: [success, data, error, timestamp]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          additionalProperties: true
+          nullable: true
+        error:
+          $ref: '#/components/schemas/ErrorObject'
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+
+    EnvelopeErr:
+      type: object
+      required: [success, data, error, timestamp]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        data:
+          type: object
+          additionalProperties: true
+          nullable: true
+        error:
+          $ref: '#/components/schemas/ErrorObject'
+        timestamp:
+          type: string
+          format: date-time
+
+    SeatInfo:
+      type: object
+      required: [driverSeats, dispatcherSeats, includedDriverSeats, includedDispatcherSeats, monthlyCost]
+      properties:
+        driverSeats: { type: integer, example: 6 }
+        dispatcherSeats: { type: integer, example: 3 }
+        includedDriverSeats: { type: integer, example: 3 }
+        includedDispatcherSeats: { type: integer, example: 2 }
+        monthlyCost: { type: number, format: float, example: 45.0 }
+
+    EnvelopeOkSeatInfo:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeOk'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/SeatInfo' }
+
+    SeatPurchaseRequest:
+      type: object
+      required: [seatType, quantity]
+      properties:
+        seatType: { type: string, enum: [driver, dispatcher] }
+        quantity: { type: integer, minimum: 1, maximum: 100 }
+
+    User:
+      type: object
+      required: [userId, role, name]
+      properties:
+        userId: { type: string, example: "USR-1ABCD" }
+        role: { type: string, enum: [dispatcher, driver] }
+        name: { type: string, example: "Jane Doe" }
+        phone: { type: string, example: "+1-325-555-0101" }
+        active: { type: boolean, default: true }
+
+    EnvelopeOkUser:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeOk'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/User' }
+
+    UserList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        nextCursor:
+          type: string
+          nullable: true
+
+    EnvelopeOkUserList:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeOk'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/UserList' }
+
+    UserCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        phone: { type: string }
+
+    Job:
+      type: object
+      required: [jobId, status, pickupAddress, dropoffAddress, priority, createdAt]
+      properties:
+        jobId: { type: string, example: "JOB-3XYZ9" }
+        status: { type: string, enum: [pending, assigned, en_route, delivered, failed] }
+        priority: { type: string, enum: [low, normal, high], default: normal }
+        pickupAddress: { type: string }
+        dropoffAddress: { type: string }
+        driverId: { type: string, nullable: true, example: "USR-9QWER" }
+        notes: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    EnvelopeOkJob:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeOk'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/Job' }
+
+    JobList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Job' }
+        nextCursor:
+          type: string
+          nullable: true
+
+    EnvelopeOkJobList:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeOk'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/JobList' }
+
+    JobCreateRequest:
+      type: object
+      required: [pickupAddress, dropoffAddress, priority]
+      properties:
+        pickupAddress: { type: string }
+        dropoffAddress: { type: string }
+        priority: { type: string, enum: [low, normal, high] }
+        notes: { type: string, nullable: true }
+
+    JobAssignRequest:
+      type: object
+      required: [driverId]
+      properties:
+        driverId: { type: string }
+
+    JobUpdateRequest:
+      type: object
+      properties:
+        pickupAddress: { type: string }
+        dropoffAddress: { type: string }
+        priority: { type: string, enum: [low, normal, high] }
+        notes: { type: string, nullable: true }
+
+    JobStatusUpdateRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [en_route, delivered, failed] }
+        note: { type: string, nullable: true }
+
+    LocationUpdateRequest:
+      type: object
+      required: [lat, lon, recordedAt]
+      properties:
+        lat: { type: number, format: double, minimum: -90, maximum: 90 }
+        lon: { type: number, format: double, minimum: -180, maximum: 180 }
+        recordedAt: { type: string, format: date-time }

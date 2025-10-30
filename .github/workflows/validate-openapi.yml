@@ -1,0 +1,15 @@
+name: Validate OpenAPI
+
+on:
+  pull_request:
+    paths:
+      - 'docs/api-contract.yaml'
+  workflow_dispatch: {}
+
+jobs:
+  lint-openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm -g install @stoplight/spectral-cli
+      - run: spectral lint docs/api-contract.yaml

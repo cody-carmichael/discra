@@ -2,8 +2,18 @@ name: CI
 on:
   pull_request:
     branches: [ main ]
+    paths:
+      - 'pom.xml'
+      - 'src/**'
+      - 'template.yaml'
+      - '.github/workflows/ci.yml'
   push:
     branches: [ main ]
+    paths:
+      - 'pom.xml'
+      - 'src/**'
+      - 'template.yaml'
+      - '.github/workflows/ci.yml'
   workflow_dispatch: {}
 
 permissions:

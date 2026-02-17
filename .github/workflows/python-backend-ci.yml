@@ -6,11 +6,6 @@ on:
     paths:
       - 'backend/**'
       - 'template.yaml'
-  push:
-    branches: [ bot/python-backend-scaffold, main ]
-    paths:
-      - 'backend/**'
-      - 'template.yaml'
   workflow_dispatch: {}
 
 jobs:
@@ -40,9 +35,3 @@ jobs:
       - name: SAM build (Python backend only)
         run: |
           sam build BackendApiFunction -t template.yaml
-
-      - name: Upload artifact (built template)
-        uses: actions/upload-artifact@v4
-        with:
-          name: sam-build
-          path: .aws-sam/build

@@ -3,6 +3,13 @@ name: Deploy Dev
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'template.yaml'
+      - 'samconfig.toml'
+      - 'pom.xml'
+      - 'src/**'
+      - 'backend/**'
+      - '.github/workflows/deploy-dev.yml'
   workflow_dispatch: {}
 
 permissions:

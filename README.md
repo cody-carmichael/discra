@@ -51,6 +51,8 @@ After `sam local start-api`:
 - `POST /dev/backend/orders/{orderId}/unassign` (Admin/Dispatcher)
 - `POST /dev/backend/orders/{orderId}/status` (Driver/Admin/Dispatcher)
 - `GET /dev/backend/orders/driver/inbox` (Driver)
+- `POST /dev/backend/pod/presign` (Driver)
+- `POST /dev/backend/pod/metadata` (Driver)
 
 ## Cognito auth parameters
 `template.yaml` now expects these deploy parameters:
@@ -59,6 +61,13 @@ After `sam local start-api`:
 
 API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 `/backend/health` and `/backend/version` remain public for parity checks.
+
+## POD upload constraints
+- Uploads use short-lived S3 presigned POST policies (default `300` seconds).
+- Allowed types:
+  - photo: `image/jpeg`, `image/png`, `image/webp` (max 10 MB)
+  - signature: `image/png`, `image/jpeg`, `image/webp` (max 2 MB)
+- Metadata is persisted in DynamoDB (`PodArtifactsTable` output).
 
 ## Migration roadmap (incremental PRs)
 1. Python backend skeleton + SAM wiring + health/version parity

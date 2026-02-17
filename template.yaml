@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Discra API - dev (Step 3 config + first protected endpoint)
+Description: Discra API - dual-stack migration (Java + Python backend)
 
 Parameters:
   Version:
@@ -11,6 +11,14 @@ Parameters:
     Type: String
     NoEcho: true
     Description: Admin token for /admin routes (dev only)
+  CognitoUserPoolId:
+    Type: String
+    Default: us-east-1_examplepool
+    Description: Cognito User Pool ID used by API Gateway JWT authorizer
+  CognitoAppClientId:
+    Type: String
+    Default: exampleclientid
+    Description: Cognito App Client ID (JWT audience)
 
 Globals:
   Function:
@@ -29,15 +37,61 @@ Globals:
   Api:
     Cors:
       AllowOrigins: "'*'"
-      AllowMethods: "'GET,OPTIONS'"
-      AllowHeaders: "'content-type,x-admin-token'"
+      AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+      AllowHeaders: "'content-type,x-admin-token,authorization,x-correlation-id'"
 
 Resources:
   DiscraApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: dev
+      Auth:
+        Authorizers:
+          CognitoJwtAuthorizer:
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}"
+              audience:
+                - !Ref CognitoAppClientId
       Tags: { App: Discra, Env: dev }
+
+  OrganizationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-organizations-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-users-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+        - AttributeName: user_id
+          KeyType: RANGE
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
 
   HealthFunction:
     Type: AWS::Serverless::Function
@@ -84,6 +138,56 @@ Resources:
             Method: GET
       Tags: { App: Discra, Env: dev }
 
+  BackendApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      CodeUri: backend
+      Handler: app.handler
+      MemorySize: 512
+      Timeout: 15
+      Tracing: Active
+      Environment:
+        Variables:
+          VERSION: !Ref Version
+          COGNITO_ISSUER: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}"
+          COGNITO_AUDIENCE: !Ref CognitoAppClientId
+          JWT_VERIFY_SIGNATURE: "true"
+          ORGANIZATIONS_TABLE: !Ref OrganizationsTable
+          USERS_TABLE: !Ref UsersTable
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource:
+              - !GetAtt OrganizationsTable.Arn
+              - !GetAtt UsersTable.Arn
+      Events:
+        BackendHealthGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/health
+            Method: GET
+        BackendVersionGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/version
+            Method: GET
+        BackendProtectedProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/{proxy+}
+            Method: ANY
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+      Tags: { App: Discra, Env: dev }
+
 Outputs:
   ApiId:
     Description: HTTP API ID
@@ -110,6 +214,26 @@ Outputs:
     Value: !Sub
       - "${Endpoint}/dev/admin/ping"
       - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+  BackendHealthUrl:
+    Description: Full URL for GET /backend/health
+    Value: !Sub
+      - "${Endpoint}/dev/backend/health"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+  BackendVersionUrl:
+    Description: Full URL for GET /backend/version
+    Value: !Sub
+      - "${Endpoint}/dev/backend/version"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+  OrganizationsTableName:
+    Description: DynamoDB table for tenant organization metadata
+    Value: !Ref OrganizationsTable
+
+  UsersTableName:
+    Description: DynamoDB table for org users synced from Cognito claims
+    Value: !Ref UsersTable
 
 
 

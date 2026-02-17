@@ -1,6 +1,8 @@
-﻿fastapi
+fastapi
 mangum
 uvicorn
 requests
 pytest
 httpx
+PyJWT[crypto]
+boto3

@@ -1,16 +1,72 @@
-﻿import os
+import json
+import logging
+import os
+import time
+import uuid
+
 from fastapi import FastAPI, Request
 from mangum import Mangum
 
-app = FastAPI()
+try:
+    from backend.routers import identity_router, orders_router
+except ModuleNotFoundError:  # local run from backend/ directory
+    from routers import identity_router, orders_router
 
-@app.get("/health")
-def health():
-    return {"ok": True}
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=LOG_LEVEL)
+logger = logging.getLogger("discra.backend")
 
-@app.get("/version")
-def version():
-    return {"version": os.environ.get("VERSION", "dev")}
 
-# Mangum handler for AWS Lambda
-handler = Mangum(app)
+def _json_log(fields):
+    return json.dumps(fields, separators=(",", ":"))
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="Discra Backend",
+        version=os.environ.get("VERSION", "dev"),
+    )
+
+    @app.middleware("http")
+    async def log_request(request: Request, call_next):
+        request_id = (
+            request.headers.get("x-correlation-id")
+            or request.headers.get("x-request-id")
+            or str(uuid.uuid4())
+        )
+        started = time.perf_counter()
+        response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        response.headers["x-request-id"] = request_id
+        logger.info(
+            _json_log(
+                {
+                    "event": "request",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "elapsed_ms": round(elapsed_ms, 2),
+                }
+            )
+        )
+        return response
+
+    @app.get("/health")
+    async def health():
+        return {"ok": True}
+
+    @app.get("/version")
+    async def version():
+        return {"version": os.environ.get("VERSION", "dev")}
+
+    app.include_router(identity_router)
+    app.include_router(orders_router)
+
+    return app
+
+
+app = create_app()
+
+# Lambda entrypoint for AWS SAM/API Gateway HTTP API.
+handler = Mangum(app, lifespan="off")

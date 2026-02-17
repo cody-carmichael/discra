@@ -12,6 +12,8 @@ class OrderCreate(BaseModel):
     email: Optional[str] = None
     notes: Optional[str] = None
     num_packages: int = Field(default=1, ge=1)
+    delivery_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    delivery_lng: Optional[float] = Field(default=None, ge=-180, le=180)
 
 
 class OrderStatus(str, Enum):
@@ -31,6 +33,8 @@ class Order(BaseModel):
     email: Optional[str] = None
     notes: Optional[str] = None
     num_packages: int
+    delivery_lat: Optional[float] = None
+    delivery_lng: Optional[float] = None
     status: OrderStatus
     assigned_to: Optional[str] = None
     created_at: datetime
@@ -140,3 +144,44 @@ class PodMetadataRecord(BaseModel):
     signature_keys: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
     location: Optional[PodLocation] = None
+
+
+class DriverLocationRecord(BaseModel):
+    org_id: str
+    driver_id: str
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+    heading: Optional[float] = Field(default=None, ge=0, le=360)
+    timestamp: datetime
+    expires_at_epoch: int
+
+
+class RouteStopInput(BaseModel):
+    order_id: str
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+    address: Optional[str] = None
+
+
+class RouteOptimizeRequest(BaseModel):
+    driver_id: str
+    stops: Optional[List[RouteStopInput]] = None
+    start_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    start_lng: Optional[float] = Field(default=None, ge=-180, le=180)
+
+
+class RouteOptimizedStop(BaseModel):
+    sequence: int
+    order_id: str
+    lat: float
+    lng: float
+    address: Optional[str] = None
+    distance_from_previous_meters: float
+    duration_from_previous_seconds: float
+
+
+class RouteOptimizeResponse(BaseModel):
+    matrix_source: str
+    total_distance_meters: float
+    total_duration_seconds: float
+    ordered_stops: List[RouteOptimizedStop]

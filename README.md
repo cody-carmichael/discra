@@ -53,6 +53,9 @@ After `sam local start-api`:
 - `GET /dev/backend/orders/driver/inbox` (Driver)
 - `POST /dev/backend/pod/presign` (Driver)
 - `POST /dev/backend/pod/metadata` (Driver)
+- `POST /dev/backend/drivers/location` (Driver)
+- `GET /dev/backend/drivers?active_minutes=30` (Admin/Dispatcher)
+- `POST /dev/backend/routes/optimize` (Admin/Dispatcher)
 
 ## Cognito auth parameters
 `template.yaml` now expects these deploy parameters:

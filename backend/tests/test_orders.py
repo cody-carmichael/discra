@@ -9,7 +9,10 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app import app
-from routers.orders import _orders
+try:
+    from backend.routers.orders import _orders
+except ModuleNotFoundError:
+    from routers.orders import _orders
 
 client = TestClient(app)
 

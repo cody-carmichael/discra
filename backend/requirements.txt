@@ -6,3 +6,4 @@ pytest
 httpx
 PyJWT[crypto]
 boto3
+ortools

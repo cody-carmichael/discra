@@ -1,26 +1,25 @@
-﻿from fastapi.testclient import TestClient
-import os
-import sys
+﻿import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# ensure backend module path if needed
 from app import app
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
 def test_health():
-    r = client.get("/health")
+    r = client.get('/health')
     assert r.status_code == 200
-    assert r.json() == {"ok": True}
+    assert r.json() == {'ok': True}
 
 def test_version_default():
-    if "VERSION" in os.environ:
-        del os.environ["VERSION"]
-    r = client.get("/version")
+    # ensure VERSION not set
+    os.environ.pop('VERSION', None)
+    r = client.get('/version')
     assert r.status_code == 200
-    assert r.json().get("version") == "dev"
+    assert r.json().get('version') == 'dev'
 
 def test_version_env():
-    os.environ["VERSION"] = "test-version"
-    r = client.get("/version")
+    os.environ['VERSION'] = 'unittest'
+    r = client.get('/version')
     assert r.status_code == 200
-    assert r.json().get("version") == "test-version"
+    assert r.json().get('version') == 'unittest'

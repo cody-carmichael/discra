@@ -21,6 +21,14 @@ Discra Python backend (`PR1 + PR2`) for migration from Java Lambda handlers.
   - `POST /pod/presign` (Driver only)
   - `POST /pod/metadata` (Driver only)
   - S3 presigned POST with type/size limits + DynamoDB metadata storage
+- Driver map data:
+  - `POST /drivers/location` (Driver only)
+  - `GET /drivers?active_minutes=` (Admin/Dispatcher)
+  - Latest per-driver location stored in DynamoDB with TTL
+- Route optimization:
+  - `POST /routes/optimize` (Admin/Dispatcher)
+  - Uses Amazon Location `CalculateRouteMatrix` when `LOCATION_ROUTE_CALCULATOR_NAME` is set
+  - Uses OR-Tools for route ordering (single driver path)
 
 ## Local development
 ```powershell

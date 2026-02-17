@@ -36,6 +36,14 @@ def _tenant_orders(org_id: str) -> List[Order]:
     return [order for order in _orders.values() if order.org_id == org_id]
 
 
+def get_assigned_orders_for_driver(org_id: str, driver_id: str) -> List[Order]:
+    return [
+        order
+        for order in _tenant_orders(org_id)
+        if order.assigned_to == driver_id and order.status not in {OrderStatus.DELIVERED, OrderStatus.FAILED}
+    ]
+
+
 def _require_tenant_order(order_id: str, org_id: str) -> Order:
     order = _orders.get(order_id)
     if not order or order.org_id != org_id:
@@ -70,6 +78,8 @@ async def create_order(
         email=payload.email,
         notes=payload.notes,
         num_packages=payload.num_packages,
+        delivery_lat=payload.delivery_lat,
+        delivery_lng=payload.delivery_lng,
         status=OrderStatus.CREATED,
         assigned_to=None,
         created_at=datetime.now(timezone.utc),

@@ -41,6 +41,11 @@ Parameters:
     Type: String
     Default: ""
     Description: Optional Stripe price id for driver seats
+  OrdersWebhookToken:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Shared secret for external order-ingest webhook
 
 Globals:
   Function:
@@ -302,6 +307,7 @@ Resources:
           STRIPE_WEBHOOK_SECRET: !Ref StripeWebhookSecret
           STRIPE_DISPATCHER_PRICE_ID: !Ref StripeDispatcherPriceId
           STRIPE_DRIVER_PRICE_ID: !Ref StripeDriverPriceId
+          ORDERS_WEBHOOK_TOKEN: !Ref OrdersWebhookToken
       Policies:
         - Statement:
             Effect: Allow
@@ -347,6 +353,12 @@ Resources:
           Properties:
             ApiId: !Ref DiscraApi
             Path: /backend/webhooks/stripe
+            Method: POST
+        BackendOrdersWebhookPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/webhooks/orders
             Method: POST
         BackendProtectedProxy:
           Type: HttpApi
@@ -395,6 +407,12 @@ Outputs:
     Description: Full URL for GET /backend/version
     Value: !Sub
       - "${Endpoint}/dev/backend/version"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+  OrdersWebhookUrl:
+    Description: Full URL for POST /backend/webhooks/orders
+    Value: !Sub
+      - "${Endpoint}/dev/backend/webhooks/orders"
       - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
 
   OrganizationsTableName:

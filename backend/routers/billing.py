@@ -1,4 +1,8 @@
+import hmac
+import os
 from datetime import datetime, timezone
+from typing import Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status as http_status
 
@@ -18,6 +22,7 @@ try:
         new_invitation,
     )
     from backend.repositories import get_identity_repository
+    from backend.routers.orders import _orders, _tenant_orders
     from backend.schemas import (
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
@@ -25,6 +30,10 @@ try:
         BillingSeatsUpdateResponse,
         BillingSummary,
         InvitationStatus,
+        Order,
+        OrderStatus,
+        OrdersWebhookRequest,
+        OrdersWebhookResponse,
         SeatSubscriptionRecord,
         StripeWebhookResponse,
         UserRecord,
@@ -45,6 +54,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
         new_invitation,
     )
     from repositories import get_identity_repository
+    from routers.orders import _orders, _tenant_orders
     from schemas import (
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
@@ -52,6 +62,10 @@ except ModuleNotFoundError:  # local run from backend/ directory
         BillingSeatsUpdateResponse,
         BillingSummary,
         InvitationStatus,
+        Order,
+        OrderStatus,
+        OrdersWebhookRequest,
+        OrdersWebhookResponse,
         SeatSubscriptionRecord,
         StripeWebhookResponse,
         UserRecord,
@@ -69,6 +83,33 @@ def _optional_text(value):
         return None
     text = str(value).strip()
     return text or None
+
+
+def _require_orders_webhook_token() -> str:
+    token = os.environ.get("ORDERS_WEBHOOK_TOKEN", "").strip()
+    if not token:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Orders webhook is not configured",
+        )
+    return token
+
+
+def _authorize_orders_webhook(request: Request):
+    expected = _require_orders_webhook_token()
+    provided = (request.headers.get("x-orders-webhook-token") or "").strip()
+    if not provided or not hmac.compare_digest(provided, expected):
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid orders webhook token",
+        )
+
+
+def _find_existing_external_order(org_id: str, source: str, external_order_id: str) -> Optional[Order]:
+    for order in _tenant_orders(org_id):
+        if order.external_order_id == external_order_id and (order.source or "external") == source:
+            return order
+    return None
 
 
 def _merge_stripe_subscription_snapshot(
@@ -265,6 +306,74 @@ async def activate_invitation(
     billing_store.upsert_invitation(accepted_invitation)
 
     return saved_user
+
+
+@router.post("/webhooks/orders", response_model=OrdersWebhookResponse)
+async def order_ingest_webhook(payload: OrdersWebhookRequest, request: Request):
+    _authorize_orders_webhook(request)
+
+    created = 0
+    updated = 0
+    order_ids = []
+    now = _utc_now()
+
+    for incoming in payload.orders:
+        existing = _find_existing_external_order(
+            org_id=payload.org_id,
+            source=payload.source,
+            external_order_id=incoming.external_order_id,
+        )
+        if existing is None:
+            order_id = str(uuid4())
+            created_order = Order(
+                id=order_id,
+                customer_name=incoming.customer_name,
+                address=incoming.address,
+                phone=incoming.phone,
+                email=incoming.email,
+                notes=incoming.notes,
+                num_packages=incoming.num_packages,
+                external_order_id=incoming.external_order_id,
+                source=payload.source,
+                delivery_lat=incoming.delivery_lat,
+                delivery_lng=incoming.delivery_lng,
+                status=OrderStatus.CREATED,
+                assigned_to=None,
+                created_at=now,
+                org_id=payload.org_id,
+            )
+            _orders[order_id] = created_order
+            order_ids.append(order_id)
+            created += 1
+            continue
+
+        updated_order = Order(
+            id=existing.id,
+            customer_name=incoming.customer_name,
+            address=incoming.address,
+            phone=incoming.phone,
+            email=incoming.email,
+            notes=incoming.notes,
+            num_packages=incoming.num_packages,
+            external_order_id=incoming.external_order_id,
+            source=payload.source,
+            delivery_lat=incoming.delivery_lat,
+            delivery_lng=incoming.delivery_lng,
+            status=existing.status,
+            assigned_to=existing.assigned_to,
+            created_at=existing.created_at,
+            org_id=existing.org_id,
+        )
+        _orders[existing.id] = updated_order
+        order_ids.append(existing.id)
+        updated += 1
+
+    return OrdersWebhookResponse(
+        accepted=len(payload.orders),
+        created=created,
+        updated=updated,
+        order_ids=order_ids,
+    )
 
 
 @router.post("/webhooks/stripe", response_model=StripeWebhookResponse)

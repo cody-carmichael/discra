@@ -34,6 +34,7 @@ Discra Python backend (`PR1` to `PR7`) for migration from Java Lambda handlers.
   - `POST /billing/seats` (Admin)
   - `POST /billing/invitations` (Admin)
   - `POST /billing/invitations/{invitationId}/activate` (Admin)
+  - `POST /webhooks/orders` (public with `x-orders-webhook-token`)
   - `POST /webhooks/stripe` (public)
   - Seat limits enforced for Dispatcher/Driver invitations and activation
 
@@ -80,6 +81,12 @@ For local billing tests without AWS resources:
 
 ```powershell
 $env:USE_IN_MEMORY_BILLING_STORE="true"
+```
+
+For local order-ingest webhook tests:
+
+```powershell
+$env:ORDERS_WEBHOOK_TOKEN="orders-secret"
 ```
 
 ## Tests

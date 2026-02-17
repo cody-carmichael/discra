@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -79,5 +80,25 @@ def create_app() -> FastAPI:
 
 app = create_app()
 
+_lambda_adapter = None
+
+
+def _get_lambda_adapter():
+    global _lambda_adapter
+    if _lambda_adapter is not None:
+        return _lambda_adapter
+
+    # Mangum uses asyncio.get_event_loop() internally. On newer Python versions,
+    # ensure a loop exists before constructing the adapter.
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+    _lambda_adapter = Mangum(app, lifespan="off")
+    return _lambda_adapter
+
+
 # Lambda entrypoint for AWS SAM/API Gateway HTTP API.
-handler = Mangum(app, lifespan="off")
+def handler(event, context):
+    return _get_lambda_adapter()(event, context)

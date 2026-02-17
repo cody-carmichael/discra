@@ -4,3 +4,9 @@ target/
 
 # Local SAM config (dev only)
 /samconfig.toml
+
+# Python local development artifacts
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]

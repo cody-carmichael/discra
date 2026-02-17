@@ -1,20 +1,59 @@
-﻿Backend scaffold (Python, FastAPI + Mangum) for Discra migration PR1.
+Discra Python backend (`PR1 + PR2`) for migration from Java Lambda handlers.
 
-Local dev:
-  # create virtualenv and install
-  python -m venv .venv
-  .\.venv\Scripts\Activate.ps1
-  pip install -r requirements.txt
+## Implemented so far
+- FastAPI app adapted to Lambda with Mangum (`backend/app.py`).
+- Public parity endpoints:
+  - `GET /health` -> `{"ok": true}`
+  - `GET /version` -> `{"version": "<VERSION|dev>"}`
+- Cognito-aware auth + RBAC:
+  - groups from `cognito:groups` claim
+  - tenant from `custom:org_id` (or `org_id`)
+  - role checks at application layer (`Admin`, `Dispatcher`, `Driver`)
+- Users/organizations model:
+  - `GET /users/me`, `POST /users/me/sync`
+  - `GET /orgs/me`, `PUT /orgs/me` (Admin only)
+- Initial multi-tenant order routes with app-layer RBAC:
+  - `POST /orders`, `GET /orders`, `GET /orders/{id}`
+  - `POST /orders/{id}/assign`, `POST /orders/{id}/unassign`
+  - `POST /orders/{id}/status`
+  - `GET /orders/driver/inbox`
 
-Run with Uvicorn:
-  uvicorn app:app --reload --port 8000
-  # then visit http://127.0.0.1:8000/health and /version
+## Local development
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app:app --reload --port 8000
+```
 
-Lambda via SAM:
-  sam build -t template.yaml
-  sam local start-api --template template.yaml
-  # the new endpoints are mounted at /backend/health and /backend/version in the SAM template.
+Open:
+- `http://127.0.0.1:8000/health`
+- `http://127.0.0.1:8000/version`
 
-Tests:
-  pip install -r requirements.txt
-  pytest -q
+For protected routes in local direct Uvicorn mode without Cognito:
+
+```powershell
+$env:JWT_VERIFY_SIGNATURE="false"
+```
+
+## Local SAM
+Run from repo root:
+
+```powershell
+sam build -t template.yaml --use-container
+sam local start-api --template template.yaml
+```
+
+Then call:
+- `http://127.0.0.1:3000/dev/health` (existing Java endpoint)
+- `http://127.0.0.1:3000/dev/version` (existing Java endpoint)
+- `http://127.0.0.1:3000/dev/backend/health` (new Python endpoint)
+- `http://127.0.0.1:3000/dev/backend/version` (new Python endpoint)
+
+## Tests
+```powershell
+cd backend
+pip install -r requirements.txt
+pytest -q tests -p no:cacheprovider
+```

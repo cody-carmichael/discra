@@ -37,9 +37,9 @@ jobs:
       - name: Install AWS SAM CLI
         uses: aws-actions/setup-sam@v2
 
-      - name: SAM build
+      - name: SAM build (Python backend only)
         run: |
-          sam build -t template.yaml
+          sam build BackendApiFunction -t template.yaml
 
       - name: Upload artifact (built template)
         uses: actions/upload-artifact@v4

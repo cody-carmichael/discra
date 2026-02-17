@@ -1,4 +1,4 @@
-Discra Python backend (`PR1 + PR2`) for migration from Java Lambda handlers.
+Discra Python backend (`PR1` to `PR7`) for migration from Java Lambda handlers.
 
 ## Implemented so far
 - FastAPI app adapted to Lambda with Mangum (`backend/app.py`).
@@ -29,6 +29,14 @@ Discra Python backend (`PR1 + PR2`) for migration from Java Lambda handlers.
   - `POST /routes/optimize` (Admin/Dispatcher)
   - Uses Amazon Location `CalculateRouteMatrix` when `LOCATION_ROUTE_CALCULATOR_NAME` is set
   - Uses OR-Tools for route ordering (single driver path)
+- Billing + seat management:
+  - `GET /billing/summary` (Admin)
+  - `POST /billing/seats` (Admin)
+  - `POST /billing/invitations` (Admin)
+  - `POST /billing/invitations/{invitationId}/activate` (Admin)
+  - `POST /webhooks/orders` (public with `x-orders-webhook-token`)
+  - `POST /webhooks/stripe` (public)
+  - Seat limits enforced for Dispatcher/Driver invitations and activation
 
 ## Local development
 ```powershell
@@ -67,6 +75,18 @@ For local POD testing without AWS resources:
 
 ```powershell
 $env:USE_IN_MEMORY_POD_STORE="true"
+```
+
+For local billing tests without AWS resources:
+
+```powershell
+$env:USE_IN_MEMORY_BILLING_STORE="true"
+```
+
+For local order-ingest webhook tests:
+
+```powershell
+$env:ORDERS_WEBHOOK_TOKEN="orders-secret"
 ```
 
 ## Tests

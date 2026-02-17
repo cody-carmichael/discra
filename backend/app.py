@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -8,9 +9,16 @@ from fastapi import FastAPI, Request
 from mangum import Mangum
 
 try:
-    from backend.routers import drivers_router, identity_router, orders_router, pod_router, routes_router
+    from backend.routers import (
+        billing_router,
+        drivers_router,
+        identity_router,
+        orders_router,
+        pod_router,
+        routes_router,
+    )
 except ModuleNotFoundError:  # local run from backend/ directory
-    from routers import drivers_router, identity_router, orders_router, pod_router, routes_router
+    from routers import billing_router, drivers_router, identity_router, orders_router, pod_router, routes_router
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL)
@@ -65,11 +73,32 @@ def create_app() -> FastAPI:
     app.include_router(drivers_router)
     app.include_router(pod_router)
     app.include_router(routes_router)
+    app.include_router(billing_router)
 
     return app
 
 
 app = create_app()
 
+_lambda_adapter = None
+
+
+def _get_lambda_adapter():
+    global _lambda_adapter
+    if _lambda_adapter is not None:
+        return _lambda_adapter
+
+    # Mangum uses asyncio.get_event_loop() internally. On newer Python versions,
+    # ensure a loop exists before constructing the adapter.
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+    _lambda_adapter = Mangum(app, lifespan="off")
+    return _lambda_adapter
+
+
 # Lambda entrypoint for AWS SAM/API Gateway HTTP API.
-handler = Mangum(app, lifespan="off")
+def handler(event, context):
+    return _get_lambda_adapter()(event, context)

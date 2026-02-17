@@ -1,12 +1,14 @@
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:
     import boto3
+    from boto3.dynamodb.conditions import Key
 except ImportError:  # pragma: no cover - boto3 is available in Lambda runtime
     boto3 = None
+    Key = None
 
 try:
     from backend.schemas import OrganizationRecord, UserRecord
@@ -35,6 +37,10 @@ class IdentityRepository(ABC):
     def upsert_user(self, user: UserRecord) -> UserRecord:
         raise NotImplementedError
 
+    @abstractmethod
+    def list_users(self, org_id: str) -> List[UserRecord]:
+        raise NotImplementedError
+
 
 class InMemoryIdentityRepository(IdentityRepository):
     def __init__(self):
@@ -54,6 +60,9 @@ class InMemoryIdentityRepository(IdentityRepository):
     def upsert_user(self, user: UserRecord) -> UserRecord:
         self._users[(user.org_id, user.user_id)] = user
         return user
+
+    def list_users(self, org_id: str) -> List[UserRecord]:
+        return [user for (item_org_id, _), user in self._users.items() if item_org_id == org_id]
 
 
 class DynamoIdentityRepository(IdentityRepository):
@@ -83,6 +92,17 @@ class DynamoIdentityRepository(IdentityRepository):
     def upsert_user(self, user: UserRecord) -> UserRecord:
         self._users_table.put_item(Item=user.model_dump(mode="json"))
         return user
+
+    def list_users(self, org_id: str) -> List[UserRecord]:
+        response = self._users_table.query(KeyConditionExpression=Key("org_id").eq(org_id))
+        items = list(response.get("Items", []))
+        while "LastEvaluatedKey" in response:
+            response = self._users_table.query(
+                KeyConditionExpression=Key("org_id").eq(org_id),
+                ExclusiveStartKey=response["LastEvaluatedKey"],
+            )
+            items.extend(response.get("Items", []))
+        return [UserRecord.model_validate(item) for item in items]
 
 
 _IN_MEMORY_REPO = InMemoryIdentityRepository()

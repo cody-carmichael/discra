@@ -56,6 +56,11 @@ After `sam local start-api`:
 - `POST /dev/backend/drivers/location` (Driver)
 - `GET /dev/backend/drivers?active_minutes=30` (Admin/Dispatcher)
 - `POST /dev/backend/routes/optimize` (Admin/Dispatcher)
+- `GET /dev/backend/billing/summary` (Admin)
+- `POST /dev/backend/billing/seats` (Admin)
+- `POST /dev/backend/billing/invitations` (Admin)
+- `POST /dev/backend/billing/invitations/{invitationId}/activate` (Admin)
+- `POST /dev/backend/webhooks/stripe` (public webhook)
 
 ## Cognito auth parameters
 `template.yaml` now expects these deploy parameters:

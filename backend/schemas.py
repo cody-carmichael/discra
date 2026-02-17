@@ -88,6 +88,79 @@ class UserRecord(BaseModel):
     updated_at: datetime
 
 
+class SeatRole(str, Enum):
+    DISPATCHER = "Dispatcher"
+    DRIVER = "Driver"
+
+
+class InvitationStatus(str, Enum):
+    PENDING = "Pending"
+    ACCEPTED = "Accepted"
+    CANCELLED = "Cancelled"
+
+
+class SeatSubscriptionRecord(BaseModel):
+    org_id: str
+    plan_name: str = "seat-based"
+    status: str = "active"
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+    dispatcher_seat_limit: int = Field(default=0, ge=0)
+    driver_seat_limit: int = Field(default=0, ge=0)
+    created_at: datetime
+    updated_at: datetime
+
+
+class BillingSeatState(BaseModel):
+    total: int = Field(..., ge=0)
+    used: int = Field(..., ge=0)
+    pending: int = Field(..., ge=0)
+    available: int = Field(..., ge=0)
+
+
+class BillingSummary(BaseModel):
+    org_id: str
+    plan_name: str
+    status: str
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+    dispatcher_seats: BillingSeatState
+    driver_seats: BillingSeatState
+    updated_at: datetime
+
+
+class BillingSeatsUpdateRequest(BaseModel):
+    dispatcher_seat_limit: Optional[int] = Field(default=None, ge=0, le=10000)
+    driver_seat_limit: Optional[int] = Field(default=None, ge=0, le=10000)
+
+
+class BillingSeatsUpdateResponse(BaseModel):
+    summary: BillingSummary
+
+
+class BillingInvitationCreateRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=128)
+    email: Optional[str] = Field(default=None, min_length=3, max_length=320)
+    role: SeatRole
+
+
+class BillingInvitationRecord(BaseModel):
+    org_id: str
+    invitation_id: str
+    user_id: str
+    email: Optional[str] = None
+    role: SeatRole
+    status: InvitationStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class StripeWebhookResponse(BaseModel):
+    received: bool
+    event_type: Optional[str] = None
+    org_id: Optional[str] = None
+
+
 class PodArtifactType(str, Enum):
     PHOTO = "photo"
     SIGNATURE = "signature"

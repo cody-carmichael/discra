@@ -8,9 +8,16 @@ from fastapi import FastAPI, Request
 from mangum import Mangum
 
 try:
-    from backend.routers import drivers_router, identity_router, orders_router, pod_router, routes_router
+    from backend.routers import (
+        billing_router,
+        drivers_router,
+        identity_router,
+        orders_router,
+        pod_router,
+        routes_router,
+    )
 except ModuleNotFoundError:  # local run from backend/ directory
-    from routers import drivers_router, identity_router, orders_router, pod_router, routes_router
+    from routers import billing_router, drivers_router, identity_router, orders_router, pod_router, routes_router
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL)
@@ -65,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(drivers_router)
     app.include_router(pod_router)
     app.include_router(routes_router)
+    app.include_router(billing_router)
 
     return app
 

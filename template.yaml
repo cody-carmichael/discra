@@ -23,6 +23,24 @@ Parameters:
     Type: String
     Default: ""
     Description: Optional Amazon Location route calculator name for matrix calls
+  StripeSecretKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Optional Stripe secret key for subscription seat updates
+  StripeWebhookSecret:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Optional Stripe webhook signing secret
+  StripeDispatcherPriceId:
+    Type: String
+    Default: ""
+    Description: Optional Stripe price id for dispatcher seats
+  StripeDriverPriceId:
+    Type: String
+    Default: ""
+    Description: Optional Stripe price id for driver seats
 
 Globals:
   Function:
@@ -142,6 +160,44 @@ Resources:
         - Key: Env
           Value: dev
 
+  SeatSubscriptionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-seat-subscriptions-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
+  SeatInvitationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-seat-invitations-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+        - AttributeName: invitation_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+        - AttributeName: invitation_id
+          KeyType: RANGE
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
   PodArtifactsBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -240,6 +296,12 @@ Resources:
           LOCATION_ROUTE_CALCULATOR_NAME: !Ref LocationRouteCalculatorName
           USE_IN_MEMORY_ROUTE_MATRIX: "false"
           ROUTE_OPTIMIZATION_TIMEOUT_SECONDS: "5"
+          SEAT_SUBSCRIPTIONS_TABLE: !Ref SeatSubscriptionsTable
+          SEAT_INVITATIONS_TABLE: !Ref SeatInvitationsTable
+          STRIPE_SECRET_KEY: !Ref StripeSecretKey
+          STRIPE_WEBHOOK_SECRET: !Ref StripeWebhookSecret
+          STRIPE_DISPATCHER_PRICE_ID: !Ref StripeDispatcherPriceId
+          STRIPE_DRIVER_PRICE_ID: !Ref StripeDriverPriceId
       Policies:
         - Statement:
             Effect: Allow
@@ -248,11 +310,14 @@ Resources:
               - dynamodb:PutItem
               - dynamodb:UpdateItem
               - dynamodb:Query
+              - dynamodb:Scan
             Resource:
               - !GetAtt OrganizationsTable.Arn
               - !GetAtt UsersTable.Arn
               - !GetAtt PodArtifactsTable.Arn
               - !GetAtt DriverLocationsTable.Arn
+              - !GetAtt SeatSubscriptionsTable.Arn
+              - !GetAtt SeatInvitationsTable.Arn
         - Statement:
             Effect: Allow
             Action:
@@ -277,6 +342,12 @@ Resources:
             ApiId: !Ref DiscraApi
             Path: /backend/version
             Method: GET
+        BackendStripeWebhookPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/webhooks/stripe
+            Method: POST
         BackendProtectedProxy:
           Type: HttpApi
           Properties:
@@ -345,6 +416,14 @@ Outputs:
   DriverLocationsTableName:
     Description: DynamoDB table for latest driver GPS locations
     Value: !Ref DriverLocationsTable
+
+  SeatSubscriptionsTableName:
+    Description: DynamoDB table for Stripe subscription + seat limits per org
+    Value: !Ref SeatSubscriptionsTable
+
+  SeatInvitationsTableName:
+    Description: DynamoDB table for pending/accepted role invitations
+    Value: !Ref SeatInvitationsTable
 
 
 

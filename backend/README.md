@@ -1,4 +1,4 @@
-Discra Python backend (`PR1` to `PR7`) for migration from Java Lambda handlers.
+Discra Python backend (`PR1` to `PR8`) for migration from Java Lambda handlers.
 
 ## Implemented so far
 - FastAPI app adapted to Lambda with Mangum (`backend/app.py`).
@@ -37,6 +37,11 @@ Discra Python backend (`PR1` to `PR7`) for migration from Java Lambda handlers.
   - `POST /webhooks/orders` (public with `x-orders-webhook-token`)
   - `POST /webhooks/stripe` (public)
   - Seat limits enforced for Dispatcher/Driver invitations and activation
+- Minimal web UIs:
+  - `GET /ui` (workspace picker)
+  - `GET /ui/admin` (Admin/Dispatcher console)
+  - `GET /ui/driver` (Driver web app with POD + location updates)
+  - `GET /ui/config` (frontend config bootstrap for hosted UI and map style)
 
 ## Local development
 ```powershell
@@ -70,6 +75,7 @@ Then call:
 - `http://127.0.0.1:3000/dev/version` (existing Java endpoint)
 - `http://127.0.0.1:3000/dev/backend/health` (new Python endpoint)
 - `http://127.0.0.1:3000/dev/backend/version` (new Python endpoint)
+- `http://127.0.0.1:3000/dev/backend/ui` (frontend entrypoint)
 
 For local POD testing without AWS resources:
 
@@ -87,6 +93,14 @@ For local order-ingest webhook tests:
 
 ```powershell
 $env:ORDERS_WEBHOOK_TOKEN="orders-secret"
+```
+
+Optional frontend helper config:
+
+```powershell
+$env:COGNITO_HOSTED_UI_DOMAIN="your-domain.auth.us-east-1.amazoncognito.com"
+$env:FRONTEND_COGNITO_CLIENT_ID="your-app-client-id"
+$env:FRONTEND_MAP_STYLE_URL="https://demotiles.maplibre.org/style.json"
 ```
 
 ## Tests

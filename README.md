@@ -10,6 +10,9 @@ Discra is an AWS SAM application migrating from Java Lambda handlers to a Python
 - Python 3.12 Lambda (new backend path):
   - `GET /backend/health`
   - `GET /backend/version`
+  - `GET /backend/ui` (public frontend entry)
+  - `GET /backend/ui/admin` (Admin/Dispatcher console)
+  - `GET /backend/ui/driver` (Driver app)
   - protected business endpoints under `/backend/*` using Cognito JWT + app-layer RBAC
 
 SAM template: `template.yaml`
@@ -37,6 +40,7 @@ After `sam local start-api`:
 - `curl http://127.0.0.1:3000/dev/version`
 - `curl http://127.0.0.1:3000/dev/backend/health`
 - `curl http://127.0.0.1:3000/dev/backend/version`
+- open `http://127.0.0.1:3000/dev/backend/ui`
 - `curl -H "x-admin-token: <ADMIN_TOKEN>" http://127.0.0.1:3000/dev/admin/ping`
 
 ### Protected endpoints (JWT required)
@@ -68,6 +72,8 @@ After `sam local start-api`:
 - `CognitoUserPoolId`
 - `CognitoAppClientId`
 - `OrdersWebhookToken` (shared secret for `/backend/webhooks/orders`)
+- `CognitoHostedUiDomain` (optional hosted UI helper domain for frontend pages)
+- `FrontendMapStyleUrl` (optional MapLibre style JSON URL)
 
 API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 `/backend/health` and `/backend/version` remain public for parity checks.

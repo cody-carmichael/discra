@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discra Driver App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="manifest" href="assets/driver-manifest.json">
+</head>
+<body class="theme-driver">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Discra</p>
+      <h1>Driver Workflow</h1>
+    </div>
+    <nav class="top-actions">
+      <a class="btn btn-ghost" href="admin">Admin View</a>
+    </nav>
+  </header>
+
+  <main class="dashboard-grid driver-grid">
+    <section class="panel">
+      <div class="panel-title-row">
+        <h2>Authentication</h2>
+        <span id="driver-auth-state" class="status-pill status-idle">No Token</span>
+      </div>
+      <p class="panel-help">Use Cognito hosted UI or paste your Driver JWT token.</p>
+      <label class="field">
+        <span>JWT Token</span>
+        <textarea id="driver-jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
+      </label>
+      <div class="row">
+        <button id="driver-save-token" class="btn btn-primary">Save Token</button>
+        <button id="driver-clear-token" class="btn btn-ghost">Clear</button>
+      </div>
+      <details class="auth-config">
+        <summary>Hosted UI login (optional)</summary>
+        <label class="field">
+          <span>Cognito Hosted UI Domain</span>
+          <input id="driver-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
+        </label>
+        <label class="field">
+          <span>Client ID</span>
+          <input id="driver-cognito-client-id" placeholder="app client id">
+        </label>
+        <button id="driver-login-hosted-ui" class="btn btn-accent">Login with Hosted UI</button>
+      </details>
+      <pre id="driver-claims-view" class="claims-view">No token decoded yet.</pre>
+      <p id="driver-auth-message" class="message"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title-row">
+        <h2>Location Sharing</h2>
+      </div>
+      <p class="panel-help">Send GPS updates so dispatch can track your active position.</p>
+      <div class="row">
+        <button id="send-location-now" class="btn btn-accent">Send Location Now</button>
+        <button id="start-location-share" class="btn btn-primary">Start Auto Share</button>
+        <button id="stop-location-share" class="btn btn-ghost">Stop</button>
+      </div>
+      <p id="location-status" class="message">Auto share is off.</p>
+    </section>
+
+    <section class="panel panel-span-2">
+      <div class="panel-title-row">
+        <h2>Assigned Stops</h2>
+        <button id="refresh-inbox" class="btn btn-ghost">Refresh</button>
+      </div>
+      <p class="panel-help">Update status as you progress. Submit POD to close delivery.</p>
+      <div id="driver-orders" class="order-cards"></div>
+      <p id="driver-orders-message" class="message"></p>
+    </section>
+  </main>
+
+  <script src="assets/common.js"></script>
+  <script src="assets/driver.js"></script>
+</body>
+</html>

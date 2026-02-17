@@ -1,0 +1,10 @@
+{
+  "name": "Discra Driver",
+  "short_name": "DiscraDriver",
+  "start_url": "../driver",
+  "scope": "../",
+  "display": "standalone",
+  "background_color": "#081d21",
+  "theme_color": "#27c8d7",
+  "description": "Discra driver proof-of-delivery workflow."
+}

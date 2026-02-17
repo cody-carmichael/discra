@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discra Admin/Dispatcher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body class="theme-admin">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Discra</p>
+      <h1>Admin and Dispatcher Console</h1>
+    </div>
+    <nav class="top-actions">
+      <a class="btn btn-ghost" href="driver">Driver View</a>
+    </nav>
+  </header>
+
+  <main class="dashboard-grid">
+    <section class="panel">
+      <div class="panel-title-row">
+        <h2>Authentication</h2>
+        <span id="auth-state" class="status-pill status-idle">No Token</span>
+      </div>
+      <p class="panel-help">Use Cognito hosted UI or paste a JWT token from your test user.</p>
+      <label class="field">
+        <span>JWT Token</span>
+        <textarea id="jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
+      </label>
+      <div class="row">
+        <button id="save-token" class="btn btn-primary">Save Token</button>
+        <button id="clear-token" class="btn btn-ghost">Clear</button>
+      </div>
+      <details class="auth-config">
+        <summary>Hosted UI login (optional)</summary>
+        <label class="field">
+          <span>Cognito Hosted UI Domain</span>
+          <input id="cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
+        </label>
+        <label class="field">
+          <span>Client ID</span>
+          <input id="cognito-client-id" placeholder="app client id">
+        </label>
+        <button id="login-hosted-ui" class="btn btn-accent">Login with Hosted UI</button>
+      </details>
+      <pre id="claims-view" class="claims-view">No token decoded yet.</pre>
+      <p id="auth-message" class="message"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title-row">
+        <h2>Create Order</h2>
+      </div>
+      <form id="create-order-form" class="form-grid">
+        <label class="field"><span>Customer Name</span><input name="customer_name" required></label>
+        <label class="field"><span>Address</span><input name="address" required></label>
+        <label class="field"><span>Phone</span><input name="phone"></label>
+        <label class="field"><span>Email</span><input name="email" type="email"></label>
+        <label class="field"><span>Packages</span><input name="num_packages" type="number" min="1" value="1"></label>
+        <label class="field"><span>Latitude</span><input name="delivery_lat" type="number" step="any"></label>
+        <label class="field"><span>Longitude</span><input name="delivery_lng" type="number" step="any"></label>
+        <label class="field field-span-2"><span>Notes</span><textarea name="notes" rows="2"></textarea></label>
+        <button class="btn btn-primary field-span-2" type="submit">Create Order</button>
+      </form>
+      <p id="create-order-message" class="message"></p>
+    </section>
+
+    <section class="panel panel-span-2">
+      <div class="panel-title-row">
+        <h2>Order Queue</h2>
+        <div class="row">
+          <button id="refresh-orders" class="btn btn-ghost">Refresh</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Assigned</th>
+              <th>Assign / Unassign</th>
+              <th>Set Status</th>
+            </tr>
+          </thead>
+          <tbody id="orders-tbody"></tbody>
+        </table>
+      </div>
+      <p id="orders-message" class="message"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title-row">
+        <h2>Driver Locations</h2>
+        <button id="refresh-drivers" class="btn btn-ghost">Refresh</button>
+      </div>
+      <label class="field">
+        <span>Map Style URL</span>
+        <input id="map-style-url" placeholder="https://demotiles.maplibre.org/style.json">
+      </label>
+      <div id="driver-map" class="map-card"></div>
+      <ul id="driver-list" class="driver-list"></ul>
+      <p id="drivers-message" class="message"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title-row">
+        <h2>Route Optimization</h2>
+      </div>
+      <form id="optimize-form" class="form-grid">
+        <label class="field"><span>Driver ID</span><input name="driver_id" required></label>
+        <label class="field"><span>Start Latitude (optional)</span><input name="start_lat" type="number" step="any"></label>
+        <label class="field"><span>Start Longitude (optional)</span><input name="start_lng" type="number" step="any"></label>
+        <button class="btn btn-accent field-span-2" type="submit">Optimize Assigned Stops</button>
+      </form>
+      <pre id="route-result" class="claims-view">No route computed yet.</pre>
+      <p id="route-message" class="message"></p>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="assets/common.js"></script>
+  <script src="assets/admin.js"></script>
+</body>
+</html>

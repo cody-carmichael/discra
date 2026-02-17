@@ -46,6 +46,14 @@ Parameters:
     Default: ""
     NoEcho: true
     Description: Shared secret for external order-ingest webhook
+  CognitoHostedUiDomain:
+    Type: String
+    Default: ""
+    Description: Optional Cognito hosted UI domain for frontend login helpers
+  FrontendMapStyleUrl:
+    Type: String
+    Default: https://demotiles.maplibre.org/style.json
+    Description: MapLibre style JSON URL used by Admin/Dispatcher map view
 
 Globals:
   Function:
@@ -308,6 +316,9 @@ Resources:
           STRIPE_DISPATCHER_PRICE_ID: !Ref StripeDispatcherPriceId
           STRIPE_DRIVER_PRICE_ID: !Ref StripeDriverPriceId
           ORDERS_WEBHOOK_TOKEN: !Ref OrdersWebhookToken
+          COGNITO_HOSTED_UI_DOMAIN: !Ref CognitoHostedUiDomain
+          FRONTEND_COGNITO_CLIENT_ID: !Ref CognitoAppClientId
+          FRONTEND_MAP_STYLE_URL: !Ref FrontendMapStyleUrl
       Policies:
         - Statement:
             Effect: Allow
@@ -347,6 +358,42 @@ Resources:
           Properties:
             ApiId: !Ref DiscraApi
             Path: /backend/version
+            Method: GET
+        BackendUiHomeGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/ui
+            Method: GET
+        BackendUiAdminGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/ui/admin
+            Method: GET
+        BackendUiDriverGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/ui/driver
+            Method: GET
+        BackendUiDriverServiceWorkerGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/ui/driver-sw.js
+            Method: GET
+        BackendUiConfigGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/ui/config
+            Method: GET
+        BackendUiAssetsProxyGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/ui/assets/{proxy+}
             Method: GET
         BackendStripeWebhookPost:
           Type: HttpApi
@@ -407,6 +454,18 @@ Outputs:
     Description: Full URL for GET /backend/version
     Value: !Sub
       - "${Endpoint}/dev/backend/version"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+  AdminUiUrl:
+    Description: Full URL for Admin/Dispatcher web UI
+    Value: !Sub
+      - "${Endpoint}/dev/backend/ui/admin"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+  DriverUiUrl:
+    Description: Full URL for Driver web app
+    Value: !Sub
+      - "${Endpoint}/dev/backend/ui/driver"
       - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
 
   OrdersWebhookUrl:

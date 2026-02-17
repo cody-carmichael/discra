@@ -4,8 +4,11 @@ import logging
 import os
 import time
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from mangum import Mangum
 
 try:
@@ -23,6 +26,8 @@ except ModuleNotFoundError:  # local run from backend/ directory
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger("discra.backend")
+FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
+FRONTEND_ASSETS_DIR = FRONTEND_DIR / "assets"
 
 
 def _json_log(fields):
@@ -67,6 +72,36 @@ def create_app() -> FastAPI:
     @app.get("/version")
     async def version():
         return {"version": os.environ.get("VERSION", "dev")}
+
+    if FRONTEND_ASSETS_DIR.exists():
+        app.mount("/ui/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR)), name="ui-assets")
+
+    @app.get("/ui", include_in_schema=False)
+    async def ui_home():
+        return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+    @app.get("/ui/admin", include_in_schema=False)
+    async def ui_admin():
+        return FileResponse(str(FRONTEND_DIR / "admin.html"))
+
+    @app.get("/ui/driver", include_in_schema=False)
+    async def ui_driver():
+        return FileResponse(str(FRONTEND_DIR / "driver.html"))
+
+    @app.get("/ui/driver-sw.js", include_in_schema=False)
+    async def ui_driver_service_worker():
+        return FileResponse(str(FRONTEND_DIR / "driver-sw.js"), media_type="application/javascript")
+
+    @app.get("/ui/config", include_in_schema=False)
+    async def ui_config():
+        return {
+            "cognito_domain": os.environ.get("COGNITO_HOSTED_UI_DOMAIN", ""),
+            "cognito_client_id": os.environ.get("FRONTEND_COGNITO_CLIENT_ID")
+            or os.environ.get("COGNITO_AUDIENCE", ""),
+            "admin_redirect_path": "/ui/admin",
+            "driver_redirect_path": "/ui/driver",
+            "map_style_url": os.environ.get("FRONTEND_MAP_STYLE_URL", "https://demotiles.maplibre.org/style.json"),
+        }
 
     app.include_router(identity_router)
     app.include_router(orders_router)

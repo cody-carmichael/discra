@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -82,3 +82,61 @@ class UserRecord(BaseModel):
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
+
+
+class PodArtifactType(str, Enum):
+    PHOTO = "photo"
+    SIGNATURE = "signature"
+
+
+class PodPresignArtifactRequest(BaseModel):
+    artifact_type: PodArtifactType
+    content_type: str = Field(..., min_length=3, max_length=100)
+    file_size_bytes: int = Field(..., gt=0)
+    file_name: Optional[str] = Field(default=None, max_length=255)
+
+
+class PodPresignRequest(BaseModel):
+    order_id: str
+    artifacts: List[PodPresignArtifactRequest] = Field(..., min_length=1, max_length=6)
+
+
+class PodPresignedUpload(BaseModel):
+    artifact_type: PodArtifactType
+    key: str
+    url: str
+    fields: Dict[str, str]
+    expires_in: int
+    max_size_bytes: int
+
+
+class PodPresignResponse(BaseModel):
+    uploads: List[PodPresignedUpload]
+
+
+class PodLocation(BaseModel):
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+    heading: Optional[float] = Field(default=None, ge=0, le=360)
+
+
+class PodMetadataCreateRequest(BaseModel):
+    order_id: str
+    photo_keys: List[str] = Field(default_factory=list, max_length=10)
+    signature_keys: List[str] = Field(default_factory=list, max_length=5)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    captured_at: Optional[datetime] = None
+    location: Optional[PodLocation] = None
+
+
+class PodMetadataRecord(BaseModel):
+    org_id: str
+    pod_id: str
+    order_id: str
+    driver_id: str
+    created_at: datetime
+    captured_at: datetime
+    photo_keys: List[str] = Field(default_factory=list)
+    signature_keys: List[str] = Field(default_factory=list)
+    notes: Optional[str] = None
+    location: Optional[PodLocation] = None

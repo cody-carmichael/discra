@@ -17,6 +17,10 @@ Discra Python backend (`PR1 + PR2`) for migration from Java Lambda handlers.
   - `POST /orders/{id}/assign`, `POST /orders/{id}/unassign`
   - `POST /orders/{id}/status`
   - `GET /orders/driver/inbox`
+- POD workflow:
+  - `POST /pod/presign` (Driver only)
+  - `POST /pod/metadata` (Driver only)
+  - S3 presigned POST with type/size limits + DynamoDB metadata storage
 
 ## Local development
 ```powershell
@@ -50,6 +54,12 @@ Then call:
 - `http://127.0.0.1:3000/dev/version` (existing Java endpoint)
 - `http://127.0.0.1:3000/dev/backend/health` (new Python endpoint)
 - `http://127.0.0.1:3000/dev/backend/version` (new Python endpoint)
+
+For local POD testing without AWS resources:
+
+```powershell
+$env:USE_IN_MEMORY_POD_STORE="true"
+```
 
 ## Tests
 ```powershell

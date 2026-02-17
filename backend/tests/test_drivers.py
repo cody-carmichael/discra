@@ -7,10 +7,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from app import app
-from location_service import reset_in_memory_driver_location_store
+from backend.app import app
+from backend.location_service import reset_in_memory_driver_location_store
 
 client = TestClient(app)
 

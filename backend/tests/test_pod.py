@@ -6,14 +6,11 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from app import app
-from pod_service import reset_in_memory_pod_store
-try:
-    from backend.routers.orders import _orders
-except ModuleNotFoundError:
-    from routers.orders import _orders
+from backend.app import app
+from backend.pod_service import reset_in_memory_pod_store
+from backend.routers.orders import _orders
 
 client = TestClient(app)
 

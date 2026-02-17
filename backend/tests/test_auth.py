@@ -6,9 +6,9 @@ import sys
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from auth import _decode_jwt, get_current_user, require_roles
+from backend.auth import _decode_jwt, get_current_user, require_roles
 
 
 def make_mock_token(payload):

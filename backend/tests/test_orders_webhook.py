@@ -1,7 +1,10 @@
 import base64
+import hmac
 import json
 import os
 import sys
+import time
+from typing import Optional
 
 import pytest
 from fastapi.testclient import TestClient
@@ -51,6 +54,31 @@ def _webhook_payload(
     }
 
 
+def _signed_orders_webhook_headers(
+    payload,
+    secret: str,
+    timestamp: Optional[int] = None,
+    with_prefix: bool = False,
+):
+    ts_value = timestamp if timestamp is not None else int(time.time())
+    raw_payload = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        f"{ts_value}.".encode("utf-8") + raw_payload,
+        digestmod="sha256",
+    ).hexdigest()
+    signature_value = f"sha256={signature}" if with_prefix else signature
+    return (
+        {
+            "content-type": "application/json",
+            "x-orders-webhook-token": "orders-secret",
+            "x-orders-webhook-timestamp": str(ts_value),
+            "x-orders-webhook-signature": signature_value,
+        },
+        raw_payload,
+    )
+
+
 @pytest.fixture(autouse=True)
 def _test_env(monkeypatch):
     monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
@@ -72,6 +100,55 @@ def test_orders_webhook_rejects_missing_or_bad_token():
         headers={"x-orders-webhook-token": "bad-token"},
     )
     assert bad.status_code == 401
+
+
+def test_orders_webhook_requires_signature_headers_when_hmac_secret_configured(monkeypatch):
+    monkeypatch.setenv("ORDERS_WEBHOOK_HMAC_SECRET", "hmac-secret")
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 111)
+    response = client.post(
+        "/webhooks/orders",
+        json=payload,
+        headers={"x-orders-webhook-token": "orders-secret"},
+    )
+    assert response.status_code == 401
+    assert "signature" in response.json()["detail"].lower()
+
+
+def test_orders_webhook_rejects_invalid_hmac_signature(monkeypatch):
+    monkeypatch.setenv("ORDERS_WEBHOOK_HMAC_SECRET", "hmac-secret")
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 112)
+    headers, raw_payload = _signed_orders_webhook_headers(payload, secret="wrong-secret")
+    response = client.post("/webhooks/orders", content=raw_payload, headers=headers)
+    assert response.status_code == 401
+    assert "signature" in response.json()["detail"].lower()
+
+
+def test_orders_webhook_rejects_stale_hmac_timestamp(monkeypatch):
+    monkeypatch.setenv("ORDERS_WEBHOOK_HMAC_SECRET", "hmac-secret")
+    monkeypatch.setenv("ORDERS_WEBHOOK_MAX_SKEW_SECONDS", "10")
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 113)
+    stale_timestamp = int(time.time()) - 120
+    headers, raw_payload = _signed_orders_webhook_headers(
+        payload,
+        secret="hmac-secret",
+        timestamp=stale_timestamp,
+    )
+    response = client.post("/webhooks/orders", content=raw_payload, headers=headers)
+    assert response.status_code == 401
+    assert "timestamp" in response.json()["detail"].lower()
+
+
+def test_orders_webhook_accepts_valid_hmac_signature(monkeypatch):
+    monkeypatch.setenv("ORDERS_WEBHOOK_HMAC_SECRET", "hmac-secret")
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 114)
+    headers, raw_payload = _signed_orders_webhook_headers(
+        payload,
+        secret="hmac-secret",
+        with_prefix=True,
+    )
+    webhook = client.post("/webhooks/orders", content=raw_payload, headers=headers)
+    assert webhook.status_code == 200
+    assert webhook.json()["created"] == 1
 
 
 def test_orders_webhook_creates_orders_visible_to_dispatchers():
@@ -122,6 +199,42 @@ def test_orders_webhook_creates_orders_visible_to_dispatchers():
     assert len(orders) == 2
     assert {item["external_order_id"] for item in orders} == {"ext-1", "ext-2"}
     assert all(item["source"] == "shopify" for item in orders)
+
+
+def test_orders_webhook_rejects_duplicate_external_ids_in_single_payload():
+    payload = {
+        "org_id": "org-1",
+        "source": "shopify",
+        "orders": [
+            {
+                "external_order_id": "ext-1",
+                "customer_name": "Alice",
+                "reference_number": 251,
+                "pick_up_address": "Warehouse A",
+                "delivery": "100 Main",
+                "dimensions": "12x8x6 in",
+                "weight": 6.4,
+                "num_packages": 1,
+            },
+            {
+                "external_order_id": "ext-1",
+                "customer_name": "Bob",
+                "reference_number": 252,
+                "pick_up_address": "Warehouse B",
+                "delivery": "200 Main",
+                "dimensions": "10x8x5 in",
+                "weight": 4.2,
+                "num_packages": 1,
+            },
+        ],
+    }
+    webhook = client.post(
+        "/webhooks/orders",
+        json=payload,
+        headers={"x-orders-webhook-token": "orders-secret"},
+    )
+    assert webhook.status_code == 400
+    assert "duplicate external_order_id" in webhook.json()["detail"].lower()
 
 
 def test_orders_webhook_upserts_by_external_id_and_preserves_assignment():

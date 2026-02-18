@@ -46,6 +46,15 @@ Parameters:
     Default: ""
     NoEcho: true
     Description: Shared secret for external order-ingest webhook
+  OrdersWebhookHmacSecret:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Optional HMAC secret for signed external order-ingest webhook payloads
+  OrdersWebhookMaxSkewSeconds:
+    Type: String
+    Default: "300"
+    Description: Allowed clock skew in seconds for signed external order-ingest webhooks
   CognitoHostedUiDomain:
     Type: String
     Default: ""
@@ -338,6 +347,8 @@ Resources:
           STRIPE_DISPATCHER_PRICE_ID: !Ref StripeDispatcherPriceId
           STRIPE_DRIVER_PRICE_ID: !Ref StripeDriverPriceId
           ORDERS_WEBHOOK_TOKEN: !Ref OrdersWebhookToken
+          ORDERS_WEBHOOK_HMAC_SECRET: !Ref OrdersWebhookHmacSecret
+          ORDERS_WEBHOOK_MAX_SKEW_SECONDS: !Ref OrdersWebhookMaxSkewSeconds
           COGNITO_HOSTED_UI_DOMAIN: !Ref CognitoHostedUiDomain
           FRONTEND_COGNITO_CLIENT_ID: !Ref CognitoAppClientId
           FRONTEND_MAP_STYLE_URL: !Ref FrontendMapStyleUrl

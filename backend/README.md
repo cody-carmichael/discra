@@ -41,7 +41,7 @@ Discra Python backend (`PR1` to `PR8`) for migration from Java Lambda handlers.
   - `POST /billing/seats` (Admin)
   - `POST /billing/invitations` (Admin)
   - `POST /billing/invitations/{invitationId}/activate` (Admin)
-  - `POST /webhooks/orders` (public with `x-orders-webhook-token`)
+  - `POST /webhooks/orders` (public with `x-orders-webhook-token`, optional HMAC headers)
   - `POST /webhooks/stripe` (public)
   - Seat limits enforced for Dispatcher/Driver invitations and activation
 - Minimal web UIs:
@@ -101,6 +101,19 @@ For local order-ingest webhook tests:
 ```powershell
 $env:ORDERS_WEBHOOK_TOKEN="orders-secret"
 ```
+
+Optional signature hardening for order-ingest webhook:
+
+```powershell
+$env:ORDERS_WEBHOOK_HMAC_SECRET="orders-hmac-secret"
+$env:ORDERS_WEBHOOK_MAX_SKEW_SECONDS="300"
+```
+
+When `ORDERS_WEBHOOK_HMAC_SECRET` is set, clients must also provide:
+- `x-orders-webhook-timestamp` (Unix seconds)
+- `x-orders-webhook-signature` (`sha256=<hex>` or `<hex>`)
+
+Signature input format: `"{timestamp}.{raw_json_body}"` with HMAC-SHA256.
 
 Optional frontend helper config:
 

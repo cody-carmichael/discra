@@ -74,6 +74,8 @@ After `sam local start-api`:
 - `dimensions` (string)
 - `weight` (number)
 
+`POST /dev/backend/routes/optimize` now requires explicit `stops` with `lat`/`lng` if you want automatic optimization.
+
 ## Cognito auth parameters
 `template.yaml` now expects these deploy parameters:
 - `CognitoUserPoolId`
@@ -101,3 +103,4 @@ API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 6. Route optimization (Amazon Location matrix + OR-Tools)
 7. Stripe billing + seat enforcement
 8. Minimal Admin/Dispatcher UI + Driver PWA
+9. Mobile apps for Admin/Dispatcher and Driver (iOS/Android) with dispatch, assignment, driver tracking, and offline-first sync

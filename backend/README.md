@@ -35,6 +35,7 @@ Discra Python backend (`PR1` to `PR8`) for migration from Java Lambda handlers.
   - `POST /routes/optimize` (Admin/Dispatcher)
   - Uses Amazon Location `CalculateRouteMatrix` when `LOCATION_ROUTE_CALCULATOR_NAME` is set
   - Uses OR-Tools for route ordering (single driver path)
+  - Provide explicit `stops` with `lat/lng` in the request payload
 - Billing + seat management:
   - `GET /billing/summary` (Admin)
   - `POST /billing/seats` (Admin)

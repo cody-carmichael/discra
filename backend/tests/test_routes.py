@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from backend.app import app
 from backend.location_service import reset_in_memory_driver_location_store
-from backend.routers.orders import _orders
+from backend.order_store import reset_in_memory_order_store
 
 client = TestClient(app)
 
@@ -30,9 +30,10 @@ def make_token(sub: str, org_id: str, groups):
 def _test_env(monkeypatch):
     monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
     monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
+    monkeypatch.setenv("USE_IN_MEMORY_ORDER_STORE", "true")
     monkeypatch.setenv("USE_IN_MEMORY_DRIVER_LOCATION_STORE", "true")
     monkeypatch.setenv("USE_IN_MEMORY_ROUTE_MATRIX", "true")
-    _orders.clear()
+    reset_in_memory_order_store()
     reset_in_memory_driver_location_store()
 
 

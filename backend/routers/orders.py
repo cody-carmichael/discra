@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Set
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status as http_status
+from fastapi import APIRouter, Depends, HTTPException, Request, status as http_status
 
 try:
     from backend.auth import (
@@ -12,12 +12,14 @@ try:
         get_current_user,
         require_roles,
     )
+    from backend.audit_store import get_audit_log_store, new_event_id
     from backend.order_store import get_order_store
-    from backend.schemas import AssignRequest, Order, OrderCreate, OrderStatus, StatusUpdateRequest
+    from backend.schemas import AuditLogRecord, AssignRequest, Order, OrderCreate, OrderStatus, StatusUpdateRequest
 except ModuleNotFoundError:  # local run from backend/ directory
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
+    from audit_store import get_audit_log_store, new_event_id
     from order_store import get_order_store
-    from schemas import AssignRequest, Order, OrderCreate, OrderStatus, StatusUpdateRequest
+    from schemas import AuditLogRecord, AssignRequest, Order, OrderCreate, OrderStatus, StatusUpdateRequest
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -58,6 +60,41 @@ def _validate_transition(current_status: OrderStatus, next_status: OrderStatus):
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid status transition from {current_status.value} to {next_status.value}",
         )
+
+
+def _request_id(request: Request):
+    request_id = getattr(getattr(request, "state", object()), "request_id", None)
+    if request_id:
+        return str(request_id)
+    return request.headers.get("x-correlation-id") or request.headers.get("x-request-id")
+
+
+def _audit_event(
+    audit_store,
+    *,
+    org_id: str,
+    action: str,
+    actor_id: str,
+    actor_roles,
+    target_type: str,
+    target_id: str,
+    request: Request,
+    details: Dict,
+):
+    now = datetime.now(timezone.utc)
+    event = AuditLogRecord(
+        org_id=org_id,
+        event_id=new_event_id(now),
+        action=action,
+        actor_id=actor_id,
+        actor_roles=list(actor_roles or []),
+        target_type=target_type,
+        target_id=target_id,
+        request_id=_request_id(request),
+        details=details,
+        created_at=now,
+    )
+    audit_store.put_event(event)
 
 
 @router.post("/", response_model=Order)
@@ -106,25 +143,64 @@ async def list_orders(
 async def assign_order(
     order_id: str,
     body: AssignRequest,
+    request: Request,
     user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
     order_store=Depends(get_order_store),
+    audit_store=Depends(get_audit_log_store),
 ):
     order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
+    previous_assigned_to = order.assigned_to
     order.assigned_to = body.driver_id
     order.status = OrderStatus.ASSIGNED
-    return order_store.upsert_order(order)
+    saved = order_store.upsert_order(order)
+
+    action = "order.reassigned" if previous_assigned_to and previous_assigned_to != body.driver_id else "order.assigned"
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action=action,
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="order",
+        target_id=saved.id,
+        request=request,
+        details={
+            "previous_driver_id": previous_assigned_to,
+            "new_driver_id": body.driver_id,
+            "status": saved.status.value,
+        },
+    )
+    return saved
 
 
 @router.post("/{order_id}/unassign", response_model=Order)
 async def unassign_order(
     order_id: str,
+    request: Request,
     user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
     order_store=Depends(get_order_store),
+    audit_store=Depends(get_audit_log_store),
 ):
     order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
+    previous_assigned_to = order.assigned_to
     order.assigned_to = None
     order.status = OrderStatus.CREATED
-    return order_store.upsert_order(order)
+    saved = order_store.upsert_order(order)
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="order.unassigned",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="order",
+        target_id=saved.id,
+        request=request,
+        details={
+            "previous_driver_id": previous_assigned_to,
+            "status": saved.status.value,
+        },
+    )
+    return saved
 
 
 @router.post("/{order_id}/status", response_model=Order)

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 try:
     from backend.auth import ROLE_ADMIN, require_roles
+    from backend.audit_store import get_audit_log_store, new_event_id
     from backend.billing_service import (
         SeatLimitExceededError,
         apply_subscription_webhook,
@@ -31,6 +32,7 @@ try:
         BillingSeatsUpdateResponse,
         BillingSummary,
         InvitationStatus,
+        AuditLogRecord,
         Order,
         OrderStatus,
         OrdersWebhookRequest,
@@ -41,6 +43,7 @@ try:
     )
 except ModuleNotFoundError:  # local run from backend/ directory
     from auth import ROLE_ADMIN, require_roles
+    from audit_store import get_audit_log_store, new_event_id
     from billing_service import (
         SeatLimitExceededError,
         apply_subscription_webhook,
@@ -63,6 +66,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
         BillingSeatsUpdateResponse,
         BillingSummary,
         InvitationStatus,
+        AuditLogRecord,
         Order,
         OrderStatus,
         OrdersWebhookRequest,
@@ -84,6 +88,41 @@ def _optional_text(value):
         return None
     text = str(value).strip()
     return text or None
+
+
+def _request_id(request: Request):
+    request_id = getattr(getattr(request, "state", object()), "request_id", None)
+    if request_id:
+        return str(request_id)
+    return request.headers.get("x-correlation-id") or request.headers.get("x-request-id")
+
+
+def _audit_event(
+    audit_store,
+    *,
+    org_id: str,
+    action: str,
+    actor_id: Optional[str],
+    actor_roles,
+    target_type: str,
+    target_id: str,
+    request: Request,
+    details: dict,
+):
+    now = _utc_now()
+    event = AuditLogRecord(
+        org_id=org_id,
+        event_id=new_event_id(now),
+        action=action,
+        actor_id=actor_id,
+        actor_roles=list(actor_roles or []),
+        target_type=target_type,
+        target_id=target_id,
+        request_id=_request_id(request),
+        details=details,
+        created_at=now,
+    )
+    audit_store.put_event(event)
 
 
 def _require_orders_webhook_token() -> str:
@@ -208,10 +247,12 @@ async def get_billing_summary(
 @router.post("/billing/seats", response_model=BillingSeatsUpdateResponse)
 async def update_billing_seats(
     payload: BillingSeatsUpdateRequest,
+    request: Request,
     user=Depends(require_roles([ROLE_ADMIN])),
     identity_repo=Depends(get_identity_repository),
     billing_store=Depends(get_billing_store),
     stripe_client=Depends(get_stripe_client),
+    audit_store=Depends(get_audit_log_store),
 ):
     if payload.dispatcher_seat_limit is None and payload.driver_seat_limit is None:
         raise HTTPException(
@@ -275,15 +316,32 @@ async def update_billing_seats(
 
     persisted = billing_store.upsert_subscription(updated_subscription)
     summary = build_billing_summary(persisted, usage)
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="billing.seats.updated",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="seat_subscription",
+        target_id=user["org_id"],
+        request=request,
+        details={
+            "dispatcher_seat_limit": persisted.dispatcher_seat_limit,
+            "driver_seat_limit": persisted.driver_seat_limit,
+            "stripe_subscription_id": persisted.stripe_subscription_id,
+        },
+    )
     return BillingSeatsUpdateResponse(summary=summary)
 
 
 @router.post("/billing/invitations", response_model=BillingInvitationRecord)
 async def create_invitation(
     payload: BillingInvitationCreateRequest,
+    request: Request,
     user=Depends(require_roles([ROLE_ADMIN])),
     identity_repo=Depends(get_identity_repository),
     billing_store=Depends(get_billing_store),
+    audit_store=Depends(get_audit_log_store),
 ):
     subscription = get_or_default_subscription(user["org_id"], billing_store)
     usage = calculate_seat_usage(user["org_id"], identity_repo, billing_store)
@@ -310,15 +368,33 @@ async def create_invitation(
         email=payload.email,
         role=payload.role,
     )
-    return billing_store.upsert_invitation(invitation)
+    saved = billing_store.upsert_invitation(invitation)
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="billing.invitation.created",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="invitation",
+        target_id=saved.invitation_id,
+        request=request,
+        details={
+            "invited_user_id": saved.user_id,
+            "role": saved.role.value,
+            "status": saved.status.value,
+        },
+    )
+    return saved
 
 
 @router.post("/billing/invitations/{invitation_id}/activate", response_model=UserRecord)
 async def activate_invitation(
     invitation_id: str,
+    request: Request,
     user=Depends(require_roles([ROLE_ADMIN])),
     identity_repo=Depends(get_identity_repository),
     billing_store=Depends(get_billing_store),
+    audit_store=Depends(get_audit_log_store),
 ):
     invitation = billing_store.get_invitation(user["org_id"], invitation_id)
     if invitation is None:
@@ -365,6 +441,21 @@ async def activate_invitation(
         updated_at=now,
     )
     billing_store.upsert_invitation(accepted_invitation)
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="billing.invitation.activated",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="invitation",
+        target_id=invitation.invitation_id,
+        request=request,
+        details={
+            "user_id": invitation.user_id,
+            "role": invitation.role.value,
+            "status": accepted_invitation.status.value,
+        },
+    )
 
     return saved_user
 
@@ -473,6 +564,7 @@ async def stripe_webhook(
     request: Request,
     billing_store=Depends(get_billing_store),
     stripe_client=Depends(get_stripe_client),
+    audit_store=Depends(get_audit_log_store),
 ):
     payload = await request.body()
     signature = request.headers.get("stripe-signature")
@@ -484,6 +576,23 @@ async def stripe_webhook(
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid webhook payload") from exc
 
     updated = apply_subscription_webhook(event=event, billing_store=billing_store)
+    if updated is not None:
+        _audit_event(
+            audit_store,
+            org_id=updated.org_id,
+            action="billing.subscription.webhook_applied",
+            actor_id="stripe-webhook",
+            actor_roles=[],
+            target_type="seat_subscription",
+            target_id=updated.org_id,
+            request=request,
+            details={
+                "event_type": event.get("type"),
+                "stripe_subscription_id": updated.stripe_subscription_id,
+                "dispatcher_seat_limit": updated.dispatcher_seat_limit,
+                "driver_seat_limit": updated.driver_seat_limit,
+            },
+        )
     return StripeWebhookResponse(
         received=True,
         event_type=event.get("type"),

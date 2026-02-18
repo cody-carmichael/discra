@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from backend.app import app
+from backend.audit_store import get_audit_log_store, reset_in_memory_audit_log_store
 from backend.order_store import reset_in_memory_order_store
 
 client = TestClient(app)
@@ -42,7 +43,9 @@ def _test_env(monkeypatch):
     monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
     monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
     monkeypatch.setenv("USE_IN_MEMORY_ORDER_STORE", "true")
+    monkeypatch.setenv("USE_IN_MEMORY_AUDIT_LOG_STORE", "true")
     reset_in_memory_order_store()
+    reset_in_memory_audit_log_store()
 
 
 def test_create_and_list_order_for_tenant():
@@ -111,6 +114,11 @@ def test_assign_and_unassign_order():
     assert unassign_response.json()["status"] == "Created"
     assert unassign_response.json()["assigned_to"] is None
 
+    audit_events = get_audit_log_store().list_events("org-a", limit=10)
+    actions = [event.action for event in audit_events]
+    assert "order.assigned" in actions
+    assert "order.unassigned" in actions
+
 
 def test_driver_inbox_and_status_update():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
@@ -166,3 +174,30 @@ def test_invalid_status_transition_is_rejected():
         headers={"Authorization": f"Bearer {dispatcher_token}"},
     )
     assert invalid.status_code == 400
+
+
+def test_reassign_writes_order_reassigned_audit_event():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    created = client.post(
+        "/orders/",
+        json=make_order_payload("Frank", "Warehouse 6", "1010 Center St", reference_number=6006),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    order_id = created.json()["id"]
+
+    first_assign = client.post(
+        f"/orders/{order_id}/assign",
+        json={"driver_id": "driver-1"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert first_assign.status_code == 200
+
+    second_assign = client.post(
+        f"/orders/{order_id}/assign",
+        json={"driver_id": "driver-2"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert second_assign.status_code == 200
+
+    audit_events = get_audit_log_store().list_events("org-a", limit=10)
+    assert any(event.action == "order.reassigned" for event in audit_events)

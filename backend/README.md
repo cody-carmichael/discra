@@ -17,6 +17,12 @@ Discra Python backend (`PR1` to `PR8`) for migration from Java Lambda handlers.
   - `POST /orders/{id}/assign`, `POST /orders/{id}/unassign`
   - `POST /orders/{id}/status`
   - `GET /orders/driver/inbox`
+  - `POST /orders` required fields:
+    - `reference_number` (number)
+    - `pick_up_address` (string)
+    - `delivery` (string)
+    - `dimensions` (string)
+    - `weight` (number)
 - POD workflow:
   - `POST /pod/presign` (Driver only)
   - `POST /pod/metadata` (Driver only)

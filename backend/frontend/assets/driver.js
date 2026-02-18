@@ -180,7 +180,16 @@
       C.escapeHtml(order.customer_name) +
       "</h3>" +
       "<p class=\"order-meta\">" +
-      C.escapeHtml(order.address) +
+      "Pick Up: " +
+      C.escapeHtml(order.pick_up_address || "-") +
+      "<br>Delivery: " +
+      C.escapeHtml(order.delivery || "-") +
+      "<br>Ref #: " +
+      C.escapeHtml(order.reference_number || "-") +
+      "<br>Dimensions: " +
+      C.escapeHtml(order.dimensions || "-") +
+      "<br>Weight: " +
+      C.escapeHtml(order.weight || "-") +
       "<br>Order: " +
       C.escapeHtml(order.id) +
       "<br>Status: <span class=\"chip\">" +

@@ -25,6 +25,18 @@ def make_token(sub: str, org_id: str, groups):
     return f"{header.decode()}.{body.decode()}."
 
 
+def make_order_payload(customer_name: str, pick_up_address: str, delivery: str, reference_number: int = 1001):
+    return {
+        "customer_name": customer_name,
+        "reference_number": reference_number,
+        "pick_up_address": pick_up_address,
+        "delivery": delivery,
+        "dimensions": "10x8x4 in",
+        "weight": 4.5,
+        "num_packages": 1,
+    }
+
+
 @pytest.fixture(autouse=True)
 def _test_env(monkeypatch):
     monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
@@ -34,14 +46,10 @@ def _test_env(monkeypatch):
 
 def test_create_and_list_order_for_tenant():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
-    payload = {
-        "customer_name": "Alice",
-        "address": "123 Main St",
-        "phone": "555-1234",
-        "email": "alice@example.com",
-        "notes": "Leave at door",
-        "num_packages": 1,
-    }
+    payload = make_order_payload("Alice", "Warehouse 1", "123 Main St")
+    payload["phone"] = "555-1234"
+    payload["email"] = "alice@example.com"
+    payload["notes"] = "Leave at door"
 
     create_response = client.post("/orders/", json=payload, headers={"Authorization": f"Bearer {admin_token}"})
     assert create_response.status_code == 200
@@ -62,11 +70,7 @@ def test_cross_tenant_order_access_is_hidden():
 
     create_response = client.post(
         "/orders/",
-        json={
-            "customer_name": "Bob",
-            "address": "456 Broadway",
-            "num_packages": 2,
-        },
+        json=make_order_payload("Bob", "Warehouse 2", "456 Broadway", reference_number=2002) | {"num_packages": 2},
         headers={"Authorization": f"Bearer {org_a_admin}"},
     )
     order_id = create_response.json()["id"]
@@ -84,7 +88,7 @@ def test_assign_and_unassign_order():
 
     create_response = client.post(
         "/orders/",
-        json={"customer_name": "Carol", "address": "789 Market St", "num_packages": 1},
+        json=make_order_payload("Carol", "Warehouse 3", "789 Market St", reference_number=3003),
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     order_id = create_response.json()["id"]
@@ -114,7 +118,7 @@ def test_driver_inbox_and_status_update():
 
     create_response = client.post(
         "/orders/",
-        json={"customer_name": "Dave", "address": "100 1st Ave", "num_packages": 1},
+        json=make_order_payload("Dave", "Warehouse 4", "100 1st Ave", reference_number=4004),
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     order_id = create_response.json()["id"]
@@ -150,7 +154,7 @@ def test_invalid_status_transition_is_rejected():
     dispatcher_token = make_token("dispatcher-a", "org-a", ["Dispatcher"])
     create_response = client.post(
         "/orders/",
-        json={"customer_name": "Eve", "address": "11 2nd St", "num_packages": 1},
+        json=make_order_payload("Eve", "Warehouse 5", "11 2nd St", reference_number=5005),
         headers={"Authorization": f"Bearer {dispatcher_token}"},
     )
     order_id = create_response.json()["id"]

@@ -64,7 +64,7 @@ After `sam local start-api`:
 - `POST /dev/backend/billing/seats` (Admin)
 - `POST /dev/backend/billing/invitations` (Admin)
 - `POST /dev/backend/billing/invitations/{invitationId}/activate` (Admin)
-- `POST /dev/backend/webhooks/orders` (public webhook with `x-orders-webhook-token`)
+- `POST /dev/backend/webhooks/orders` (public webhook with `x-orders-webhook-token`, optional HMAC headers)
 - `POST /dev/backend/webhooks/stripe` (public webhook)
 
 `POST /dev/backend/orders` now requires:
@@ -81,11 +81,21 @@ After `sam local start-api`:
 - `CognitoUserPoolId`
 - `CognitoAppClientId`
 - `OrdersWebhookToken` (shared secret for `/backend/webhooks/orders`)
+- `OrdersWebhookHmacSecret` (optional HMAC secret for signed `/backend/webhooks/orders` payloads)
+- `OrdersWebhookMaxSkewSeconds` (optional timestamp skew window for signed payloads; default `300`)
 - `CognitoHostedUiDomain` (optional hosted UI helper domain for frontend pages)
 - `FrontendMapStyleUrl` (optional MapLibre style JSON URL)
 
 API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 `/backend/health` and `/backend/version` remain public for parity checks.
+
+## Orders webhook signing
+- Base auth always requires `x-orders-webhook-token`.
+- Optional hardened mode: set `OrdersWebhookHmacSecret` and send:
+  - `x-orders-webhook-timestamp` (Unix seconds)
+  - `x-orders-webhook-signature` (`sha256=<hex>` or `<hex>`)
+- Signature input format: `"{timestamp}.{raw_json_body}"` using HMAC-SHA256.
+- Rejects payloads outside `OrdersWebhookMaxSkewSeconds` to reduce replay risk.
 
 ## POD upload constraints
 - Uploads use short-lived S3 presigned POST policies (default `300` seconds).

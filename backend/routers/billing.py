@@ -5,6 +5,7 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status as http_status
+from pydantic import ValidationError
 
 try:
     from backend.auth import ROLE_ADMIN, require_roles
@@ -102,6 +103,65 @@ def _authorize_orders_webhook(request: Request):
         raise HTTPException(
             status_code=http_status.HTTP_401_UNAUTHORIZED,
             detail="Invalid orders webhook token",
+        )
+
+
+def _orders_webhook_hmac_secret() -> str:
+    return os.environ.get("ORDERS_WEBHOOK_HMAC_SECRET", "").strip()
+
+
+def _orders_webhook_max_skew_seconds() -> int:
+    raw_value = (os.environ.get("ORDERS_WEBHOOK_MAX_SKEW_SECONDS") or "").strip()
+    if not raw_value:
+        return 300
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return 300
+    return max(parsed, 0)
+
+
+def _authorize_orders_webhook_signature(request: Request, raw_payload: bytes):
+    secret = _orders_webhook_hmac_secret()
+    if not secret:
+        return
+
+    raw_timestamp = (request.headers.get("x-orders-webhook-timestamp") or "").strip()
+    raw_signature = (request.headers.get("x-orders-webhook-signature") or "").strip()
+    if not raw_timestamp or not raw_signature:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
+            detail="Missing orders webhook signature headers",
+        )
+
+    try:
+        timestamp = int(raw_timestamp)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid orders webhook timestamp",
+        ) from exc
+
+    max_skew = _orders_webhook_max_skew_seconds()
+    now_epoch = int(_utc_now().timestamp())
+    if abs(now_epoch - timestamp) > max_skew:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
+            detail="Orders webhook timestamp outside allowed window",
+        )
+
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        f"{raw_timestamp}.".encode("utf-8") + raw_payload,
+        digestmod="sha256",
+    ).hexdigest()
+    provided = raw_signature
+    if provided.lower().startswith("sha256="):
+        provided = provided.split("=", 1)[1]
+    if not hmac.compare_digest(provided, expected):
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid orders webhook signature",
         )
 
 
@@ -310,8 +370,33 @@ async def activate_invitation(
 
 
 @router.post("/webhooks/orders", response_model=OrdersWebhookResponse)
-async def order_ingest_webhook(payload: OrdersWebhookRequest, request: Request):
+async def order_ingest_webhook(request: Request):
     _authorize_orders_webhook(request)
+    raw_payload = await request.body()
+    _authorize_orders_webhook_signature(request, raw_payload)
+
+    try:
+        payload = OrdersWebhookRequest.model_validate_json(raw_payload)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(),
+        ) from exc
+
+    duplicate_external_ids = []
+    seen_external_ids = set()
+    for incoming in payload.orders:
+        external_order_id = incoming.external_order_id.strip()
+        if external_order_id in seen_external_ids and external_order_id not in duplicate_external_ids:
+            duplicate_external_ids.append(external_order_id)
+        seen_external_ids.add(external_order_id)
+
+    if duplicate_external_ids:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Duplicate external_order_id values in payload: " + ", ".join(duplicate_external_ids),
+        )
+
     order_store = get_order_store()
 
     created = 0

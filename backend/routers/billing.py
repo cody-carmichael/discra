@@ -21,8 +21,8 @@ try:
         get_stripe_client,
         new_invitation,
     )
+    from backend.order_store import get_order_store
     from backend.repositories import get_identity_repository
-    from backend.routers.orders import _orders, _tenant_orders
     from backend.schemas import (
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
@@ -53,8 +53,8 @@ except ModuleNotFoundError:  # local run from backend/ directory
         get_stripe_client,
         new_invitation,
     )
+    from order_store import get_order_store
     from repositories import get_identity_repository
-    from routers.orders import _orders, _tenant_orders
     from schemas import (
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
@@ -105,11 +105,12 @@ def _authorize_orders_webhook(request: Request):
         )
 
 
-def _find_existing_external_order(org_id: str, source: str, external_order_id: str) -> Optional[Order]:
-    for order in _tenant_orders(org_id):
-        if order.external_order_id == external_order_id and (order.source or "external") == source:
-            return order
-    return None
+def _find_existing_external_order(order_store, org_id: str, source: str, external_order_id: str) -> Optional[Order]:
+    return order_store.find_order_by_external_id(
+        org_id=org_id,
+        source=source,
+        external_order_id=external_order_id,
+    )
 
 
 def _merge_stripe_subscription_snapshot(
@@ -311,6 +312,7 @@ async def activate_invitation(
 @router.post("/webhooks/orders", response_model=OrdersWebhookResponse)
 async def order_ingest_webhook(payload: OrdersWebhookRequest, request: Request):
     _authorize_orders_webhook(request)
+    order_store = get_order_store()
 
     created = 0
     updated = 0
@@ -319,6 +321,7 @@ async def order_ingest_webhook(payload: OrdersWebhookRequest, request: Request):
 
     for incoming in payload.orders:
         existing = _find_existing_external_order(
+            order_store=order_store,
             org_id=payload.org_id,
             source=payload.source,
             external_order_id=incoming.external_order_id,
@@ -344,7 +347,7 @@ async def order_ingest_webhook(payload: OrdersWebhookRequest, request: Request):
                 created_at=now,
                 org_id=payload.org_id,
             )
-            _orders[order_id] = created_order
+            order_store.upsert_order(created_order)
             order_ids.append(order_id)
             created += 1
             continue
@@ -368,7 +371,7 @@ async def order_ingest_webhook(payload: OrdersWebhookRequest, request: Request):
             created_at=existing.created_at,
             org_id=existing.org_id,
         )
-        _orders[existing.id] = updated_order
+        order_store.upsert_order(updated_order)
         order_ids.append(existing.id)
         updated += 1
 

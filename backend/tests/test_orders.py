@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from backend.app import app
-from backend.routers.orders import _orders
+from backend.order_store import reset_in_memory_order_store
 
 client = TestClient(app)
 
@@ -41,7 +41,8 @@ def make_order_payload(customer_name: str, pick_up_address: str, delivery: str, 
 def _test_env(monkeypatch):
     monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
     monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
-    _orders.clear()
+    monkeypatch.setenv("USE_IN_MEMORY_ORDER_STORE", "true")
+    reset_in_memory_order_store()
 
 
 def test_create_and_list_order_for_tenant():

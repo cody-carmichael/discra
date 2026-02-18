@@ -128,6 +128,27 @@ Resources:
         - Key: Env
           Value: dev
 
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-orders-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
   PodArtifactsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -301,6 +322,7 @@ Resources:
           JWT_VERIFY_SIGNATURE: "true"
           ORGANIZATIONS_TABLE: !Ref OrganizationsTable
           USERS_TABLE: !Ref UsersTable
+          ORDERS_TABLE: !Ref OrdersTable
           POD_BUCKET_NAME: !Ref PodArtifactsBucket
           POD_ARTIFACTS_TABLE: !Ref PodArtifactsTable
           POD_UPLOAD_URL_EXPIRES_SECONDS: "300"
@@ -331,6 +353,7 @@ Resources:
             Resource:
               - !GetAtt OrganizationsTable.Arn
               - !GetAtt UsersTable.Arn
+              - !GetAtt OrdersTable.Arn
               - !GetAtt PodArtifactsTable.Arn
               - !GetAtt DriverLocationsTable.Arn
               - !GetAtt SeatSubscriptionsTable.Arn
@@ -481,6 +504,10 @@ Outputs:
   UsersTableName:
     Description: DynamoDB table for org users synced from Cognito claims
     Value: !Ref UsersTable
+
+  OrdersTableName:
+    Description: DynamoDB table for order + dispatch state
+    Value: !Ref OrdersTable
 
   PodArtifactsTableName:
     Description: DynamoDB table for proof-of-delivery metadata

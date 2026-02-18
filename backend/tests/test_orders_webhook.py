@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from backend.app import app
-from backend.routers.orders import _orders
+from backend.order_store import reset_in_memory_order_store
 
 client = TestClient(app)
 
@@ -55,8 +55,9 @@ def _webhook_payload(
 def _test_env(monkeypatch):
     monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
     monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
+    monkeypatch.setenv("USE_IN_MEMORY_ORDER_STORE", "true")
     monkeypatch.setenv("ORDERS_WEBHOOK_TOKEN", "orders-secret")
-    _orders.clear()
+    reset_in_memory_order_store()
 
 
 def test_orders_webhook_rejects_missing_or_bad_token():

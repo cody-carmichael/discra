@@ -7,13 +7,15 @@ from pydantic import BaseModel, Field
 
 class OrderCreate(BaseModel):
     customer_name: str
-    address: str
+    reference_number: int = Field(..., ge=1)
+    pick_up_address: str = Field(..., min_length=1, max_length=300)
+    delivery: str = Field(..., min_length=1, max_length=300)
+    dimensions: str = Field(..., min_length=1, max_length=120)
+    weight: float = Field(..., gt=0)
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
     num_packages: int = Field(default=1, ge=1)
-    delivery_lat: Optional[float] = Field(default=None, ge=-90, le=90)
-    delivery_lng: Optional[float] = Field(default=None, ge=-180, le=180)
 
 
 class OrderStatus(str, Enum):
@@ -28,15 +30,17 @@ class OrderStatus(str, Enum):
 class Order(BaseModel):
     id: str
     customer_name: str
-    address: str
+    reference_number: int
+    pick_up_address: str
+    delivery: str
+    dimensions: str
+    weight: float
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
     num_packages: int
     external_order_id: Optional[str] = None
     source: Optional[str] = None
-    delivery_lat: Optional[float] = None
-    delivery_lng: Optional[float] = None
     status: OrderStatus
     assigned_to: Optional[str] = None
     created_at: datetime
@@ -166,13 +170,15 @@ class StripeWebhookResponse(BaseModel):
 class WebhookOrderInput(BaseModel):
     external_order_id: str = Field(..., min_length=1, max_length=128)
     customer_name: str = Field(..., min_length=1, max_length=160)
-    address: str = Field(..., min_length=1, max_length=300)
+    reference_number: int = Field(..., ge=1)
+    pick_up_address: str = Field(..., min_length=1, max_length=300)
+    delivery: str = Field(..., min_length=1, max_length=300)
+    dimensions: str = Field(..., min_length=1, max_length=120)
+    weight: float = Field(..., gt=0)
     phone: Optional[str] = Field(default=None, max_length=40)
     email: Optional[str] = Field(default=None, max_length=320)
     notes: Optional[str] = Field(default=None, max_length=1000)
     num_packages: int = Field(default=1, ge=1, le=500)
-    delivery_lat: Optional[float] = Field(default=None, ge=-90, le=90)
-    delivery_lng: Optional[float] = Field(default=None, ge=-180, le=180)
 
 
 class OrdersWebhookRequest(BaseModel):

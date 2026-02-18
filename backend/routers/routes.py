@@ -31,22 +31,13 @@ def _stops_from_assigned_orders(org_id: str, driver_id: str) -> List[RouteStopIn
             detail="No assigned orders found for driver",
         )
 
-    missing_coordinates = [order.id for order in assigned if order.delivery_lat is None or order.delivery_lng is None]
-    if missing_coordinates:
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail=f"Assigned orders missing delivery coordinates: {', '.join(missing_coordinates)}",
-        )
-
-    return [
-        RouteStopInput(
-            order_id=order.id,
-            lat=order.delivery_lat,  # type: ignore[arg-type]
-            lng=order.delivery_lng,  # type: ignore[arg-type]
-            address=order.address,
-        )
-        for order in assigned
-    ]
+    raise HTTPException(
+        status_code=http_status.HTTP_400_BAD_REQUEST,
+        detail=(
+            "Assigned orders no longer store delivery coordinates. "
+            "Provide explicit stops with lat/lng in the request payload."
+        ),
+    )
 
 
 def _resolve_start_position(

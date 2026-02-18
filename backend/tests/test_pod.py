@@ -41,7 +41,11 @@ def _create_assigned_order(admin_token: str, driver_id: str) -> str:
         "/orders/",
         json={
             "customer_name": "POD Customer",
-            "address": "100 Delivery Ln",
+            "reference_number": 9001,
+            "pick_up_address": "Warehouse POD",
+            "delivery": "100 Delivery Ln",
+            "dimensions": "8x8x8 in",
+            "weight": 3.2,
             "num_packages": 1,
         },
         headers={"Authorization": f"Bearer {admin_token}"},

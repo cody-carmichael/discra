@@ -25,7 +25,14 @@ def make_token(sub: str, org_id: str, groups):
     return f"{header.decode()}.{body.decode()}."
 
 
-def _webhook_payload(org_id: str, external_order_id: str, customer_name: str, address: str):
+def _webhook_payload(
+    org_id: str,
+    external_order_id: str,
+    customer_name: str,
+    pick_up_address: str,
+    delivery: str,
+    reference_number: int,
+):
     return {
         "org_id": org_id,
         "source": "shopify",
@@ -33,7 +40,11 @@ def _webhook_payload(org_id: str, external_order_id: str, customer_name: str, ad
             {
                 "external_order_id": external_order_id,
                 "customer_name": customer_name,
-                "address": address,
+                "reference_number": reference_number,
+                "pick_up_address": pick_up_address,
+                "delivery": delivery,
+                "dimensions": "12x8x6 in",
+                "weight": 6.4,
                 "num_packages": 1,
             }
         ],
@@ -49,7 +60,7 @@ def _test_env(monkeypatch):
 
 
 def test_orders_webhook_rejects_missing_or_bad_token():
-    payload = _webhook_payload("org-1", "ext-1", "Alice", "100 Main")
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 101)
 
     missing = client.post("/webhooks/orders", json=payload)
     assert missing.status_code == 401
@@ -70,13 +81,21 @@ def test_orders_webhook_creates_orders_visible_to_dispatchers():
             {
                 "external_order_id": "ext-1",
                 "customer_name": "Alice",
-                "address": "100 Main",
+                "reference_number": 201,
+                "pick_up_address": "Warehouse A",
+                "delivery": "100 Main",
+                "dimensions": "12x8x6 in",
+                "weight": 6.4,
                 "num_packages": 2,
             },
             {
                 "external_order_id": "ext-2",
                 "customer_name": "Bob",
-                "address": "200 Main",
+                "reference_number": 202,
+                "pick_up_address": "Warehouse B",
+                "delivery": "200 Main",
+                "dimensions": "10x8x5 in",
+                "weight": 4.2,
                 "num_packages": 1,
             },
         ],
@@ -107,7 +126,7 @@ def test_orders_webhook_creates_orders_visible_to_dispatchers():
 def test_orders_webhook_upserts_by_external_id_and_preserves_assignment():
     initial = client.post(
         "/webhooks/orders",
-        json=_webhook_payload("org-1", "ext-1", "Alice", "100 Main"),
+        json=_webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 301),
         headers={"x-orders-webhook-token": "orders-secret"},
     )
     assert initial.status_code == 200
@@ -123,7 +142,7 @@ def test_orders_webhook_upserts_by_external_id_and_preserves_assignment():
 
     update = client.post(
         "/webhooks/orders",
-        json=_webhook_payload("org-1", "ext-1", "Alice Updated", "999 Main"),
+        json=_webhook_payload("org-1", "ext-1", "Alice Updated", "Warehouse Z", "999 Main", 301),
         headers={"x-orders-webhook-token": "orders-secret"},
     )
     assert update.status_code == 200
@@ -138,7 +157,8 @@ def test_orders_webhook_upserts_by_external_id_and_preserves_assignment():
     assert order.status_code == 200
     body = order.json()
     assert body["customer_name"] == "Alice Updated"
-    assert body["address"] == "999 Main"
+    assert body["delivery"] == "999 Main"
+    assert body["pick_up_address"] == "Warehouse Z"
     assert body["status"] == "Assigned"
     assert body["assigned_to"] == "driver-1"
 
@@ -146,12 +166,12 @@ def test_orders_webhook_upserts_by_external_id_and_preserves_assignment():
 def test_orders_webhook_supports_same_external_id_across_orgs():
     org1 = client.post(
         "/webhooks/orders",
-        json=_webhook_payload("org-1", "ext-1", "Alice", "100 Main"),
+        json=_webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 401),
         headers={"x-orders-webhook-token": "orders-secret"},
     )
     org2 = client.post(
         "/webhooks/orders",
-        json=_webhook_payload("org-2", "ext-1", "Bob", "200 Main"),
+        json=_webhook_payload("org-2", "ext-1", "Bob", "Warehouse B", "200 Main", 501),
         headers={"x-orders-webhook-token": "orders-secret"},
     )
     assert org1.status_code == 200

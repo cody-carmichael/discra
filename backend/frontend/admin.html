@@ -58,12 +58,14 @@
       </div>
       <form id="create-order-form" class="form-grid">
         <label class="field"><span>Customer Name</span><input name="customer_name" required></label>
-        <label class="field"><span>Address</span><input name="address" required></label>
+        <label class="field"><span>Reference Number</span><input name="reference_number" type="number" min="1" required></label>
+        <label class="field"><span>Pick Up Address</span><input name="pick_up_address" required></label>
+        <label class="field"><span>Delivery</span><input name="delivery" required></label>
+        <label class="field"><span>Dimensions</span><input name="dimensions" placeholder="e.g. 12x8x5 in" required></label>
+        <label class="field"><span>Weight</span><input name="weight" type="number" step="any" min="0.01" required></label>
         <label class="field"><span>Phone</span><input name="phone"></label>
         <label class="field"><span>Email</span><input name="email" type="email"></label>
         <label class="field"><span>Packages</span><input name="num_packages" type="number" min="1" value="1"></label>
-        <label class="field"><span>Latitude</span><input name="delivery_lat" type="number" step="any"></label>
-        <label class="field"><span>Longitude</span><input name="delivery_lng" type="number" step="any"></label>
         <label class="field field-span-2"><span>Notes</span><textarea name="notes" rows="2"></textarea></label>
         <button class="btn btn-primary field-span-2" type="submit">Create Order</button>
       </form>
@@ -83,6 +85,7 @@
             <tr>
               <th>Order</th>
               <th>Customer</th>
+              <th>Route</th>
               <th>Status</th>
               <th>Assigned</th>
               <th>Assign / Unassign</th>
@@ -117,6 +120,10 @@
         <label class="field"><span>Driver ID</span><input name="driver_id" required></label>
         <label class="field"><span>Start Latitude (optional)</span><input name="start_lat" type="number" step="any"></label>
         <label class="field"><span>Start Longitude (optional)</span><input name="start_lng" type="number" step="any"></label>
+        <label class="field field-span-2">
+          <span>Stops JSON (optional, required if orders have no coordinates)</span>
+          <textarea name="stops_json" rows="4" placeholder='[{"order_id":"id","lat":37.77,"lng":-122.42}]'></textarea>
+        </label>
         <button class="btn btn-accent field-span-2" type="submit">Optimize Assigned Stops</button>
       </form>
       <pre id="route-result" class="claims-view">No route computed yet.</pre>

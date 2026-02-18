@@ -67,6 +67,13 @@ After `sam local start-api`:
 - `POST /dev/backend/webhooks/orders` (public webhook with `x-orders-webhook-token`)
 - `POST /dev/backend/webhooks/stripe` (public webhook)
 
+`POST /dev/backend/orders` now requires:
+- `reference_number` (number)
+- `pick_up_address` (string)
+- `delivery` (string)
+- `dimensions` (string)
+- `weight` (number)
+
 ## Cognito auth parameters
 `template.yaml` now expects these deploy parameters:
 - `CognitoUserPoolId`

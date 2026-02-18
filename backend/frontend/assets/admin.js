@@ -77,13 +77,15 @@
   function normalizeCreatePayload(formData) {
     const payload = {
       customer_name: formData.get("customer_name"),
-      address: formData.get("address"),
+      reference_number: C.toIntOrNull(formData.get("reference_number")),
+      pick_up_address: formData.get("pick_up_address"),
+      delivery: formData.get("delivery"),
+      dimensions: formData.get("dimensions"),
+      weight: C.toNumberOrNull(formData.get("weight")),
       phone: formData.get("phone") || null,
       email: formData.get("email") || null,
       notes: formData.get("notes") || null,
       num_packages: C.toIntOrNull(formData.get("num_packages")) || 1,
-      delivery_lat: C.toNumberOrNull(formData.get("delivery_lat")),
-      delivery_lng: C.toNumberOrNull(formData.get("delivery_lng")),
     };
     return payload;
   }
@@ -123,7 +125,7 @@
   function renderOrders(orders) {
     lastOrders = orders || [];
     if (!lastOrders.length) {
-      el.ordersBody.innerHTML = "<tr><td colspan=\"6\">No orders available.</td></tr>";
+      el.ordersBody.innerHTML = "<tr><td colspan=\"7\">No orders available.</td></tr>";
       return;
     }
 
@@ -140,8 +142,17 @@
         "</td>" +
         "<td>" +
         C.escapeHtml(order.customer_name) +
-        "<br><small>" +
-        C.escapeHtml(order.address) +
+        "<br><small>Ref #" +
+        C.escapeHtml(order.reference_number || "-") +
+        "</small></td>" +
+        "<td><small>Pick Up: " +
+        C.escapeHtml(order.pick_up_address || "-") +
+        "</small><br><small>Delivery: " +
+        C.escapeHtml(order.delivery || "-") +
+        "</small><br><small>Dim: " +
+        C.escapeHtml(order.dimensions || "-") +
+        " | Wt: " +
+        C.escapeHtml(order.weight || "-") +
         "</small></td>" +
         "<td>" +
         C.escapeHtml(order.status) +
@@ -322,6 +333,19 @@
       start_lat: C.toNumberOrNull(formData.get("start_lat")),
       start_lng: C.toNumberOrNull(formData.get("start_lng")),
     };
+    const stopsJson = (formData.get("stops_json") || "").trim();
+    if (stopsJson) {
+      try {
+        const parsedStops = JSON.parse(stopsJson);
+        if (!Array.isArray(parsedStops)) {
+          throw new Error("Stops JSON must be an array.");
+        }
+        payload.stops = parsedStops;
+      } catch (error) {
+        C.showMessage(el.routeMessage, "Invalid stops JSON.", "error");
+        return;
+      }
+    }
     try {
       const result = await C.requestJson(apiBase, "/routes/optimize", {
         method: "POST",

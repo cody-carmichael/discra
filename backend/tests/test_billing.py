@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from backend.app import app
+from backend.audit_store import get_audit_log_store, reset_in_memory_audit_log_store
 from backend.billing_service import reset_in_memory_billing_store
 from backend.repositories import _IN_MEMORY_REPO
 
@@ -33,11 +34,13 @@ def _test_env(monkeypatch):
     monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
     monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
     monkeypatch.setenv("USE_IN_MEMORY_BILLING_STORE", "true")
+    monkeypatch.setenv("USE_IN_MEMORY_AUDIT_LOG_STORE", "true")
     monkeypatch.delenv("STRIPE_WEBHOOK_SECRET", raising=False)
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     monkeypatch.delenv("STRIPE_DISPATCHER_PRICE_ID", raising=False)
     monkeypatch.delenv("STRIPE_DRIVER_PRICE_ID", raising=False)
     reset_in_memory_billing_store()
+    reset_in_memory_audit_log_store()
     _IN_MEMORY_REPO._orgs.clear()
     _IN_MEMORY_REPO._users.clear()
 
@@ -82,6 +85,11 @@ def test_invitation_respects_dispatcher_seat_limit():
     assert second_invite.status_code == 409
     assert "Dispatcher seat limit reached" in second_invite.json()["detail"]
 
+    audit_events = get_audit_log_store().list_events("org-1", limit=10)
+    actions = [event.action for event in audit_events]
+    assert "billing.seats.updated" in actions
+    assert "billing.invitation.created" in actions
+
 
 def test_activation_rechecks_seat_limit():
     admin_token = make_token("admin-1", "org-1", ["Admin"])
@@ -111,6 +119,33 @@ def test_activation_rechecks_seat_limit():
     )
     assert activate.status_code == 409
     assert "Driver seat limit reached for activation" in activate.json()["detail"]
+
+
+def test_activation_writes_audit_event_on_success():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    set_limit = client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 0, "driver_seat_limit": 1},
+        headers=_auth_header(admin_token),
+    )
+    assert set_limit.status_code == 200
+
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": "driver-new", "email": "driver-new@example.com", "role": "Driver"},
+        headers=_auth_header(admin_token),
+    )
+    assert invite.status_code == 200
+    invitation_id = invite.json()["invitation_id"]
+
+    activate = client.post(
+        f"/billing/invitations/{invitation_id}/activate",
+        headers=_auth_header(admin_token),
+    )
+    assert activate.status_code == 200
+
+    audit_events = get_audit_log_store().list_events("org-1", limit=10)
+    assert any(event.action == "billing.invitation.activated" for event in audit_events)
 
 
 def test_webhook_syncs_subscription_limits_from_stripe_event(monkeypatch):
@@ -152,6 +187,11 @@ def test_webhook_syncs_subscription_limits_from_stripe_event(monkeypatch):
     assert body["dispatcher_seats"]["total"] == 2
     assert body["driver_seats"]["total"] == 4
     assert body["stripe_subscription_id"] == "sub_123"
+
+    audit_events = get_audit_log_store().list_events("org-1", limit=10)
+    webhook_events = [event for event in audit_events if event.action == "billing.subscription.webhook_applied"]
+    assert len(webhook_events) == 1
+    assert webhook_events[0].details["event_type"] == "customer.subscription.updated"
 
 
 def test_webhook_requires_signature_when_secret_configured(monkeypatch):

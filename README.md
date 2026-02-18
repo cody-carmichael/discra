@@ -104,6 +104,18 @@ API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
   - signature: `image/png`, `image/jpeg`, `image/webp` (max 2 MB)
 - Metadata is persisted in DynamoDB (`PodArtifactsTable` output).
 
+## Audit logging
+- Sensitive actions are persisted to DynamoDB (`AuditLogsTable`) with:
+  - actor + role
+  - org/target/action
+  - request id (`x-correlation-id` / generated request id)
+  - structured details
+- Current audited actions:
+  - order assignment/unassignment/reassignment
+  - billing seat updates
+  - invitation creation/activation
+  - Stripe subscription webhook seat sync
+
 ## Migration roadmap (incremental PRs)
 1. Python backend skeleton + SAM wiring + health/version parity
 2. Cognito JWT auth + RBAC + Users/Organizations model
@@ -113,4 +125,7 @@ API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 6. Route optimization (Amazon Location matrix + OR-Tools)
 7. Stripe billing + seat enforcement
 8. Minimal Admin/Dispatcher UI + Driver PWA
-9. Mobile apps for Admin/Dispatcher and Driver (iOS/Android) with dispatch, assignment, driver tracking, and offline-first sync
+9. Orders persistence abstraction + DynamoDB-backed order store
+10. External orders webhook hardening (HMAC signature + replay window + batch duplicate checks)
+11. Sensitive-action audit logging (billing + seat management + order reassignment)
+12. Mobile apps for Admin/Dispatcher and Driver (iOS/Android) with dispatch, assignment, driver tracking, and offline-first sync

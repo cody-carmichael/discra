@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -192,6 +192,19 @@ class OrdersWebhookResponse(BaseModel):
     created: int
     updated: int
     order_ids: List[str] = Field(default_factory=list)
+
+
+class AuditLogRecord(BaseModel):
+    org_id: str
+    event_id: str
+    action: str = Field(..., min_length=1, max_length=120)
+    actor_id: Optional[str] = Field(default=None, max_length=128)
+    actor_roles: List[str] = Field(default_factory=list)
+    target_type: Optional[str] = Field(default=None, max_length=80)
+    target_id: Optional[str] = Field(default=None, max_length=128)
+    request_id: Optional[str] = Field(default=None, max_length=128)
+    details: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
 
 
 class PodArtifactType(str, Enum):

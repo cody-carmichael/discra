@@ -1,4 +1,4 @@
-Discra Python backend (`PR1` to `PR8`) for migration from Java Lambda handlers.
+Discra Python backend (`PR1` to `PR11`) for migration from Java Lambda handlers.
 
 ## Implemented so far
 - FastAPI app adapted to Lambda with Mangum (`backend/app.py`).
@@ -44,6 +44,9 @@ Discra Python backend (`PR1` to `PR8`) for migration from Java Lambda handlers.
   - `POST /webhooks/orders` (public with `x-orders-webhook-token`, optional HMAC headers)
   - `POST /webhooks/stripe` (public)
   - Seat limits enforced for Dispatcher/Driver invitations and activation
+- Audit logs:
+  - Sensitive actions persisted to `AuditLogsTable` in DynamoDB
+  - Tracks actor, roles, action, target, request id, and structured details
 - Minimal web UIs:
   - `GET /ui` (workspace picker)
   - `GET /ui/admin` (Admin/Dispatcher console)
@@ -94,6 +97,12 @@ For local billing tests without AWS resources:
 
 ```powershell
 $env:USE_IN_MEMORY_BILLING_STORE="true"
+```
+
+For local audit log tests without AWS resources:
+
+```powershell
+$env:USE_IN_MEMORY_AUDIT_LOG_STORE="true"
 ```
 
 For local order-ingest webhook tests:

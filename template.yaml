@@ -241,6 +241,27 @@ Resources:
         - Key: Env
           Value: dev
 
+  AuditLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-audit-logs-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+        - AttributeName: event_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+        - AttributeName: event_id
+          KeyType: RANGE
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
   PodArtifactsBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -349,6 +370,7 @@ Resources:
           ORDERS_WEBHOOK_TOKEN: !Ref OrdersWebhookToken
           ORDERS_WEBHOOK_HMAC_SECRET: !Ref OrdersWebhookHmacSecret
           ORDERS_WEBHOOK_MAX_SKEW_SECONDS: !Ref OrdersWebhookMaxSkewSeconds
+          AUDIT_LOGS_TABLE: !Ref AuditLogsTable
           COGNITO_HOSTED_UI_DOMAIN: !Ref CognitoHostedUiDomain
           FRONTEND_COGNITO_CLIENT_ID: !Ref CognitoAppClientId
           FRONTEND_MAP_STYLE_URL: !Ref FrontendMapStyleUrl
@@ -369,6 +391,7 @@ Resources:
               - !GetAtt DriverLocationsTable.Arn
               - !GetAtt SeatSubscriptionsTable.Arn
               - !GetAtt SeatInvitationsTable.Arn
+              - !GetAtt AuditLogsTable.Arn
         - Statement:
             Effect: Allow
             Action:
@@ -539,6 +562,10 @@ Outputs:
   SeatInvitationsTableName:
     Description: DynamoDB table for pending/accepted role invitations
     Value: !Ref SeatInvitationsTable
+
+  AuditLogsTableName:
+    Description: DynamoDB table for sensitive-action audit events
+    Value: !Ref AuditLogsTable
 
 
 

@@ -27,7 +27,7 @@
         <h2>Authentication</h2>
         <span id="driver-auth-state" class="status-pill status-idle">No Token</span>
       </div>
-      <p class="panel-help">Use Cognito hosted UI or paste your Driver JWT token.</p>
+      <p class="panel-help">Use Cognito Hosted UI (Auth Code + PKCE) or paste a Driver JWT for local testing.</p>
       <label class="field">
         <span>JWT Token</span>
         <textarea id="driver-jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
@@ -37,7 +37,7 @@
         <button id="driver-clear-token" class="btn btn-ghost">Clear</button>
       </div>
       <details class="auth-config">
-        <summary>Hosted UI login (optional)</summary>
+        <summary>Hosted UI login</summary>
         <label class="field">
           <span>Cognito Hosted UI Domain</span>
           <input id="driver-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
@@ -46,7 +46,10 @@
           <span>Client ID</span>
           <input id="driver-cognito-client-id" placeholder="app client id">
         </label>
-        <button id="driver-login-hosted-ui" class="btn btn-accent">Login with Hosted UI</button>
+        <div class="row">
+          <button id="driver-login-hosted-ui" class="btn btn-accent" type="button">Login with Hosted UI</button>
+          <button id="driver-logout-hosted-ui" class="btn btn-ghost" type="button">Logout Hosted UI</button>
+        </div>
       </details>
       <pre id="driver-claims-view" class="claims-view">No token decoded yet.</pre>
       <p id="driver-auth-message" class="message"></p>

@@ -21,6 +21,8 @@ def test_ui_pages_are_available():
     assert "Discra Pilot UI" in home.text
     assert "Admin and Dispatcher Console" in admin.text
     assert "Driver Workflow" in driver.text
+    assert "logout-hosted-ui" in admin.text
+    assert "driver-logout-hosted-ui" in driver.text
 
 
 def test_ui_assets_and_service_worker_are_served():
@@ -32,6 +34,8 @@ def test_ui_assets_and_service_worker_are_served():
     assert styles_css.status_code == 200
     assert service_worker.status_code == 200
     assert "DiscraCommon" in common_js.text
+    assert "startHostedLogin" in common_js.text
+    assert "consumeHostedLoginCallback" in common_js.text
     assert "CACHE_NAME" in service_worker.text
 
 

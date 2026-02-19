@@ -1,4 +1,4 @@
-Discra Python backend (`PR1` to `PR11`) for migration from Java Lambda handlers.
+Discra Python backend (`PR1` to `PR12`) for migration from Java Lambda handlers.
 
 ## Implemented so far
 - FastAPI app adapted to Lambda with Mangum (`backend/app.py`).
@@ -52,6 +52,7 @@ Discra Python backend (`PR1` to `PR11`) for migration from Java Lambda handlers.
   - `GET /ui/admin` (Admin/Dispatcher console)
   - `GET /ui/driver` (Driver web app with POD + location updates)
   - `GET /ui/config` (frontend config bootstrap for hosted UI and map style)
+  - Hosted UI login/logout uses Cognito Authorization Code + PKCE flow
 
 ## Local development
 ```powershell
@@ -131,6 +132,13 @@ $env:COGNITO_HOSTED_UI_DOMAIN="your-domain.auth.us-east-1.amazoncognito.com"
 $env:FRONTEND_COGNITO_CLIENT_ID="your-app-client-id"
 $env:FRONTEND_MAP_STYLE_URL="https://demotiles.maplibre.org/style.json"
 ```
+
+For Hosted UI login in deployed environments, configure Cognito app client:
+- callback URLs:
+  - `https://<api-domain>/dev/backend/ui/admin`
+  - `https://<api-domain>/dev/backend/ui/driver`
+- logout URLs:
+  - same URLs, or your preferred post-logout page
 
 ## Tests
 ```powershell

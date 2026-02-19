@@ -2,6 +2,7 @@
   const C = window.DiscraCommon;
   const storageKey = "discra_driver_token";
   const apiBase = C.deriveApiBase("/ui/driver");
+  const driverAllowedRoles = ["Driver"];
 
   const el = {
     authState: document.getElementById("driver-auth-state"),
@@ -20,10 +21,65 @@
     cognitoDomain: document.getElementById("driver-cognito-domain"),
     cognitoClientId: document.getElementById("driver-cognito-client-id"),
     loginHostedUi: document.getElementById("driver-login-hosted-ui"),
+    logoutHostedUi: document.getElementById("driver-logout-hosted-ui"),
   };
 
   let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
   let locationTimer = null;
+  let isAuthorizedRole = false;
+
+  function claimsRoles(claims) {
+    if (!claims) {
+      return [];
+    }
+    const groups = claims["cognito:groups"] || claims.groups || [];
+    if (Array.isArray(groups)) {
+      return groups;
+    }
+    if (!groups) {
+      return [];
+    }
+    return [String(groups)];
+  }
+
+  function hasAllowedRole(claims) {
+    const roles = claimsRoles(claims);
+    return roles.some(function (role) {
+      return driverAllowedRoles.indexOf(role) >= 0;
+    });
+  }
+
+  function setInteractiveState(enabled) {
+    el.refreshInbox.disabled = !enabled;
+    el.sendLocationNow.disabled = !enabled;
+    el.startLocationShare.disabled = !enabled;
+    el.stopLocationShare.disabled = !enabled;
+  }
+
+  function evaluateAuthorization(claims) {
+    if (!claims) {
+      isAuthorizedRole = false;
+      setInteractiveState(false);
+      return;
+    }
+    isAuthorizedRole = hasAllowedRole(claims);
+    setInteractiveState(isAuthorizedRole);
+    if (!isAuthorizedRole) {
+      C.showMessage(el.authMessage, "Driver role is required for this workspace.", "error");
+    }
+  }
+
+  function requireAuthorized(messageElement) {
+    if (!token) {
+      C.showMessage(messageElement, "Set a JWT token first.", "error");
+      return false;
+    }
+    if (!isAuthorizedRole) {
+      C.showMessage(messageElement, "Current token does not include Driver role.", "error");
+      return false;
+    }
+    return true;
+  }
 
   function setToken(nextToken) {
     token = C.setStoredToken(storageKey, nextToken);
@@ -38,6 +94,7 @@
       el.authState.classList.add("status-idle");
       el.authState.classList.remove("status-live");
       el.claims.textContent = "No token decoded yet.";
+      evaluateAuthorization(null);
       return;
     }
     const roles = C.tokenRoleSummary(claims);
@@ -45,6 +102,7 @@
     el.authState.classList.remove("status-idle");
     el.authState.classList.add("status-live");
     el.claims.textContent = JSON.stringify(claims, null, 2);
+    evaluateAuthorization(claims);
   }
 
   async function loadUiConfig() {
@@ -221,8 +279,7 @@
   }
 
   async function refreshInbox() {
-    if (!token) {
-      C.showMessage(el.ordersMessage, "Set a JWT token first.", "error");
+    if (!requireAuthorized(el.ordersMessage)) {
       renderOrders([]);
       return;
     }
@@ -324,8 +381,7 @@
   }
 
   async function sendLocationUpdate() {
-    if (!token) {
-      C.showMessage(el.locationStatus, "Set a JWT token first.", "error");
+    if (!requireAuthorized(el.locationStatus)) {
       return;
     }
     const location = await getCurrentPosition();
@@ -351,6 +407,9 @@
 
   function startLocationShare() {
     if (locationTimer) {
+      return;
+    }
+    if (!requireAuthorized(el.locationStatus)) {
       return;
     }
     sendLocationUpdate();
@@ -385,8 +444,7 @@
     if (!orderId) {
       return;
     }
-    if (!token) {
-      C.showMessage(el.ordersMessage, "Set a JWT token first.", "error");
+    if (!requireAuthorized(el.ordersMessage)) {
       return;
     }
 
@@ -411,18 +469,51 @@
     }
   }
 
-  function launchHostedLogin() {
+  function hostedFlowConfig() {
     const redirectUri = window.location.origin + window.location.pathname;
-    const loginUrl = C.buildHostedLoginUrl({
+    return {
       domain: el.cognitoDomain.value.trim(),
       clientId: el.cognitoClientId.value.trim(),
       redirectUri,
-    });
+      storageKey,
+    };
+  }
+
+  async function launchHostedLogin() {
+    const loginUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!loginUrl) {
       C.showMessage(el.authMessage, "Hosted UI domain + client id are required.", "error");
       return;
     }
     window.location.assign(loginUrl);
+  }
+
+  async function finishHostedLoginCallback() {
+    const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
+    if (result.status === "success") {
+      setToken(result.token || "");
+      C.showMessage(el.authMessage, "Hosted UI login complete.", "success");
+      return;
+    }
+    if (result.status === "error") {
+      C.showMessage(el.authMessage, result.message || "Hosted UI login failed.", "error");
+    }
+  }
+
+  function launchHostedLogout() {
+    const logoutUri = window.location.origin + window.location.pathname;
+    const logoutUrl = C.buildHostedLogoutUrl({
+      domain: el.cognitoDomain.value.trim(),
+      clientId: el.cognitoClientId.value.trim(),
+      logoutUri,
+    });
+    stopLocationShare();
+    setToken("");
+    renderOrders([]);
+    C.showMessage(el.authMessage, "Token cleared.", "success");
+    if (logoutUrl) {
+      window.location.assign(logoutUrl);
+    }
   }
 
   function registerServiceWorker() {
@@ -436,10 +527,16 @@
 
   async function bootstrap() {
     el.token.value = token;
+    setInteractiveState(false);
     renderClaims();
     registerServiceWorker();
     await loadUiConfig();
-    await refreshInbox();
+    await finishHostedLoginCallback();
+    if (isAuthorizedRole) {
+      await refreshInbox();
+    } else {
+      renderOrders([]);
+    }
   }
 
   el.saveToken.addEventListener("click", function () {
@@ -455,7 +552,12 @@
   el.sendLocationNow.addEventListener("click", sendLocationUpdate);
   el.startLocationShare.addEventListener("click", startLocationShare);
   el.stopLocationShare.addEventListener("click", stopLocationShare);
-  el.loginHostedUi.addEventListener("click", launchHostedLogin);
+  el.loginHostedUi.addEventListener("click", function () {
+    launchHostedLogin().catch(function (error) {
+      C.showMessage(el.authMessage, error.message, "error");
+    });
+  });
+  el.logoutHostedUi.addEventListener("click", launchHostedLogout);
 
   bootstrap();
 })();

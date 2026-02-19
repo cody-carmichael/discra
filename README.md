@@ -35,6 +35,18 @@ pip install -r requirements.txt
 uvicorn app:app --reload --port 8000
 ```
 
+## Mobile app local run (React Native + Expo)
+```powershell
+cd mobile
+npm install
+npm run start
+```
+
+The mobile app stores:
+- API base URL (expected format: `.../dev/backend`)
+- JWT token
+- workspace mode (`Admin/Dispatcher` or `Driver`)
+
 ## Endpoint checks
 After `sam local start-api`:
 
@@ -141,4 +153,5 @@ Hosted UI setup notes:
 11. Sensitive-action audit logging (billing + seat management + order reassignment)
 12. Hosted UI auth-code + PKCE login/logout for Admin/Dispatcher and Driver web apps
 13. Mobile-ready Admin/Dispatcher PWA (responsive dispatch cards + installable web app + offline asset cache)
-14. Native mobile apps for Admin/Dispatcher and Driver (iOS/Android) with offline-first sync
+14. Native mobile app baseline (React Native/Expo) for Admin/Dispatcher dispatch + driver tracking and Driver inbox/status/location
+15. Mobile hardening: Cognito hosted login deep links, driver POD capture/signature, offline sync/retry

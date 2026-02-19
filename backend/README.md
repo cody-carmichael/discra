@@ -1,4 +1,4 @@
-Discra Python backend (`PR1` to `PR13`) for migration from Java Lambda handlers.
+Discra Python backend (`PR1` to `PR14`) for migration from Java Lambda handlers.
 
 ## Implemented so far
 - FastAPI app adapted to Lambda with Mangum (`backend/app.py`).
@@ -56,6 +56,10 @@ Discra Python backend (`PR1` to `PR13`) for migration from Java Lambda handlers.
   - `GET /ui/config` (frontend config bootstrap for hosted UI and map style)
   - Hosted UI login/logout uses Cognito Authorization Code + PKCE flow
   - Admin/Dispatcher view includes mobile-optimized dispatch cards for assign/unassign/status actions
+- Native mobile companion app:
+  - React Native/Expo app in `mobile/`
+  - Admin/Dispatcher: mobile dispatch + driver tracking
+  - Driver: inbox/status/location updates
 
 ## Local development
 ```powershell

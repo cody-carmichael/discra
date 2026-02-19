@@ -27,7 +27,7 @@
         <h2>Authentication</h2>
         <span id="auth-state" class="status-pill status-idle">No Token</span>
       </div>
-      <p class="panel-help">Use Cognito hosted UI or paste a JWT token from your test user.</p>
+      <p class="panel-help">Use Cognito Hosted UI (Auth Code + PKCE) or paste a JWT token for local testing.</p>
       <label class="field">
         <span>JWT Token</span>
         <textarea id="jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
@@ -37,7 +37,7 @@
         <button id="clear-token" class="btn btn-ghost">Clear</button>
       </div>
       <details class="auth-config">
-        <summary>Hosted UI login (optional)</summary>
+        <summary>Hosted UI login</summary>
         <label class="field">
           <span>Cognito Hosted UI Domain</span>
           <input id="cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
@@ -46,7 +46,10 @@
           <span>Client ID</span>
           <input id="cognito-client-id" placeholder="app client id">
         </label>
-        <button id="login-hosted-ui" class="btn btn-accent">Login with Hosted UI</button>
+        <div class="row">
+          <button id="login-hosted-ui" class="btn btn-accent" type="button">Login with Hosted UI</button>
+          <button id="logout-hosted-ui" class="btn btn-ghost" type="button">Logout Hosted UI</button>
+        </div>
       </details>
       <pre id="claims-view" class="claims-view">No token decoded yet.</pre>
       <p id="auth-message" class="message"></p>

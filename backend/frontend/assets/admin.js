@@ -3,6 +3,7 @@
   const storageKey = "discra_admin_token";
   const apiBase = C.deriveApiBase("/ui/admin");
   const defaultMapStyle = "https://demotiles.maplibre.org/style.json";
+  const adminAllowedRoles = ["Admin", "Dispatcher"];
 
   const el = {
     authState: document.getElementById("auth-state"),
@@ -27,12 +28,71 @@
     cognitoDomain: document.getElementById("cognito-domain"),
     cognitoClientId: document.getElementById("cognito-client-id"),
     loginHostedUi: document.getElementById("login-hosted-ui"),
+    logoutHostedUi: document.getElementById("logout-hosted-ui"),
   };
 
   let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
   let map = null;
   let mapMarkers = [];
   let lastOrders = [];
+  let isAuthorizedRole = false;
+
+  function claimsRoles(claims) {
+    if (!claims) {
+      return [];
+    }
+    const groups = claims["cognito:groups"] || claims.groups || [];
+    if (Array.isArray(groups)) {
+      return groups;
+    }
+    if (!groups) {
+      return [];
+    }
+    return [String(groups)];
+  }
+
+  function hasAllowedRole(claims) {
+    const roles = claimsRoles(claims);
+    return roles.some(function (role) {
+      return adminAllowedRoles.indexOf(role) >= 0;
+    });
+  }
+
+  function setInteractiveState(enabled) {
+    el.createForm.querySelectorAll("input, textarea, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
+    el.refreshOrders.disabled = !enabled;
+    el.refreshDrivers.disabled = !enabled;
+    el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
+  }
+
+  function evaluateAuthorization(claims) {
+    if (!claims) {
+      isAuthorizedRole = false;
+      setInteractiveState(false);
+      return;
+    }
+    isAuthorizedRole = hasAllowedRole(claims);
+    setInteractiveState(isAuthorizedRole);
+    if (!isAuthorizedRole) {
+      C.showMessage(el.authMessage, "This console requires Admin or Dispatcher role.", "error");
+    }
+  }
+
+  function requireAuthorized(messageElement) {
+    if (!token) {
+      C.showMessage(messageElement, "Set a JWT token first.", "error");
+      return false;
+    }
+    if (!isAuthorizedRole) {
+      C.showMessage(messageElement, "Current token does not have Admin/Dispatcher role.", "error");
+      return false;
+    }
+    return true;
+  }
 
   function setToken(nextToken) {
     token = C.setStoredToken(storageKey, nextToken);
@@ -47,6 +107,7 @@
       el.authState.classList.add("status-idle");
       el.authState.classList.remove("status-live");
       el.claims.textContent = "No token decoded yet.";
+      evaluateAuthorization(null);
       return;
     }
     const roles = C.tokenRoleSummary(claims);
@@ -54,6 +115,7 @@
     el.authState.classList.remove("status-idle");
     el.authState.classList.add("status-live");
     el.claims.textContent = JSON.stringify(claims, null, 2);
+    evaluateAuthorization(claims);
   }
 
   async function loadUiConfig() {
@@ -92,8 +154,7 @@
 
   async function createOrder(event) {
     event.preventDefault();
-    if (!token) {
-      C.showMessage(el.createMessage, "Set a JWT token first.", "error");
+    if (!requireAuthorized(el.createMessage)) {
       return;
     }
     const formData = new FormData(el.createForm);
@@ -191,9 +252,8 @@
   }
 
   async function refreshOrders() {
-    if (!token) {
+    if (!requireAuthorized(el.ordersMessage)) {
       renderOrders([]);
-      C.showMessage(el.ordersMessage, "Set a JWT token first.", "error");
       return;
     }
     try {
@@ -302,8 +362,7 @@
   }
 
   async function refreshDrivers() {
-    if (!token) {
-      C.showMessage(el.driversMessage, "Set a JWT token first.", "error");
+    if (!requireAuthorized(el.driversMessage)) {
       return;
     }
     try {
@@ -318,8 +377,7 @@
 
   async function optimizeRoute(event) {
     event.preventDefault();
-    if (!token) {
-      C.showMessage(el.routeMessage, "Set a JWT token first.", "error");
+    if (!requireAuthorized(el.routeMessage)) {
       return;
     }
     const formData = new FormData(el.optimizeForm);
@@ -369,8 +427,7 @@
     if (!action || !orderId) {
       return;
     }
-    if (!token) {
-      C.showMessage(el.ordersMessage, "Set a JWT token first.", "error");
+    if (!requireAuthorized(el.ordersMessage)) {
       return;
     }
 
@@ -398,13 +455,18 @@
     }
   }
 
-  function launchHostedLogin() {
+  function hostedFlowConfig() {
     const redirectUri = window.location.origin + window.location.pathname;
-    const loginUrl = C.buildHostedLoginUrl({
+    return {
       domain: el.cognitoDomain.value.trim(),
       clientId: el.cognitoClientId.value.trim(),
       redirectUri,
-    });
+      storageKey,
+    };
+  }
+
+  async function launchHostedLogin() {
+    const loginUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!loginUrl) {
       C.showMessage(el.authMessage, "Hosted UI domain + client id are required.", "error");
       return;
@@ -412,12 +474,47 @@
     window.location.assign(loginUrl);
   }
 
+  async function finishHostedLoginCallback() {
+    const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
+    if (result.status === "success") {
+      setToken(result.token || "");
+      C.showMessage(el.authMessage, "Hosted UI login complete.", "success");
+      return;
+    }
+    if (result.status === "error") {
+      C.showMessage(el.authMessage, result.message || "Hosted UI login failed.", "error");
+    }
+  }
+
+  function launchHostedLogout() {
+    const logoutUri = window.location.origin + window.location.pathname;
+    const logoutUrl = C.buildHostedLogoutUrl({
+      domain: el.cognitoDomain.value.trim(),
+      clientId: el.cognitoClientId.value.trim(),
+      logoutUri,
+    });
+    setToken("");
+    renderOrders([]);
+    renderDriverList([]);
+    C.showMessage(el.authMessage, "Token cleared.", "success");
+    if (logoutUrl) {
+      window.location.assign(logoutUrl);
+    }
+  }
+
   async function bootstrap() {
     el.token.value = token;
+    setInteractiveState(false);
     renderClaims();
     await loadUiConfig();
-    await refreshOrders();
-    await refreshDrivers();
+    await finishHostedLoginCallback();
+    if (isAuthorizedRole) {
+      await refreshOrders();
+      await refreshDrivers();
+    } else {
+      renderOrders([]);
+      renderDriverList([]);
+    }
   }
 
   el.saveToken.addEventListener("click", function () {
@@ -433,7 +530,12 @@
   el.ordersBody.addEventListener("click", onOrderActionClick);
   el.refreshDrivers.addEventListener("click", refreshDrivers);
   el.optimizeForm.addEventListener("submit", optimizeRoute);
-  el.loginHostedUi.addEventListener("click", launchHostedLogin);
+  el.loginHostedUi.addEventListener("click", function () {
+    launchHostedLogin().catch(function (error) {
+      C.showMessage(el.authMessage, error.message, "error");
+    });
+  });
+  el.logoutHostedUi.addEventListener("click", launchHostedLogout);
   el.mapStyleUrl.addEventListener("change", function () {
     if (map) {
       map.setStyle(el.mapStyleUrl.value || defaultMapStyle);

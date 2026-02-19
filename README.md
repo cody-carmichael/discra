@@ -89,6 +89,13 @@ After `sam local start-api`:
 API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 `/backend/health` and `/backend/version` remain public for parity checks.
 
+Hosted UI setup notes:
+- Configure Cognito app client callback URLs with:
+  - `https://<api-domain>/dev/backend/ui/admin`
+  - `https://<api-domain>/dev/backend/ui/driver`
+- Configure logout URLs with the same page URLs (or your preferred landing page).
+- Frontend uses Authorization Code + PKCE flow and exchanges `code` at Cognito `/oauth2/token`.
+
 ## Orders webhook signing
 - Base auth always requires `x-orders-webhook-token`.
 - Optional hardened mode: set `OrdersWebhookHmacSecret` and send:
@@ -128,4 +135,5 @@ API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 9. Orders persistence abstraction + DynamoDB-backed order store
 10. External orders webhook hardening (HMAC signature + replay window + batch duplicate checks)
 11. Sensitive-action audit logging (billing + seat management + order reassignment)
-12. Mobile apps for Admin/Dispatcher and Driver (iOS/Android) with dispatch, assignment, driver tracking, and offline-first sync
+12. Hosted UI auth-code + PKCE login/logout for Admin/Dispatcher and Driver web apps
+13. Mobile apps for Admin/Dispatcher and Driver (iOS/Android) with dispatch, assignment, driver tracking, and offline-first sync

@@ -154,4 +154,5 @@ Hosted UI setup notes:
 12. Hosted UI auth-code + PKCE login/logout for Admin/Dispatcher and Driver web apps
 13. Mobile-ready Admin/Dispatcher PWA (responsive dispatch cards + installable web app + offline asset cache)
 14. Native mobile app baseline (React Native/Expo) for Admin/Dispatcher dispatch + driver tracking and Driver inbox/status/location
-15. Mobile hardening: Cognito hosted login deep links, driver POD capture/signature, offline sync/retry
+15. Mobile hardening: Hosted UI deep-link login/logout and offline queue sync for driver status/location
+16. Mobile POD workflow: camera/photo capture and recipient signature capture with upload to `/pod/*` endpoints

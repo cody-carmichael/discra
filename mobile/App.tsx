@@ -35,8 +35,27 @@ type DriverLocationRecord = {
   timestamp: string;
 };
 
-const STORAGE_KEY = "discra_mobile_config_v1";
+type QueuedOperation =
+  | {
+      id: string;
+      created_at: string;
+      type: "driver_status";
+      order_id: string;
+      status: string;
+    }
+  | {
+      id: string;
+      created_at: string;
+      type: "driver_location";
+      lat: number;
+      lng: number;
+      heading: number | null;
+    };
+
+const STORAGE_KEY = "discra_mobile_config_v2";
+const STORAGE_QUEUE_KEY = "discra_mobile_queue_v1";
 const DEFAULT_API_BASE = "http://127.0.0.1:3000/dev/backend";
+const REDIRECT_URI = "discra-mobile://auth/callback";
 const DRIVER_STATUS = ["PickedUp", "EnRoute", "Failed", "Delivered"];
 const ADMIN_STATUS = ["Assigned", "PickedUp", "EnRoute", "Delivered", "Failed"];
 
@@ -59,6 +78,18 @@ function formatTime(value?: string): string {
     return value;
   }
   return parsed.toLocaleString();
+}
+
+function normalizeDomain(value: string): string {
+  return (value || "").trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+}
+
+function parseHashParams(url: string): URLSearchParams {
+  const hashIndex = url.indexOf("#");
+  if (hashIndex < 0) {
+    return new URLSearchParams();
+  }
+  return new URLSearchParams(url.slice(hashIndex + 1));
 }
 
 type ApiRequestOptions = {
@@ -102,6 +133,8 @@ async function apiRequest<T>(apiBase: string, path: string, options: ApiRequestO
 export default function App() {
   const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
   const [token, setToken] = useState("");
+  const [cognitoDomain, setCognitoDomain] = useState("");
+  const [cognitoClientId, setCognitoClientId] = useState("");
   const [workspace, setWorkspace] = useState<Workspace>("admin");
   const [statusMessage, setStatusMessage] = useState("Configure API base and JWT to begin.");
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
@@ -110,25 +143,48 @@ export default function App() {
   const [inboxOrders, setInboxOrders] = useState<OrderRecord[]>([]);
   const [drivers, setDrivers] = useState<DriverLocationRecord[]>([]);
   const [assignInputs, setAssignInputs] = useState<Record<string, string>>({});
+  const [queue, setQueue] = useState<QueuedOperation[]>([]);
   const [autoShareOn, setAutoShareOn] = useState(false);
   const locationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((raw) => {
-        if (!mounted || !raw) {
+    Promise.all([AsyncStorage.getItem(STORAGE_KEY), AsyncStorage.getItem(STORAGE_QUEUE_KEY)])
+      .then(([configRaw, queueRaw]) => {
+        if (!mounted) {
           return;
         }
-        const parsed = JSON.parse(raw) as { apiBase?: string; token?: string; workspace?: Workspace };
-        if (parsed.apiBase) {
-          setApiBase(parsed.apiBase);
+
+        if (configRaw) {
+          const parsed = JSON.parse(configRaw) as {
+            apiBase?: string;
+            token?: string;
+            workspace?: Workspace;
+            cognitoDomain?: string;
+            cognitoClientId?: string;
+          };
+          if (parsed.apiBase) {
+            setApiBase(parsed.apiBase);
+          }
+          if (parsed.token) {
+            setToken(parsed.token);
+          }
+          if (parsed.workspace === "admin" || parsed.workspace === "driver") {
+            setWorkspace(parsed.workspace);
+          }
+          if (parsed.cognitoDomain) {
+            setCognitoDomain(parsed.cognitoDomain);
+          }
+          if (parsed.cognitoClientId) {
+            setCognitoClientId(parsed.cognitoClientId);
+          }
         }
-        if (parsed.token) {
-          setToken(parsed.token);
-        }
-        if (parsed.workspace === "admin" || parsed.workspace === "driver") {
-          setWorkspace(parsed.workspace);
+
+        if (queueRaw) {
+          const parsedQueue = JSON.parse(queueRaw) as QueuedOperation[];
+          if (Array.isArray(parsedQueue)) {
+            setQueue(parsedQueue);
+          }
         }
       })
       .catch(() => {
@@ -151,9 +207,15 @@ export default function App() {
         apiBase: normalizeApiBase(apiBase),
         token: token.trim(),
         workspace,
+        cognitoDomain: normalizeDomain(cognitoDomain),
+        cognitoClientId: cognitoClientId.trim(),
       })
     ).catch(() => undefined);
-  }, [apiBase, token, workspace]);
+  }, [apiBase, token, workspace, cognitoDomain, cognitoClientId]);
+
+  useEffect(() => {
+    AsyncStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify(queue)).catch(() => undefined);
+  }, [queue]);
 
   useEffect(() => {
     return () => {
@@ -163,7 +225,24 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const subscription = Linking.addEventListener("url", (event) => {
+      consumeHostedCallback(event.url);
+    });
+    Linking.getInitialURL()
+      .then((initialUrl) => {
+        if (initialUrl) {
+          consumeHostedCallback(initialUrl);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   const hasConfig = useMemo(() => !!normalizeApiBase(apiBase) && !!token.trim(), [apiBase, token]);
+  const tokenRoleText = useMemo(() => roleSummary(token), [token]);
 
   function setMessage(message: string) {
     setStatusMessage(message);
@@ -176,6 +255,115 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function enqueueOperation(operation: QueuedOperation) {
+    setQueue((current) => [...current, operation]);
+  }
+
+  async function executeQueuedOperation(operation: QueuedOperation) {
+    if (operation.type === "driver_status") {
+      await apiRequest<OrderRecord>(apiBase, `/orders/${operation.order_id}/status`, {
+        method: "POST",
+        token,
+        json: { status: operation.status },
+      });
+      return;
+    }
+    await apiRequest(apiBase, "/drivers/location", {
+      method: "POST",
+      token,
+      json: {
+        lat: operation.lat,
+        lng: operation.lng,
+        heading: operation.heading,
+      },
+    });
+  }
+
+  async function flushQueue(silent: boolean = false) {
+    if (!hasConfig) {
+      if (!silent) {
+        setMessage("API base and JWT token are required.");
+      }
+      return;
+    }
+    if (!queue.length) {
+      if (!silent) {
+        setMessage("No queued driver events.");
+      }
+      return;
+    }
+
+    await withLoading(async () => {
+      let synced = 0;
+      for (let index = 0; index < queue.length; index += 1) {
+        const operation = queue[index];
+        try {
+          await executeQueuedOperation(operation);
+          synced += 1;
+        } catch (error) {
+          const remaining = queue.slice(index);
+          setQueue(remaining);
+          if (!silent) {
+            setMessage(`Synced ${synced} event(s). ${remaining.length} still queued.`);
+          }
+          return;
+        }
+      }
+      setQueue([]);
+      if (!silent) {
+        setMessage(`Synced ${synced} queued event(s).`);
+      }
+    });
+  }
+
+  async function startHostedLogin() {
+    const domain = normalizeDomain(cognitoDomain);
+    const clientId = cognitoClientId.trim();
+    if (!domain || !clientId) {
+      setMessage("Cognito Hosted UI domain and client ID are required.");
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set("client_id", clientId);
+    params.set("response_type", "token");
+    params.set("scope", "openid email profile");
+    params.set("redirect_uri", REDIRECT_URI);
+    await Linking.openURL(`https://${domain}/login?${params.toString()}`);
+  }
+
+  async function logoutHostedLogin() {
+    const domain = normalizeDomain(cognitoDomain);
+    const clientId = cognitoClientId.trim();
+    setToken("");
+    if (!domain || !clientId) {
+      setMessage("Token cleared.");
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set("client_id", clientId);
+    params.set("logout_uri", REDIRECT_URI);
+    await Linking.openURL(`https://${domain}/logout?${params.toString()}`);
+    setMessage("Hosted UI logout launched.");
+  }
+
+  function consumeHostedCallback(url: string) {
+    const params = parseHashParams(url);
+    const idToken = params.get("id_token");
+    const accessToken = params.get("access_token");
+    const error = params.get("error");
+    const errorDescription = params.get("error_description");
+    if (error) {
+      setMessage(errorDescription || error);
+      return;
+    }
+    const nextToken = (idToken || accessToken || "").trim();
+    if (!nextToken) {
+      return;
+    }
+    setToken(nextToken);
+    setMessage("Hosted UI login complete.");
   }
 
   async function refreshAdminData() {
@@ -203,6 +391,7 @@ export default function App() {
       const response = await apiRequest<OrderRecord[]>(apiBase, "/orders/driver/inbox", { token });
       setInboxOrders(response || []);
       setMessage(`Loaded ${response.length} assigned orders.`);
+      await flushQueue(true);
     });
   }
 
@@ -234,11 +423,26 @@ export default function App() {
 
   async function updateOrderStatus(orderId: string, status: string, nextWorkspace: Workspace) {
     await withLoading(async () => {
-      await apiRequest<OrderRecord>(apiBase, `/orders/${orderId}/status`, {
-        method: "POST",
-        token,
-        json: { status },
-      });
+      try {
+        await apiRequest<OrderRecord>(apiBase, `/orders/${orderId}/status`, {
+          method: "POST",
+          token,
+          json: { status },
+        });
+      } catch (error) {
+        if (nextWorkspace === "driver") {
+          enqueueOperation({
+            id: `${Date.now()}-status-${orderId}-${status}`,
+            created_at: new Date().toISOString(),
+            type: "driver_status",
+            order_id: orderId,
+            status,
+          });
+          setMessage(`Queued status ${status} for retry sync.`);
+          return;
+        }
+        throw error;
+      }
       if (nextWorkspace === "admin") {
         await refreshAdminData();
       } else {
@@ -265,18 +469,31 @@ export default function App() {
         typeof location.coords.heading === "number" && Number.isFinite(location.coords.heading)
           ? location.coords.heading
           : null;
-      await apiRequest(apiBase, "/drivers/location", {
-        method: "POST",
-        token,
-        json: {
-          lat: location.coords.latitude,
-          lng: location.coords.longitude,
-          heading: headingValue,
-        },
-      });
-      setMessage(
-        `Sent location at ${new Date().toLocaleTimeString()} (${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)}).`
-      );
+      const payload = {
+        lat: location.coords.latitude,
+        lng: location.coords.longitude,
+        heading: headingValue,
+      };
+      try {
+        await apiRequest(apiBase, "/drivers/location", {
+          method: "POST",
+          token,
+          json: payload,
+        });
+        setMessage(
+          `Sent location at ${new Date().toLocaleTimeString()} (${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)}).`
+        );
+      } catch (error) {
+        enqueueOperation({
+          id: `${Date.now()}-location`,
+          created_at: new Date().toISOString(),
+          type: "driver_location",
+          lat: payload.lat,
+          lng: payload.lng,
+          heading: payload.heading,
+        });
+        setMessage("Location send failed; queued for retry.");
+      }
     });
   }
 
@@ -338,6 +555,34 @@ export default function App() {
             placeholder={DEFAULT_API_BASE}
             placeholderTextColor="#6f8d98"
           />
+          <Text style={styles.label}>Cognito Hosted UI Domain</Text>
+          <TextInput
+            value={cognitoDomain}
+            onChangeText={setCognitoDomain}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+            placeholder="your-domain.auth.us-east-1.amazoncognito.com"
+            placeholderTextColor="#6f8d98"
+          />
+          <Text style={styles.label}>Cognito App Client ID</Text>
+          <TextInput
+            value={cognitoClientId}
+            onChangeText={setCognitoClientId}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.input}
+            placeholder="app client id"
+            placeholderTextColor="#6f8d98"
+          />
+          <View style={styles.row}>
+            <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => startHostedLogin().catch(onError)}>
+              <Text style={styles.buttonText}>Login Hosted UI</Text>
+            </Pressable>
+            <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => logoutHostedLogin().catch(onError)}>
+              <Text style={styles.buttonGhostText}>Logout Hosted UI</Text>
+            </Pressable>
+          </View>
           <Text style={styles.label}>JWT Token</Text>
           <TextInput
             value={token}
@@ -346,7 +591,7 @@ export default function App() {
             autoCorrect={false}
             style={[styles.input, styles.tokenInput]}
             multiline
-            placeholder="Paste Cognito JWT"
+            placeholder="Paste JWT or login via Hosted UI"
             placeholderTextColor="#6f8d98"
           />
           <View style={styles.toggleRow}>
@@ -364,6 +609,8 @@ export default function App() {
             </Pressable>
           </View>
           <Text style={styles.metaText}>Use `/dev/backend` API base from deployed SAM endpoint.</Text>
+          {tokenRoleText ? <Text style={styles.metaText}>Token roles: {tokenRoleText}</Text> : null}
+          {queue.length ? <Text style={styles.metaText}>Queued driver events: {queue.length}</Text> : null}
         </View>
 
         {workspace === "admin" ? (
@@ -382,7 +629,7 @@ export default function App() {
               <View key={order.id} style={styles.orderCard}>
                 <Text style={styles.orderTitle}>{order.customer_name}</Text>
                 <Text style={styles.orderMeta}>
-                  #{order.reference_number} • {order.status} • Assigned: {order.assigned_to || "-"}
+                  #{order.reference_number} - {order.status} - Assigned: {order.assigned_to || "-"}
                 </Text>
                 <Text style={styles.orderMeta}>Pick Up: {order.pick_up_address}</Text>
                 <Text style={styles.orderMeta}>Delivery: {order.delivery}</Text>
@@ -450,6 +697,9 @@ export default function App() {
               <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => sendDriverLocation().catch(onError)}>
                 <Text style={styles.buttonText}>Send Location</Text>
               </Pressable>
+              <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => flushQueue(false).catch(onError)}>
+                <Text style={styles.buttonGhostText}>Sync Queue ({queue.length})</Text>
+              </Pressable>
               <Pressable
                 style={[styles.button, autoShareOn ? styles.buttonDanger : styles.buttonGhost]}
                 onPress={toggleAutoShare}
@@ -463,7 +713,7 @@ export default function App() {
               <View key={order.id} style={styles.orderCard}>
                 <Text style={styles.orderTitle}>{order.customer_name}</Text>
                 <Text style={styles.orderMeta}>
-                  #{order.reference_number} • {order.status}
+                  #{order.reference_number} - {order.status}
                 </Text>
                 <Text style={styles.orderMeta}>Pick Up: {order.pick_up_address}</Text>
                 <Text style={styles.orderMeta}>Delivery: {order.delivery}</Text>

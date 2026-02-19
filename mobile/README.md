@@ -1,4 +1,4 @@
-# Discra Mobile (PR14)
+# Discra Mobile (PR14-PR15)
 
 Native mobile app for Admin/Dispatcher and Driver workflows using React Native + Expo.
 
@@ -13,6 +13,9 @@ Native mobile app for Admin/Dispatcher and Driver workflows using React Native +
   - Update status (`PickedUp`, `EnRoute`, `Failed`, `Delivered`)
   - Send GPS location updates
   - Optional auto-share every 60 seconds
+- Mobile auth and resilience:
+  - Hosted UI login/logout deep links (`discra-mobile://auth/callback`)
+  - Offline queue for driver status/location events with manual sync (`Sync Queue`)
 
 ## Run locally
 ```powershell
@@ -31,3 +34,11 @@ For local SAM:
 - `http://127.0.0.1:3000/dev/backend`
 
 Paste a valid Cognito JWT with matching role claims for each workspace.
+
+## Hosted UI mobile setup
+Set these in app session:
+- `Cognito Hosted UI Domain` (example: `your-domain.auth.us-east-1.amazoncognito.com`)
+- `Cognito App Client ID`
+
+In Cognito app client settings, add callback/logout URL:
+- `discra-mobile://auth/callback`

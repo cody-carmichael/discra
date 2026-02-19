@@ -16,6 +16,7 @@
     createMessage: document.getElementById("create-order-message"),
     refreshOrders: document.getElementById("refresh-orders"),
     ordersBody: document.getElementById("orders-tbody"),
+    ordersMobile: document.getElementById("orders-mobile"),
     ordersMessage: document.getElementById("orders-message"),
     refreshDrivers: document.getElementById("refresh-drivers"),
     driversMessage: document.getElementById("drivers-message"),
@@ -66,6 +67,15 @@
     el.refreshDrivers.disabled = !enabled;
     el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
       element.disabled = !enabled;
+    });
+  }
+
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator)) {
+      return;
+    }
+    navigator.serviceWorker.register("admin-sw.js", { scope: "./" }).catch(function () {
+      // Keep dispatch workflow available even if worker registration fails.
     });
   }
 
@@ -128,10 +138,10 @@
         el.cognitoClientId.value = config.cognito_client_id;
       }
       el.mapStyleUrl.value = (config && config.map_style_url) || defaultMapStyle;
-      initMap();
+      ensureMap();
     } catch (error) {
       el.mapStyleUrl.value = defaultMapStyle;
-      initMap();
+      ensureMap();
       C.showMessage(el.authMessage, error.message, "error");
     }
   }
@@ -187,6 +197,7 @@
     lastOrders = orders || [];
     if (!lastOrders.length) {
       el.ordersBody.innerHTML = "<tr><td colspan=\"7\">No orders available.</td></tr>";
+      el.ordersMobile.innerHTML = "<p class=\"panel-help\">No orders available.</p>";
       return;
     }
 
@@ -249,6 +260,61 @@
       );
     });
     el.ordersBody.innerHTML = rows.join("");
+
+    const mobileCards = lastOrders.map(function (order) {
+      const statusOptions = C.STATUS_VALUES.map(function (statusValue) {
+        const selected = statusValue === order.status ? "selected" : "";
+        return "<option " + selected + " value=\"" + statusValue + "\">" + statusValue + "</option>";
+      }).join("");
+
+      return (
+        "<article class=\"mobile-order-card\" data-order-id=\"" +
+        C.escapeHtml(order.id) +
+        "\">" +
+        "<h3>" +
+        C.escapeHtml(order.customer_name) +
+        "</h3>" +
+        "<p class=\"mobile-order-meta\">" +
+        "Order: " +
+        C.escapeHtml(order.id) +
+        "<br>Ref #: " +
+        C.escapeHtml(order.reference_number || "-") +
+        "<br>Pick Up: " +
+        C.escapeHtml(order.pick_up_address || "-") +
+        "<br>Delivery: " +
+        C.escapeHtml(order.delivery || "-") +
+        "<br>Status: " +
+        C.escapeHtml(order.status) +
+        "<br>Assigned: " +
+        C.escapeHtml(order.assigned_to || "-") +
+        "</p>" +
+        "<div class=\"mobile-order-actions\">" +
+        "<input class=\"compact-input\" data-driver-id=\"" +
+        C.escapeHtml(order.id) +
+        "\" placeholder=\"driver sub\" value=\"" +
+        C.escapeHtml(order.assigned_to || "") +
+        "\">" +
+        "<div class=\"actions-stack\">" +
+        "<button class=\"btn btn-primary\" data-action=\"assign\" data-order-id=\"" +
+        C.escapeHtml(order.id) +
+        "\">Assign</button>" +
+        "<button class=\"btn btn-ghost\" data-action=\"unassign\" data-order-id=\"" +
+        C.escapeHtml(order.id) +
+        "\">Unassign</button>" +
+        "</div>" +
+        "<select class=\"compact-input\" data-status-id=\"" +
+        C.escapeHtml(order.id) +
+        "\">" +
+        statusOptions +
+        "</select>" +
+        "<button class=\"btn btn-accent\" data-action=\"status\" data-order-id=\"" +
+        C.escapeHtml(order.id) +
+        "\">Update Status</button>" +
+        "</div>" +
+        "</article>"
+      );
+    });
+    el.ordersMobile.innerHTML = mobileCards.join("");
   }
 
   async function refreshOrders() {
@@ -433,7 +499,10 @@
 
     try {
       if (action === "assign") {
-        const input = el.ordersBody.querySelector("input[data-driver-id=\"" + orderId + "\"]");
+        const contextCard = target.closest(".mobile-order-card");
+        const input = contextCard
+          ? contextCard.querySelector("input[data-driver-id=\"" + orderId + "\"]")
+          : el.ordersBody.querySelector("input[data-driver-id=\"" + orderId + "\"]");
         const driverId = input ? input.value.trim() : "";
         if (!driverId) {
           throw new Error("Driver ID is required to assign an order.");
@@ -442,7 +511,10 @@
       } else if (action === "unassign") {
         await unassignOrder(orderId);
       } else if (action === "status") {
-        const select = el.ordersBody.querySelector("select[data-status-id=\"" + orderId + "\"]");
+        const contextCard = target.closest(".mobile-order-card");
+        const select = contextCard
+          ? contextCard.querySelector("select[data-status-id=\"" + orderId + "\"]")
+          : el.ordersBody.querySelector("select[data-status-id=\"" + orderId + "\"]");
         const statusValue = select ? select.value : "";
         if (!statusValue) {
           throw new Error("Choose a status first.");
@@ -506,6 +578,7 @@
     el.token.value = token;
     setInteractiveState(false);
     renderClaims();
+    registerServiceWorker();
     await loadUiConfig();
     await finishHostedLoginCallback();
     if (isAuthorizedRole) {
@@ -528,6 +601,7 @@
   el.createForm.addEventListener("submit", createOrder);
   el.refreshOrders.addEventListener("click", refreshOrders);
   el.ordersBody.addEventListener("click", onOrderActionClick);
+  el.ordersMobile.addEventListener("click", onOrderActionClick);
   el.refreshDrivers.addEventListener("click", refreshDrivers);
   el.optimizeForm.addEventListener("submit", optimizeRoute);
   el.loginHostedUi.addEventListener("click", function () {

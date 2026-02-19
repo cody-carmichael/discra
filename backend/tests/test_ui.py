@@ -28,14 +28,23 @@ def test_ui_pages_are_available():
 def test_ui_assets_and_service_worker_are_served():
     common_js = client.get("/ui/assets/common.js")
     styles_css = client.get("/ui/assets/styles.css")
+    admin_manifest = client.get("/ui/assets/admin-manifest.json")
+    driver_manifest = client.get("/ui/assets/driver-manifest.json")
+    admin_service_worker = client.get("/ui/admin-sw.js")
     service_worker = client.get("/ui/driver-sw.js")
 
     assert common_js.status_code == 200
     assert styles_css.status_code == 200
+    assert admin_manifest.status_code == 200
+    assert driver_manifest.status_code == 200
+    assert admin_service_worker.status_code == 200
     assert service_worker.status_code == 200
     assert "DiscraCommon" in common_js.text
     assert "startHostedLogin" in common_js.text
     assert "consumeHostedLoginCallback" in common_js.text
+    assert "DiscraAdmin" in admin_manifest.text
+    assert "DiscraDriver" in driver_manifest.text
+    assert "discra-admin-v1" in admin_service_worker.text
     assert "CACHE_NAME" in service_worker.text
 
 

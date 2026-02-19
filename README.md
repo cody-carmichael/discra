@@ -12,7 +12,9 @@ Discra is an AWS SAM application migrating from Java Lambda handlers to a Python
   - `GET /backend/version`
   - `GET /backend/ui` (public frontend entry)
   - `GET /backend/ui/admin` (Admin/Dispatcher console)
+  - `GET /backend/ui/admin-sw.js` (Admin/Dispatcher PWA service worker)
   - `GET /backend/ui/driver` (Driver app)
+  - `GET /backend/ui/driver-sw.js` (Driver PWA service worker)
   - protected business endpoints under `/backend/*` using Cognito JWT + app-layer RBAC
 
 SAM template: `template.yaml`
@@ -41,6 +43,8 @@ After `sam local start-api`:
 - `curl http://127.0.0.1:3000/dev/backend/health`
 - `curl http://127.0.0.1:3000/dev/backend/version`
 - open `http://127.0.0.1:3000/dev/backend/ui`
+- open `http://127.0.0.1:3000/dev/backend/ui/admin` (mobile-installable dispatch console)
+- open `http://127.0.0.1:3000/dev/backend/ui/driver` (mobile-installable driver app)
 - `curl -H "x-admin-token: <ADMIN_TOKEN>" http://127.0.0.1:3000/dev/admin/ping`
 
 ### Protected endpoints (JWT required)
@@ -136,4 +140,5 @@ Hosted UI setup notes:
 10. External orders webhook hardening (HMAC signature + replay window + batch duplicate checks)
 11. Sensitive-action audit logging (billing + seat management + order reassignment)
 12. Hosted UI auth-code + PKCE login/logout for Admin/Dispatcher and Driver web apps
-13. Mobile apps for Admin/Dispatcher and Driver (iOS/Android) with dispatch, assignment, driver tracking, and offline-first sync
+13. Mobile-ready Admin/Dispatcher PWA (responsive dispatch cards + installable web app + offline asset cache)
+14. Native mobile apps for Admin/Dispatcher and Driver (iOS/Android) with offline-first sync

@@ -85,6 +85,10 @@ def create_app() -> FastAPI:
     async def ui_admin():
         return FileResponse(str(FRONTEND_DIR / "admin.html"))
 
+    @app.get("/ui/admin-sw.js", include_in_schema=False)
+    async def ui_admin_service_worker():
+        return FileResponse(str(FRONTEND_DIR / "admin-sw.js"), media_type="application/javascript")
+
     @app.get("/ui/driver", include_in_schema=False)
     async def ui_driver():
         return FileResponse(str(FRONTEND_DIR / "driver.html"))

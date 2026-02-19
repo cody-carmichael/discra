@@ -428,6 +428,12 @@ Resources:
             ApiId: !Ref DiscraApi
             Path: /backend/ui/admin
             Method: GET
+        BackendUiAdminServiceWorkerGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/ui/admin-sw.js
+            Method: GET
         BackendUiDriverGet:
           Type: HttpApi
           Properties:

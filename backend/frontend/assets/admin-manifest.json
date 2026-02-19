@@ -1,0 +1,10 @@
+{
+  "name": "Discra Dispatch Console",
+  "short_name": "DiscraAdmin",
+  "start_url": "../admin",
+  "scope": "../",
+  "display": "standalone",
+  "background_color": "#07181f",
+  "theme_color": "#27c8d7",
+  "description": "Discra admin and dispatcher mobile workflow for assigning orders and tracking drivers."
+}

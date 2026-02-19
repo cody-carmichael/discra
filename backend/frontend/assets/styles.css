@@ -249,6 +249,11 @@ select:focus {
   border-radius: 12px;
 }
 
+.orders-mobile {
+  display: none;
+  gap: 0.7rem;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -280,6 +285,29 @@ th {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+.mobile-order-card {
+  border: 1px solid rgba(122, 184, 201, 0.3);
+  border-radius: 14px;
+  padding: 0.72rem;
+  background: rgba(8, 23, 30, 0.66);
+}
+
+.mobile-order-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.94rem;
+}
+
+.mobile-order-meta {
+  margin: 0 0 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.83rem;
+}
+
+.mobile-order-actions {
+  display: grid;
+  gap: 0.4rem;
 }
 
 .chip {
@@ -409,6 +437,14 @@ canvas.signature-pad {
   .topbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .table-wrap {
+    display: none;
+  }
+
+  .orders-mobile {
+    display: grid;
   }
 }
 

@@ -10,3 +10,9 @@ target/
 __pycache__/
 .pytest_cache/
 *.py[cod]
+
+# Mobile app artifacts
+mobile/node_modules/
+mobile/.expo/
+mobile/.expo-shared/
+mobile/dist/

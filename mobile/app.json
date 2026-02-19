@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Discra Mobile",
+    "slug": "discra-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#07181f"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "scheme": "discra-mobile",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.discra.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Discra uses your location to update active driver position."
+      }
+    },
+    "android": {
+      "package": "com.discra.mobile",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {}
+  }
+}

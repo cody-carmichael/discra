@@ -157,3 +157,4 @@ Hosted UI setup notes:
 15. Mobile hardening: Hosted UI deep-link login/logout and offline queue sync for driver status/location
 16. Mobile POD workflow: driver photo + signature capture and upload to `/pod/*` endpoints with delivery completion
 17. Mobile map view: in-app Admin/Dispatcher map visualization + route context for active drivers
+18. Mobile release hardening: in-app validation, Expo build profiles, smoke-test checklist, and deployment notes

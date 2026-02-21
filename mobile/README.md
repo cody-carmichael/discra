@@ -1,4 +1,4 @@
-# Discra Mobile (PR14-PR16)
+# Discra Mobile (PR14-PR17)
 
 Native mobile app for Admin/Dispatcher and Driver workflows using React Native + Expo.
 
@@ -8,6 +8,8 @@ Native mobile app for Admin/Dispatcher and Driver workflows using React Native +
   - Assign and unassign drivers
   - Update order status
   - Track active drivers (latest coordinates + timestamp)
+  - In-app map visualization for active drivers
+  - Route context panel for selected driver + quick open to first-stop navigation
 - Driver mobile workflow:
   - View assigned inbox
   - Update status (`PickedUp`, `EnRoute`, `Failed`, `Delivered`)
@@ -51,3 +53,6 @@ In Cognito app client settings, add callback/logout URL:
 ## Permissions
 - Camera: POD photo capture
 - Location: driver tracking and POD location metadata
+
+## Route context note
+- Route polyline appears when delivery values contain coordinate text in the form: `lat,lng`.

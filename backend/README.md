@@ -1,4 +1,4 @@
-Discra Python backend (`PR1` to `PR15`) for migration from Java Lambda handlers.
+Discra Python backend (`PR1` to `PR16`) for migration from Java Lambda handlers.
 
 ## Implemented so far
 - FastAPI app adapted to Lambda with Mangum (`backend/app.py`).
@@ -59,7 +59,7 @@ Discra Python backend (`PR1` to `PR15`) for migration from Java Lambda handlers.
 - Native mobile companion app:
   - React Native/Expo app in `mobile/`
   - Admin/Dispatcher: mobile dispatch + driver tracking
-  - Driver: inbox/status/location updates
+  - Driver: inbox/status/location updates + POD photo/signature capture + POD metadata submit
   - Hosted UI deep-link login/logout and offline queue sync for driver status/location events
 
 ## Local development

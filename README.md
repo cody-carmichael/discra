@@ -155,4 +155,5 @@ Hosted UI setup notes:
 13. Mobile-ready Admin/Dispatcher PWA (responsive dispatch cards + installable web app + offline asset cache)
 14. Native mobile app baseline (React Native/Expo) for Admin/Dispatcher dispatch + driver tracking and Driver inbox/status/location
 15. Mobile hardening: Hosted UI deep-link login/logout and offline queue sync for driver status/location
-16. Mobile POD workflow: camera/photo capture and recipient signature capture with upload to `/pod/*` endpoints
+16. Mobile POD workflow: driver photo + signature capture and upload to `/pod/*` endpoints with delivery completion
+17. Mobile map view: in-app Admin/Dispatcher map visualization + route context for active drivers

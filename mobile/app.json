@@ -16,12 +16,15 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.discra.mobile",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Discra uses your location to update active driver position."
+        "NSLocationWhenInUseUsageDescription": "Discra uses your location to update active driver position.",
+        "NSCameraUsageDescription": "Discra uses your camera for proof-of-delivery photos.",
+        "NSPhotoLibraryUsageDescription": "Discra may save proof-of-delivery photos."
       }
     },
     "android": {
       "package": "com.discra.mobile",
       "permissions": [
+        "CAMERA",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
       ]

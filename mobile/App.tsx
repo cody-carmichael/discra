@@ -1,10 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system";
+import * as ImagePicker from "expo-image-picker";
 import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Linking,
+  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -13,6 +17,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import SignatureScreen from "react-native-signature-canvas";
 
 type Workspace = "admin" | "driver";
 
@@ -33,6 +38,13 @@ type DriverLocationRecord = {
   lat: number;
   lng: number;
   timestamp: string;
+};
+
+type PodPresignUpload = {
+  artifact_type: "photo" | "signature";
+  key: string;
+  url: string;
+  fields: Record<string, string>;
 };
 
 type QueuedOperation =
@@ -92,6 +104,49 @@ function parseHashParams(url: string): URLSearchParams {
   return new URLSearchParams(url.slice(hashIndex + 1));
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const parts = (token || "").split(".");
+  if (parts.length < 2 || !parts[1] || typeof globalThis.atob !== "function") {
+    return null;
+  }
+  try {
+    const normalized = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    return JSON.parse(globalThis.atob(padded)) as Record<string, unknown>;
+  } catch (error) {
+    return null;
+  }
+}
+
+function roleSummary(token: string): string {
+  const payload = decodeJwtPayload(token);
+  if (!payload) {
+    return "";
+  }
+  const groups = payload["cognito:groups"] ?? payload.groups;
+  if (Array.isArray(groups)) {
+    return groups.join(", ");
+  }
+  if (groups) {
+    return String(groups);
+  }
+  return "";
+}
+
+function inferContentType(uri: string, fallback: string): string {
+  const lower = (uri || "").toLowerCase();
+  if (lower.endsWith(".png")) {
+    return "image/png";
+  }
+  if (lower.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  return fallback;
+}
+
 type ApiRequestOptions = {
   method?: "GET" | "POST";
   token: string;
@@ -143,6 +198,11 @@ export default function App() {
   const [inboxOrders, setInboxOrders] = useState<OrderRecord[]>([]);
   const [drivers, setDrivers] = useState<DriverLocationRecord[]>([]);
   const [assignInputs, setAssignInputs] = useState<Record<string, string>>({});
+  const [podNotes, setPodNotes] = useState<Record<string, string>>({});
+  const [podPhotoUris, setPodPhotoUris] = useState<Record<string, string>>({});
+  const [podSignatureData, setPodSignatureData] = useState<Record<string, string>>({});
+  const [podSubmitting, setPodSubmitting] = useState<Record<string, boolean>>({});
+  const [signatureOrderId, setSignatureOrderId] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueuedOperation[]>([]);
   const [autoShareOn, setAutoShareOn] = useState(false);
   const locationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -364,6 +424,237 @@ export default function App() {
     }
     setToken(nextToken);
     setMessage("Hosted UI login complete.");
+  }
+
+  async function capturePodPhoto(orderId: string) {
+    const cameraPerm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!cameraPerm.granted) {
+      setMessage("Camera permission is required for POD photo.");
+      return;
+    }
+    const captured = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (captured.canceled || !captured.assets.length) {
+      return;
+    }
+    const asset = captured.assets[0];
+    if (!asset.uri) {
+      setMessage("Could not capture photo.");
+      return;
+    }
+    setPodPhotoUris((current) => ({ ...current, [orderId]: asset.uri }));
+    setMessage("POD photo captured.");
+  }
+
+  function onSignatureSaved(signatureDataUrl: string) {
+    if (!signatureOrderId) {
+      return;
+    }
+    setPodSignatureData((current) => ({ ...current, [signatureOrderId]: signatureDataUrl }));
+    setSignatureOrderId(null);
+    setMessage("Signature saved.");
+  }
+
+  function clearPodPhoto(orderId: string) {
+    setPodPhotoUris((current) => {
+      const next = { ...current };
+      delete next[orderId];
+      return next;
+    });
+  }
+
+  function clearPodSignature(orderId: string) {
+    setPodSignatureData((current) => {
+      const next = { ...current };
+      delete next[orderId];
+      return next;
+    });
+  }
+
+  async function writeSignatureTempFile(orderId: string, dataUrl: string) {
+    const marker = "base64,";
+    const markerIndex = dataUrl.indexOf(marker);
+    if (markerIndex < 0) {
+      throw new Error("Invalid signature payload.");
+    }
+    const base64Data = dataUrl.slice(markerIndex + marker.length);
+    const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+    if (!directory) {
+      throw new Error("No writable cache directory available.");
+    }
+    const fileUri = `${directory}pod-signature-${orderId}-${Date.now()}.png`;
+    await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const info = await FileSystem.getInfoAsync(fileUri, { size: true });
+    if (!info.exists) {
+      throw new Error("Signature file creation failed.");
+    }
+    const size = typeof info.size === "number" && Number.isFinite(info.size) ? info.size : 0;
+    return {
+      uri: fileUri,
+      size,
+      contentType: "image/png",
+      fileName: `signature-${Date.now()}.png`,
+      cleanup: async () => {
+        await FileSystem.deleteAsync(fileUri, { idempotent: true });
+      },
+    };
+  }
+
+  async function uploadPresignedPost(upload: PodPresignUpload, fileUri: string, fileName: string, contentType: string) {
+    const formData = new FormData();
+    Object.entries(upload.fields || {}).forEach(([key, value]) => {
+      formData.append(key, value);
+    });
+    formData.append("file", {
+      uri: fileUri,
+      name: fileName,
+      type: contentType,
+    } as any);
+    const response = await fetch(upload.url, {
+      method: "POST",
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new Error(`POD upload failed (${response.status})`);
+    }
+  }
+
+  async function maybeGetPodLocation() {
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        return null;
+      }
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const headingValue =
+        typeof location.coords.heading === "number" && Number.isFinite(location.coords.heading)
+          ? location.coords.heading
+          : null;
+      return {
+        lat: location.coords.latitude,
+        lng: location.coords.longitude,
+        heading: headingValue,
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function submitPod(order: OrderRecord) {
+    if (!hasConfig) {
+      setMessage("API base and JWT token are required.");
+      return;
+    }
+    const orderId = order.id;
+    const photoUri = podPhotoUris[orderId];
+    const signatureDataUrl = podSignatureData[orderId];
+    if (!photoUri && !signatureDataUrl) {
+      setMessage("Capture a photo or signature before submitting POD.");
+      return;
+    }
+
+    setPodSubmitting((current) => ({ ...current, [orderId]: true }));
+    const cleanupTasks: Array<() => Promise<void>> = [];
+    try {
+      const artifacts: Array<{
+        artifact_type: "photo" | "signature";
+        content_type: string;
+        file_size_bytes: number;
+        file_name: string;
+        uri: string;
+      }> = [];
+
+      if (photoUri) {
+        const info = await FileSystem.getInfoAsync(photoUri, { size: true });
+        if (!info.exists) {
+          throw new Error("POD photo file is unavailable.");
+        }
+        const size = typeof info.size === "number" && Number.isFinite(info.size) ? info.size : 0;
+        artifacts.push({
+          artifact_type: "photo",
+          content_type: inferContentType(photoUri, "image/jpeg"),
+          file_size_bytes: size,
+          file_name: `photo-${Date.now()}.jpg`,
+          uri: photoUri,
+        });
+      }
+
+      if (signatureDataUrl) {
+        const tempFile = await writeSignatureTempFile(orderId, signatureDataUrl);
+        cleanupTasks.push(tempFile.cleanup);
+        artifacts.push({
+          artifact_type: "signature",
+          content_type: tempFile.contentType,
+          file_size_bytes: tempFile.size,
+          file_name: tempFile.fileName,
+          uri: tempFile.uri,
+        });
+      }
+
+      const presign = await apiRequest<{ uploads: PodPresignUpload[] }>(apiBase, "/pod/presign", {
+        method: "POST",
+        token,
+        json: {
+          order_id: orderId,
+          artifacts: artifacts.map((item) => ({
+            artifact_type: item.artifact_type,
+            content_type: item.content_type,
+            file_size_bytes: Math.max(item.file_size_bytes, 1),
+            file_name: item.file_name,
+          })),
+        },
+      });
+
+      const photoKeys: string[] = [];
+      const signatureKeys: string[] = [];
+      for (let index = 0; index < presign.uploads.length; index += 1) {
+        const upload = presign.uploads[index];
+        const artifact = artifacts[index];
+        if (!artifact) {
+          continue;
+        }
+        await uploadPresignedPost(upload, artifact.uri, artifact.file_name, artifact.content_type);
+        if (upload.artifact_type === "photo") {
+          photoKeys.push(upload.key);
+        } else {
+          signatureKeys.push(upload.key);
+        }
+      }
+
+      const location = await maybeGetPodLocation();
+      await apiRequest(apiBase, "/pod/metadata", {
+        method: "POST",
+        token,
+        json: {
+          order_id: orderId,
+          photo_keys: photoKeys,
+          signature_keys: signatureKeys,
+          notes: podNotes[orderId] || null,
+          location: location || null,
+        },
+      });
+
+      await updateOrderStatus(orderId, "Delivered", "driver");
+      clearPodPhoto(orderId);
+      clearPodSignature(orderId);
+      setPodNotes((current) => ({ ...current, [orderId]: "" }));
+      setMessage("POD submitted and delivery marked complete.");
+    } finally {
+      for (const cleanup of cleanupTasks) {
+        try {
+          await cleanup();
+        } catch (error) {
+          // no-op
+        }
+      }
+      setPodSubmitting((current) => ({ ...current, [orderId]: false }));
+    }
   }
 
   async function refreshAdminData() {
@@ -728,11 +1019,90 @@ export default function App() {
                     </Pressable>
                   ))}
                 </View>
+                <View style={styles.podSection}>
+                  <Text style={styles.podTitle}>Proof Of Delivery</Text>
+                  {podPhotoUris[order.id] ? (
+                    <Image source={{ uri: podPhotoUris[order.id] }} style={styles.podPhotoPreview} />
+                  ) : (
+                    <Text style={styles.metaText}>No POD photo captured.</Text>
+                  )}
+                  <View style={styles.row}>
+                    <Pressable
+                      style={[styles.button, styles.buttonPrimary]}
+                      onPress={() => capturePodPhoto(order.id).catch(onError)}
+                    >
+                      <Text style={styles.buttonText}>Capture Photo</Text>
+                    </Pressable>
+                    {podPhotoUris[order.id] ? (
+                      <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => clearPodPhoto(order.id)}>
+                        <Text style={styles.buttonGhostText}>Clear Photo</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <View style={styles.row}>
+                    <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => setSignatureOrderId(order.id)}>
+                      <Text style={styles.buttonText}>
+                        {podSignatureData[order.id] ? "Re-Capture Signature" : "Capture Signature"}
+                      </Text>
+                    </Pressable>
+                    {podSignatureData[order.id] ? (
+                      <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => clearPodSignature(order.id)}>
+                        <Text style={styles.buttonGhostText}>Clear Signature</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <Text style={styles.metaText}>
+                    {podSignatureData[order.id] ? "Signature captured." : "No signature captured."}
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={podNotes[order.id] || ""}
+                    onChangeText={(value) => setPodNotes((current) => ({ ...current, [order.id]: value }))}
+                    placeholder="Delivery notes"
+                    placeholderTextColor="#6f8d98"
+                    multiline
+                  />
+                  <Pressable
+                    style={[styles.button, styles.buttonPrimary]}
+                    onPress={() => submitPod(order).catch(onError)}
+                    disabled={!!podSubmitting[order.id]}
+                  >
+                    <Text style={styles.buttonText}>
+                      {podSubmitting[order.id] ? "Submitting POD..." : "Submit POD + Mark Delivered"}
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             ))}
             {inboxOrders.length === 0 ? <Text style={styles.metaText}>No assigned orders.</Text> : null}
           </View>
         )}
+
+        <Modal visible={!!signatureOrderId} transparent animationType="slide" onRequestClose={() => setSignatureOrderId(null)}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={styles.sectionTitle}>Capture Signature</Text>
+              <View style={styles.signatureWrap}>
+                <SignatureScreen
+                  onOK={onSignatureSaved}
+                  onEmpty={() => setMessage("Draw a signature before saving.")}
+                  clearText="Clear"
+                  confirmText="Save"
+                  descriptionText="Sign below"
+                  autoClear
+                  webStyle={`
+                    .m-signature-pad--footer { background: #0d2832; }
+                    .m-signature-pad--body { border: 1px solid #2e5664; }
+                    .button { background: #27c8d7; color: #04232b; border-radius: 8px; }
+                  `}
+                />
+              </View>
+              <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => setSignatureOrderId(null)}>
+                <Text style={styles.buttonGhostText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
 
         {isLoading ? <ActivityIndicator /> : null}
         <Text style={styles.footerMessage}>{statusMessage}</Text>
@@ -913,6 +1283,48 @@ const styles = StyleSheet.create({
   driverTitle: {
     color: "#f1fbff",
     fontWeight: "700",
+  },
+  podSection: {
+    borderTopWidth: 1,
+    borderTopColor: "#2f5967",
+    paddingTop: 8,
+    gap: 8,
+  },
+  podTitle: {
+    color: "#d2eaf5",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  podPhotoPreview: {
+    width: "100%",
+    height: 160,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#2f5967",
+    backgroundColor: "#0e2630",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(4, 16, 24, 0.85)",
+    justifyContent: "center",
+    padding: 16,
+  },
+  modalCard: {
+    backgroundColor: "#0d2832",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#2f5967",
+    padding: 12,
+    gap: 10,
+    maxHeight: "85%",
+  },
+  signatureWrap: {
+    height: 280,
+    borderRadius: 8,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#2f5967",
+    backgroundColor: "#f7fcff",
   },
   metaText: {
     color: "#9ab7c3",

@@ -17,6 +17,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import MapView, { Marker, Polyline, Region } from "react-native-maps";
 import SignatureScreen from "react-native-signature-canvas";
 
 type Workspace = "admin" | "driver";
@@ -38,6 +39,11 @@ type DriverLocationRecord = {
   lat: number;
   lng: number;
   timestamp: string;
+};
+
+type RouteContextPoint = {
+  latitude: number;
+  longitude: number;
 };
 
 type PodPresignUpload = {
@@ -147,6 +153,62 @@ function inferContentType(uri: string, fallback: string): string {
   return fallback;
 }
 
+function buildMapRegion(drivers: DriverLocationRecord[]): Region | null {
+  if (!drivers.length) {
+    return null;
+  }
+  if (drivers.length === 1) {
+    return {
+      latitude: drivers[0].lat,
+      longitude: drivers[0].lng,
+      latitudeDelta: 0.05,
+      longitudeDelta: 0.05,
+    };
+  }
+
+  const latitudes = drivers.map((driver) => driver.lat);
+  const longitudes = drivers.map((driver) => driver.lng);
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLng = Math.min(...longitudes);
+  const maxLng = Math.max(...longitudes);
+
+  const latitude = (minLat + maxLat) / 2;
+  const longitude = (minLng + maxLng) / 2;
+  const latitudeDelta = Math.max((maxLat - minLat) * 1.5, 0.04);
+  const longitudeDelta = Math.max((maxLng - minLng) * 1.5, 0.04);
+
+  return {
+    latitude,
+    longitude,
+    latitudeDelta,
+    longitudeDelta,
+  };
+}
+
+function tryParseLatLng(value: string): RouteContextPoint | null {
+  const text = (value || "").trim();
+  if (!text) {
+    return null;
+  }
+  const match = text.match(/^(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)$/);
+  if (!match) {
+    return null;
+  }
+  const lat = Number.parseFloat(match[1]);
+  const lng = Number.parseFloat(match[3]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return null;
+  }
+  return {
+    latitude: lat,
+    longitude: lng,
+  };
+}
+
 type ApiRequestOptions = {
   method?: "GET" | "POST";
   token: string;
@@ -205,6 +267,8 @@ export default function App() {
   const [signatureOrderId, setSignatureOrderId] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueuedOperation[]>([]);
   const [autoShareOn, setAutoShareOn] = useState(false);
+  const [adminMapRegion, setAdminMapRegion] = useState<Region | null>(null);
+  const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
   const locationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -303,6 +367,29 @@ export default function App() {
 
   const hasConfig = useMemo(() => !!normalizeApiBase(apiBase) && !!token.trim(), [apiBase, token]);
   const tokenRoleText = useMemo(() => roleSummary(token), [token]);
+  const selectedDriver = useMemo(
+    () => drivers.find((driver) => driver.driver_id === selectedDriverId) || null,
+    [drivers, selectedDriverId]
+  );
+  const selectedDriverOrders = useMemo(() => {
+    if (!selectedDriverId) {
+      return [];
+    }
+    return orders.filter((order) => order.assigned_to === selectedDriverId);
+  }, [orders, selectedDriverId]);
+  const selectedDriverRoutePoints = useMemo<RouteContextPoint[]>(() => {
+    if (!selectedDriver) {
+      return [];
+    }
+    const points: RouteContextPoint[] = [{ latitude: selectedDriver.lat, longitude: selectedDriver.lng }];
+    for (const order of selectedDriverOrders) {
+      const parsed = tryParseLatLng(order.delivery);
+      if (parsed) {
+        points.push(parsed);
+      }
+    }
+    return points;
+  }, [selectedDriver, selectedDriverOrders]);
 
   function setMessage(message: string) {
     setStatusMessage(message);
@@ -669,8 +756,46 @@ export default function App() {
       ]);
       setOrders(ordersResponse || []);
       setDrivers(driversResponse || []);
+      setAdminMapRegion(buildMapRegion(driversResponse || []));
+      setSelectedDriverId((current) => {
+        if (!driversResponse || !driversResponse.length) {
+          return null;
+        }
+        if (current && driversResponse.some((driver) => driver.driver_id === current)) {
+          return current;
+        }
+        return driversResponse[0].driver_id;
+      });
       setMessage(`Loaded ${ordersResponse.length} orders and ${driversResponse.length} active drivers.`);
     });
+  }
+
+  function focusDriverOnMap(driver: DriverLocationRecord) {
+    setSelectedDriverId(driver.driver_id);
+    setAdminMapRegion({
+      latitude: driver.lat,
+      longitude: driver.lng,
+      latitudeDelta: 0.04,
+      longitudeDelta: 0.04,
+    });
+  }
+
+  async function openSelectedDriverRoute() {
+    if (!selectedDriver) {
+      setMessage("Select an active driver first.");
+      return;
+    }
+    if (!selectedDriverOrders.length) {
+      setMessage("Selected driver has no assigned orders.");
+      return;
+    }
+    const firstStop = selectedDriverOrders[0];
+    const params = new URLSearchParams();
+    params.set("api", "1");
+    params.set("origin", `${selectedDriver.lat},${selectedDriver.lng}`);
+    params.set("destination", firstStop.delivery);
+    params.set("travelmode", "driving");
+    await Linking.openURL(`https://www.google.com/maps/dir/?${params.toString()}`);
   }
 
   async function refreshDriverInbox() {
@@ -916,6 +1041,55 @@ export default function App() {
                 <Text style={styles.buttonText}>Refresh Orders + Drivers</Text>
               </Pressable>
             </View>
+            {drivers.length && adminMapRegion ? (
+              <MapView
+                style={styles.mapView}
+                region={adminMapRegion}
+                onRegionChangeComplete={setAdminMapRegion}
+                showsUserLocation={false}
+              >
+                {drivers.map((driver) => (
+                  <Marker
+                    key={`marker-${driver.driver_id}`}
+                    coordinate={{ latitude: driver.lat, longitude: driver.lng }}
+                    pinColor={driver.driver_id === selectedDriverId ? "#ffb347" : "#27c8d7"}
+                    title={driver.driver_id}
+                    description={formatTime(driver.timestamp)}
+                  />
+                ))}
+                {selectedDriverRoutePoints.length > 1 ? (
+                  <Polyline coordinates={selectedDriverRoutePoints} strokeColor="#ffb347" strokeWidth={3} />
+                ) : null}
+              </MapView>
+            ) : (
+              <Text style={styles.metaText}>No active drivers to display on the map.</Text>
+            )}
+            <View style={styles.routeContextCard}>
+              <Text style={styles.sectionSubtitle}>Route Context</Text>
+              <Text style={styles.metaText}>
+                Selected driver: {selectedDriver ? selectedDriver.driver_id : "None"}
+              </Text>
+              <Text style={styles.metaText}>
+                Map route line appears when delivery values include `lat,lng` coordinates.
+              </Text>
+              <View style={styles.row}>
+                <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => openSelectedDriverRoute().catch(onError)}>
+                  <Text style={styles.buttonGhostText}>Open First Stop Route</Text>
+                </Pressable>
+              </View>
+              {selectedDriverOrders.length ? (
+                selectedDriverOrders.map((order) => (
+                  <View key={`route-order-${order.id}`} style={styles.routeStopCard}>
+                    <Text style={styles.routeStopTitle}>
+                      #{order.reference_number} - {order.customer_name} ({order.status})
+                    </Text>
+                    <Text style={styles.metaText}>Delivery: {order.delivery}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.metaText}>No assigned stops for selected driver.</Text>
+              )}
+            </View>
             {orders.map((order) => (
               <View key={order.id} style={styles.orderCard}>
                 <Text style={styles.orderTitle}>{order.customer_name}</Text>
@@ -963,8 +1137,8 @@ export default function App() {
             {drivers.map((driver) => (
               <Pressable
                 key={driver.driver_id}
-                style={styles.driverCard}
-                onPress={() => Linking.openURL(`https://maps.google.com/?q=${driver.lat},${driver.lng}`)}
+                style={[styles.driverCard, driver.driver_id === selectedDriverId && styles.driverCardSelected]}
+                onPress={() => focusDriverOnMap(driver)}
               >
                 <Text style={styles.driverTitle}>{driver.driver_id}</Text>
                 <Text style={styles.metaText}>
@@ -1280,9 +1454,43 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: "#123440",
   },
+  driverCardSelected: {
+    borderColor: "#ffb347",
+    backgroundColor: "#1a3c49",
+  },
   driverTitle: {
     color: "#f1fbff",
     fontWeight: "700",
+  },
+  mapView: {
+    width: "100%",
+    height: 220,
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#2f5967",
+    backgroundColor: "#102731",
+  },
+  routeContextCard: {
+    borderWidth: 1,
+    borderColor: "#2f5967",
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
+    backgroundColor: "#123440",
+  },
+  routeStopCard: {
+    borderWidth: 1,
+    borderColor: "#355f6d",
+    borderRadius: 8,
+    padding: 8,
+    backgroundColor: "#173948",
+  },
+  routeStopTitle: {
+    color: "#dff4ff",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 4,
   },
   podSection: {
     borderTopWidth: 1,

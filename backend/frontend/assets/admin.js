@@ -29,6 +29,7 @@
     billingSummary: document.getElementById("billing-summary"),
     billingSeatsForm: document.getElementById("billing-seats-form"),
     billingCheckoutForm: document.getElementById("billing-checkout-form"),
+    billingPortalForm: document.getElementById("billing-portal-form"),
     billingInviteForm: document.getElementById("billing-invite-form"),
     billingActivateForm: document.getElementById("billing-activate-form"),
     refreshInvitations: document.getElementById("refresh-invitations"),
@@ -92,6 +93,9 @@
       element.disabled = !enabled;
     });
     el.billingCheckoutForm.querySelectorAll("input, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
+    el.billingPortalForm.querySelectorAll("button").forEach(function (element) {
       element.disabled = !enabled;
     });
     el.billingInviteForm.querySelectorAll("input, select, button").forEach(function (element) {
@@ -673,6 +677,29 @@
     }
   }
 
+  async function startBillingPortal(event) {
+    event.preventDefault();
+    if (!requireAdmin(el.billingMessage)) {
+      return;
+    }
+    const currentPageUrl = window.location.origin + window.location.pathname;
+    try {
+      const response = await C.requestJson(apiBase, "/billing/portal", {
+        method: "POST",
+        token,
+        json: { return_url: currentPageUrl },
+      });
+      if (response.portal_url) {
+        C.showMessage(el.billingMessage, "Redirecting to Stripe billing portal...", "success");
+        window.location.assign(response.portal_url);
+        return;
+      }
+      C.showMessage(el.billingMessage, "Portal response did not include a redirect URL.", "error");
+    } catch (error) {
+      C.showMessage(el.billingMessage, error.message, "error");
+    }
+  }
+
   async function createBillingInvitation(event) {
     event.preventDefault();
     if (!requireAdmin(el.billingMessage)) {
@@ -963,6 +990,7 @@
   el.refreshInvitations.addEventListener("click", refreshBillingInvitations);
   el.billingSeatsForm.addEventListener("submit", updateBillingSeats);
   el.billingCheckoutForm.addEventListener("submit", startBillingCheckout);
+  el.billingPortalForm.addEventListener("submit", startBillingPortal);
   el.billingInviteForm.addEventListener("submit", createBillingInvitation);
   el.billingActivateForm.addEventListener("submit", activateBillingInvitation);
   el.billingInvitations.addEventListener("click", onInvitationActionClick);

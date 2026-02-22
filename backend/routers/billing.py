@@ -30,6 +30,8 @@ try:
         BillingCheckoutResponse,
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
+        BillingPortalRequest,
+        BillingPortalResponse,
         BillingProviderStatus,
         BillingSeatsUpdateRequest,
         BillingSeatsUpdateResponse,
@@ -67,6 +69,8 @@ except ModuleNotFoundError:  # local run from backend/ directory
         BillingCheckoutResponse,
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
+        BillingPortalRequest,
+        BillingPortalResponse,
         BillingProviderStatus,
         BillingSeatsUpdateRequest,
         BillingSeatsUpdateResponse,
@@ -525,6 +529,69 @@ async def start_billing_checkout(
         mode="checkout_session",
         checkout_url=checkout_url,
         checkout_session_id=checkout_session_id,
+    )
+
+
+@router.post("/billing/portal", response_model=BillingPortalResponse)
+async def start_billing_portal(
+    payload: BillingPortalRequest,
+    request: Request,
+    user=Depends(require_roles([ROLE_ADMIN])),
+    billing_store=Depends(get_billing_store),
+    stripe_client=Depends(get_stripe_client),
+    audit_store=Depends(get_audit_log_store),
+):
+    return_url = _optional_text(payload.return_url)
+    if not return_url:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="return_url is required",
+        )
+
+    subscription = get_or_default_subscription(user["org_id"], billing_store)
+    customer_id = _optional_text(subscription.stripe_customer_id)
+    if not customer_id:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Stripe customer is not linked for this organization",
+        )
+
+    try:
+        portal_session = stripe_client.create_billing_portal_session(
+            customer_id=customer_id,
+            return_url=return_url,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to create Stripe billing portal session: {exc}",
+        ) from exc
+
+    portal_session_id = _optional_text(portal_session.get("id")) if isinstance(portal_session, dict) else None
+    portal_url = _optional_text(portal_session.get("url")) if isinstance(portal_session, dict) else None
+    if not portal_url:
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail="Stripe billing portal did not return a redirect URL",
+        )
+
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="billing.portal.session_created",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="seat_subscription",
+        target_id=user["org_id"],
+        request=request,
+        details={
+            "stripe_customer_id": customer_id,
+            "stripe_portal_session_id": portal_session_id,
+        },
+    )
+    return BillingPortalResponse(
+        portal_url=portal_url,
+        portal_session_id=portal_session_id,
     )
 
 

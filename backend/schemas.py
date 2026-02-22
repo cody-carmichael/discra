@@ -171,6 +171,15 @@ class BillingCheckoutResponse(BaseModel):
     summary: Optional[BillingSummary] = None
 
 
+class BillingPortalRequest(BaseModel):
+    return_url: str = Field(..., min_length=1, max_length=2000)
+
+
+class BillingPortalResponse(BaseModel):
+    portal_url: str
+    portal_session_id: Optional[str] = None
+
+
 class BillingInvitationCreateRequest(BaseModel):
     user_id: str = Field(..., min_length=1, max_length=128)
     email: Optional[str] = Field(default=None, min_length=3, max_length=320)

@@ -439,6 +439,14 @@ class StripeClient(ABC):
     ) -> Dict[str, Any]:
         raise NotImplementedError
 
+    @abstractmethod
+    def create_billing_portal_session(
+        self,
+        customer_id: str,
+        return_url: str,
+    ) -> Dict[str, Any]:
+        raise NotImplementedError
+
 
 class DisabledStripeClient(StripeClient):
     def parse_webhook_event(self, payload: bytes, signature_header: Optional[str]) -> Dict[str, Any]:
@@ -465,6 +473,14 @@ class DisabledStripeClient(StripeClient):
     ) -> Dict[str, Any]:
         del org_id, dispatcher_seat_limit, driver_seat_limit, success_url, cancel_url, customer_id
         raise RuntimeError("Stripe checkout is not configured")
+
+    def create_billing_portal_session(
+        self,
+        customer_id: str,
+        return_url: str,
+    ) -> Dict[str, Any]:
+        del customer_id, return_url
+        raise RuntimeError("Stripe billing portal is not configured")
 
 
 class StripeSdkClient(StripeClient):
@@ -579,6 +595,20 @@ class StripeSdkClient(StripeClient):
             params["customer"] = customer_id
 
         return stripe.checkout.Session.create(**params)
+
+    def create_billing_portal_session(
+        self,
+        customer_id: str,
+        return_url: str,
+    ) -> Dict[str, Any]:
+        if not self._api_key:
+            raise RuntimeError("STRIPE_SECRET_KEY is required to create billing portal sessions")
+        if not customer_id:
+            raise RuntimeError("Stripe customer id is required")
+        return stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+        )
 
 
 def get_stripe_client() -> StripeClient:

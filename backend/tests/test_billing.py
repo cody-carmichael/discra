@@ -298,6 +298,44 @@ def test_activation_writes_audit_event_on_success():
     assert any(event.action == "billing.invitation.activated" for event in audit_events)
 
 
+def test_admin_can_list_and_cancel_pending_invitations():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    limit_response = client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 2, "driver_seat_limit": 2},
+        headers=_auth_header(admin_token),
+    )
+    assert limit_response.status_code == 200
+
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": "dispatcher-1", "email": "dispatcher@example.com", "role": "Dispatcher"},
+        headers=_auth_header(admin_token),
+    )
+    assert invite.status_code == 200
+    invitation_id = invite.json()["invitation_id"]
+
+    list_response = client.get("/billing/invitations?status=Pending", headers=_auth_header(admin_token))
+    assert list_response.status_code == 200
+    pending_ids = [item["invitation_id"] for item in list_response.json()]
+    assert invitation_id in pending_ids
+
+    cancel_response = client.post(
+        f"/billing/invitations/{invitation_id}/cancel",
+        headers=_auth_header(admin_token),
+    )
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["status"] == "Cancelled"
+
+    list_after_cancel = client.get("/billing/invitations?status=Pending", headers=_auth_header(admin_token))
+    assert list_after_cancel.status_code == 200
+    pending_after_cancel = [item["invitation_id"] for item in list_after_cancel.json()]
+    assert invitation_id not in pending_after_cancel
+
+    audit_events = get_audit_log_store().list_events("org-1", limit=20)
+    assert any(event.action == "billing.invitation.cancelled" for event in audit_events)
+
+
 def test_webhook_syncs_subscription_limits_from_stripe_event(monkeypatch):
     monkeypatch.setenv("STRIPE_DISPATCHER_PRICE_ID", "price_dispatcher")
     monkeypatch.setenv("STRIPE_DRIVER_PRICE_ID", "price_driver")

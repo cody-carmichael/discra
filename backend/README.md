@@ -43,8 +43,10 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - `GET /billing/status` (Admin)
   - `POST /billing/checkout` (Admin)
   - `POST /billing/seats` (Admin)
+  - `GET /billing/invitations` (Admin)
   - `POST /billing/invitations` (Admin)
   - `POST /billing/invitations/{invitationId}/activate` (Admin)
+  - `POST /billing/invitations/{invitationId}/cancel` (Admin)
   - `POST /webhooks/orders` (public with `x-orders-webhook-token`, optional HMAC headers)
   - `POST /webhooks/stripe` (public)
   - Seat limits enforced for Dispatcher/Driver invitations and activation
@@ -54,7 +56,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
 - Minimal web UIs:
   - `GET /ui` (workspace picker)
   - `GET /ui/admin` (Admin/Dispatcher console)
-  - Admin console includes seat-billing controls for `GET /billing/summary`, `POST /billing/checkout`, `POST /billing/seats`, `POST /billing/invitations`, and invitation activation
+  - Admin console includes seat-billing controls for `GET /billing/summary`, `GET /billing/status`, `POST /billing/checkout`, `POST /billing/seats`, `GET /billing/invitations`, `POST /billing/invitations`, invitation activation, and invitation cancellation
   - `GET /ui/admin-sw.js` (Admin/Dispatcher PWA service worker)
   - `GET /ui/driver` (Driver web app with POD + location updates)
   - `GET /ui/driver-sw.js` (Driver PWA service worker)

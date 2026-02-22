@@ -1,7 +1,7 @@
 import hmac
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status as http_status
@@ -581,6 +581,16 @@ async def create_invitation(
     return saved
 
 
+@router.get("/billing/invitations", response_model=List[BillingInvitationRecord])
+async def list_invitations(
+    status: Optional[InvitationStatus] = None,
+    user=Depends(require_roles([ROLE_ADMIN])),
+    billing_store=Depends(get_billing_store),
+):
+    invitations = billing_store.list_invitations(org_id=user["org_id"], status=status)
+    return sorted(invitations, key=lambda invitation: invitation.created_at, reverse=True)
+
+
 @router.post("/billing/invitations/{invitation_id}/activate", response_model=UserRecord)
 async def activate_invitation(
     invitation_id: str,
@@ -652,6 +662,53 @@ async def activate_invitation(
     )
 
     return saved_user
+
+
+@router.post("/billing/invitations/{invitation_id}/cancel", response_model=BillingInvitationRecord)
+async def cancel_invitation(
+    invitation_id: str,
+    request: Request,
+    user=Depends(require_roles([ROLE_ADMIN])),
+    billing_store=Depends(get_billing_store),
+    audit_store=Depends(get_audit_log_store),
+):
+    invitation = billing_store.get_invitation(user["org_id"], invitation_id)
+    if invitation is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Invitation not found")
+    if invitation.status != InvitationStatus.PENDING:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Only pending invitations can be cancelled",
+        )
+
+    now = _utc_now()
+    cancelled = BillingInvitationRecord(
+        org_id=invitation.org_id,
+        invitation_id=invitation.invitation_id,
+        user_id=invitation.user_id,
+        email=invitation.email,
+        role=invitation.role,
+        status=InvitationStatus.CANCELLED,
+        created_at=invitation.created_at,
+        updated_at=now,
+    )
+    saved = billing_store.upsert_invitation(cancelled)
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="billing.invitation.cancelled",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="invitation",
+        target_id=invitation.invitation_id,
+        request=request,
+        details={
+            "user_id": invitation.user_id,
+            "role": invitation.role.value,
+            "status": saved.status.value,
+        },
+    )
+    return saved
 
 
 @router.post("/webhooks/orders", response_model=OrdersWebhookResponse)

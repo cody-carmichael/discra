@@ -24,6 +24,12 @@
     optimizeForm: document.getElementById("optimize-form"),
     routeResult: document.getElementById("route-result"),
     routeMessage: document.getElementById("route-message"),
+    refreshBilling: document.getElementById("refresh-billing"),
+    billingSummary: document.getElementById("billing-summary"),
+    billingSeatsForm: document.getElementById("billing-seats-form"),
+    billingInviteForm: document.getElementById("billing-invite-form"),
+    billingActivateForm: document.getElementById("billing-activate-form"),
+    billingMessage: document.getElementById("billing-message"),
     mapStyleUrl: document.getElementById("map-style-url"),
     mapContainer: document.getElementById("driver-map"),
     cognitoDomain: document.getElementById("cognito-domain"),
@@ -37,6 +43,7 @@
   let mapMarkers = [];
   let lastOrders = [];
   let isAuthorizedRole = false;
+  let isAdminRole = false;
 
   function claimsRoles(claims) {
     if (!claims) {
@@ -59,6 +66,10 @@
     });
   }
 
+  function hasAdminRole(claims) {
+    return claimsRoles(claims).indexOf("Admin") >= 0;
+  }
+
   function setInteractiveState(enabled) {
     el.createForm.querySelectorAll("input, textarea, button").forEach(function (element) {
       element.disabled = !enabled;
@@ -66,6 +77,19 @@
     el.refreshOrders.disabled = !enabled;
     el.refreshDrivers.disabled = !enabled;
     el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
+  }
+
+  function setBillingInteractiveState(enabled) {
+    el.refreshBilling.disabled = !enabled;
+    el.billingSeatsForm.querySelectorAll("input, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
+    el.billingInviteForm.querySelectorAll("input, select, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
+    el.billingActivateForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
     });
   }
@@ -82,13 +106,22 @@
   function evaluateAuthorization(claims) {
     if (!claims) {
       isAuthorizedRole = false;
+      isAdminRole = false;
       setInteractiveState(false);
+      setBillingInteractiveState(false);
+      el.billingSummary.textContent = "No billing summary loaded.";
       return;
     }
     isAuthorizedRole = hasAllowedRole(claims);
+    isAdminRole = hasAdminRole(claims);
     setInteractiveState(isAuthorizedRole);
+    setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
       C.showMessage(el.authMessage, "This console requires Admin or Dispatcher role.", "error");
+      return;
+    }
+    if (!isAdminRole) {
+      C.showMessage(el.billingMessage, "Billing controls require Admin role.", "error");
     }
   }
 
@@ -99,6 +132,17 @@
     }
     if (!isAuthorizedRole) {
       C.showMessage(messageElement, "Current token does not have Admin/Dispatcher role.", "error");
+      return false;
+    }
+    return true;
+  }
+
+  function requireAdmin(messageElement) {
+    if (!requireAuthorized(messageElement)) {
+      return false;
+    }
+    if (!isAdminRole) {
+      C.showMessage(messageElement, "Admin role is required.", "error");
       return false;
     }
     return true;
@@ -441,6 +485,118 @@
     }
   }
 
+  function renderBillingSummary(summary) {
+    if (!summary) {
+      el.billingSummary.textContent = "No billing summary loaded.";
+      return;
+    }
+    el.billingSummary.textContent = JSON.stringify(summary, null, 2);
+  }
+
+  async function refreshBillingSummary() {
+    if (!requireAdmin(el.billingMessage)) {
+      renderBillingSummary(null);
+      return;
+    }
+    try {
+      const summary = await C.requestJson(apiBase, "/billing/summary", { token });
+      renderBillingSummary(summary);
+      C.showMessage(el.billingMessage, "Loaded billing summary.", "success");
+    } catch (error) {
+      C.showMessage(el.billingMessage, error.message, "error");
+    }
+  }
+
+  async function updateBillingSeats(event) {
+    event.preventDefault();
+    if (!requireAdmin(el.billingMessage)) {
+      return;
+    }
+    const formData = new FormData(el.billingSeatsForm);
+    const dispatcherLimit = C.toIntOrNull(formData.get("dispatcher_seat_limit"));
+    const driverLimit = C.toIntOrNull(formData.get("driver_seat_limit"));
+    if (dispatcherLimit === null && driverLimit === null) {
+      C.showMessage(el.billingMessage, "Provide at least one seat limit value.", "error");
+      return;
+    }
+    const payload = {};
+    if (dispatcherLimit !== null) {
+      payload.dispatcher_seat_limit = dispatcherLimit;
+    }
+    if (driverLimit !== null) {
+      payload.driver_seat_limit = driverLimit;
+    }
+    try {
+      const response = await C.requestJson(apiBase, "/billing/seats", {
+        method: "POST",
+        token,
+        json: payload,
+      });
+      renderBillingSummary(response.summary);
+      C.showMessage(el.billingMessage, "Seat limits updated.", "success");
+    } catch (error) {
+      C.showMessage(el.billingMessage, error.message, "error");
+    }
+  }
+
+  async function createBillingInvitation(event) {
+    event.preventDefault();
+    if (!requireAdmin(el.billingMessage)) {
+      return;
+    }
+    const formData = new FormData(el.billingInviteForm);
+    const userId = String(formData.get("user_id") || "").trim();
+    const role = String(formData.get("role") || "").trim();
+    if (!userId) {
+      C.showMessage(el.billingMessage, "User ID is required.", "error");
+      return;
+    }
+    const payload = {
+      user_id: userId,
+      role: role || "Dispatcher",
+    };
+    const email = String(formData.get("email") || "").trim();
+    if (email) {
+      payload.email = email;
+    }
+    try {
+      const invitation = await C.requestJson(apiBase, "/billing/invitations", {
+        method: "POST",
+        token,
+        json: payload,
+      });
+      C.showMessage(el.billingMessage, "Invitation created: " + invitation.invitation_id, "success");
+      el.billingInviteForm.reset();
+      await refreshBillingSummary();
+    } catch (error) {
+      C.showMessage(el.billingMessage, error.message, "error");
+    }
+  }
+
+  async function activateBillingInvitation(event) {
+    event.preventDefault();
+    if (!requireAdmin(el.billingMessage)) {
+      return;
+    }
+    const formData = new FormData(el.billingActivateForm);
+    const invitationId = String(formData.get("invitation_id") || "").trim();
+    if (!invitationId) {
+      C.showMessage(el.billingMessage, "Invitation ID is required.", "error");
+      return;
+    }
+    try {
+      const userRecord = await C.requestJson(apiBase, "/billing/invitations/" + invitationId + "/activate", {
+        method: "POST",
+        token,
+      });
+      C.showMessage(el.billingMessage, "Invitation activated for " + (userRecord.user_id || "user"), "success");
+      el.billingActivateForm.reset();
+      await refreshBillingSummary();
+    } catch (error) {
+      C.showMessage(el.billingMessage, error.message, "error");
+    }
+  }
+
   async function optimizeRoute(event) {
     event.preventDefault();
     if (!requireAuthorized(el.routeMessage)) {
@@ -568,6 +724,7 @@
     setToken("");
     renderOrders([]);
     renderDriverList([]);
+    renderBillingSummary(null);
     C.showMessage(el.authMessage, "Token cleared.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
@@ -577,6 +734,7 @@
   async function bootstrap() {
     el.token.value = token;
     setInteractiveState(false);
+    setBillingInteractiveState(false);
     renderClaims();
     registerServiceWorker();
     await loadUiConfig();
@@ -584,9 +742,15 @@
     if (isAuthorizedRole) {
       await refreshOrders();
       await refreshDrivers();
+      if (isAdminRole) {
+        await refreshBillingSummary();
+      } else {
+        renderBillingSummary(null);
+      }
     } else {
       renderOrders([]);
       renderDriverList([]);
+      renderBillingSummary(null);
     }
   }
 
@@ -604,6 +768,10 @@
   el.ordersMobile.addEventListener("click", onOrderActionClick);
   el.refreshDrivers.addEventListener("click", refreshDrivers);
   el.optimizeForm.addEventListener("submit", optimizeRoute);
+  el.refreshBilling.addEventListener("click", refreshBillingSummary);
+  el.billingSeatsForm.addEventListener("submit", updateBillingSeats);
+  el.billingInviteForm.addEventListener("submit", createBillingInvitation);
+  el.billingActivateForm.addEventListener("submit", activateBillingInvitation);
   el.loginHostedUi.addEventListener("click", function () {
     launchHostedLogin().catch(function (error) {
       C.showMessage(el.authMessage, error.message, "error");

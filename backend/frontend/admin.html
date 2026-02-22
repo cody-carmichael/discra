@@ -135,6 +135,37 @@
       <pre id="route-result" class="claims-view">No route computed yet.</pre>
       <p id="route-message" class="message"></p>
     </section>
+
+    <section class="panel">
+      <div class="panel-title-row">
+        <h2>Billing and Seats</h2>
+        <button id="refresh-billing" class="btn btn-ghost" type="button">Refresh</button>
+      </div>
+      <p class="panel-help">Admin-only controls for seat limits and invitation flow.</p>
+      <pre id="billing-summary" class="claims-view">No billing summary loaded.</pre>
+      <form id="billing-seats-form" class="form-grid">
+        <label class="field"><span>Dispatcher Seat Limit</span><input name="dispatcher_seat_limit" type="number" min="0"></label>
+        <label class="field"><span>Driver Seat Limit</span><input name="driver_seat_limit" type="number" min="0"></label>
+        <button class="btn btn-primary field-span-2" type="submit">Update Seat Limits</button>
+      </form>
+      <form id="billing-invite-form" class="form-grid">
+        <label class="field"><span>User ID</span><input name="user_id" required></label>
+        <label class="field"><span>Email (optional)</span><input name="email" type="email"></label>
+        <label class="field field-span-2">
+          <span>Role</span>
+          <select name="role">
+            <option value="Dispatcher">Dispatcher</option>
+            <option value="Driver">Driver</option>
+          </select>
+        </label>
+        <button class="btn btn-accent field-span-2" type="submit">Create Invitation</button>
+      </form>
+      <form id="billing-activate-form" class="form-grid">
+        <label class="field field-span-2"><span>Invitation ID</span><input name="invitation_id" required></label>
+        <button class="btn btn-ghost field-span-2" type="submit">Activate Invitation</button>
+      </form>
+      <p id="billing-message" class="message"></p>
+    </section>
   </main>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>

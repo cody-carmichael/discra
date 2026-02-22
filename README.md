@@ -163,3 +163,4 @@ Hosted UI setup notes:
 18. Mobile release hardening: in-app validation, Expo build profiles, smoke-test checklist, and deployment notes
 19. Route optimization completeness: remove manual stops requirement via address geocoding + assigned-order route generation
 20. Mobile route optimization UX: selected-driver optimization, ordered stop context, and map handoff to Google Maps
+21. Admin billing console UX: seat summary, seat limit updates, and invitation create/activate flows

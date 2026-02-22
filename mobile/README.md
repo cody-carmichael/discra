@@ -1,4 +1,4 @@
-# Discra Mobile (PR14-PR17)
+# Discra Mobile (PR14-PR18)
 
 Native mobile app for Admin/Dispatcher and Driver workflows using React Native + Expo.
 
@@ -10,6 +10,7 @@ Native mobile app for Admin/Dispatcher and Driver workflows using React Native +
   - Track active drivers (latest coordinates + timestamp)
   - In-app map visualization for active drivers
   - Route context panel for selected driver + quick open to first-stop navigation
+  - Session validation warnings for API/JWT/role mismatch
 - Driver mobile workflow:
   - View assigned inbox
   - Update status (`PickedUp`, `EnRoute`, `Failed`, `Delivered`)
@@ -23,12 +24,16 @@ Native mobile app for Admin/Dispatcher and Driver workflows using React Native +
 - Mobile auth and resilience:
   - Hosted UI login/logout deep links (`discra-mobile://auth/callback`)
   - Offline queue for driver status/location events with manual sync (`Sync Queue`)
+- Release hardening:
+  - Expo EAS build profiles (`mobile/eas.json`)
+  - Mobile CI typecheck workflow (`.github/workflows/mobile-ci.yml`)
 
 ## Run locally
 ```powershell
 cd mobile
 npm install
 npm run start
+npm run typecheck
 ```
 
 Use Expo Go or simulator/emulator.
@@ -56,3 +61,34 @@ In Cognito app client settings, add callback/logout URL:
 
 ## Route context note
 - Route polyline appears when delivery values contain coordinate text in the form: `lat,lng`.
+
+## Build and release profiles
+`mobile/eas.json` includes:
+- `development`: dev client, internal distribution
+- `preview`: internal APK distribution
+- `production`: store-ready build with auto increment
+
+Example commands:
+```powershell
+cd mobile
+npx eas build --platform android --profile preview
+npx eas build --platform ios --profile production
+```
+
+## Mobile smoke test checklist
+1. Login via Hosted UI and verify callback returns to app with token populated.
+2. Validate workspace role gating:
+   - Admin/Dispatcher token can refresh orders/drivers.
+   - Driver token can refresh inbox and send location.
+3. Driver location:
+   - Send live location.
+   - Disable network, send location, confirm queued count increments.
+   - Re-enable network and run `Sync Queue`, confirm queue drains.
+4. POD flow:
+   - Capture photo and signature.
+   - Submit POD and confirm order transitions to `Delivered`.
+5. Admin map:
+   - Active drivers render on map.
+   - Selecting driver focuses map and updates route context panel.
+6. Route quick action:
+   - `Open First Stop Route` launches Google Maps direction intent.

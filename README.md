@@ -158,3 +158,4 @@ Hosted UI setup notes:
 16. Mobile POD workflow: driver photo + signature capture and upload to `/pod/*` endpoints with delivery completion
 17. Mobile map view: in-app Admin/Dispatcher map visualization + route context for active drivers
 18. Mobile release hardening: in-app validation, Expo build profiles, smoke-test checklist, and deployment notes
+19. Route optimization completeness: remove manual stops requirement via address geocoding + assigned-order route generation

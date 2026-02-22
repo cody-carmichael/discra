@@ -1,4 +1,4 @@
-# Discra Mobile (PR14-PR18)
+# Discra Mobile (PR14-PR20)
 
 Native mobile app for Admin/Dispatcher and Driver workflows using React Native + Expo.
 
@@ -9,7 +9,8 @@ Native mobile app for Admin/Dispatcher and Driver workflows using React Native +
   - Update order status
   - Track active drivers (latest coordinates + timestamp)
   - In-app map visualization for active drivers
-  - Route context panel for selected driver + quick open to first-stop navigation
+  - Route context panel for selected driver with `/routes/optimize` integration
+  - Quick open for optimized navigation route in Google Maps
   - Session validation warnings for API/JWT/role mismatch
 - Driver mobile workflow:
   - View assigned inbox
@@ -60,7 +61,8 @@ In Cognito app client settings, add callback/logout URL:
 - Location: driver tracking and POD location metadata
 
 ## Route context note
-- Route polyline appears when delivery values contain coordinate text in the form: `lat,lng`.
+- Route context uses backend route optimization for selected driver.
+- If optimization is unavailable, the app falls back to assigned-order context display.
 
 ## Build and release profiles
 `mobile/eas.json` includes:
@@ -91,4 +93,5 @@ npx eas build --platform ios --profile production
    - Active drivers render on map.
    - Selecting driver focuses map and updates route context panel.
 6. Route quick action:
-   - `Open First Stop Route` launches Google Maps direction intent.
+   - `Optimize Route` loads ordered stops and travel summary.
+   - `Open Route in Maps` launches Google Maps direction intent for the optimized route.

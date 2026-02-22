@@ -30,6 +30,7 @@ try:
         BillingCheckoutResponse,
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
+        BillingProviderStatus,
         BillingSeatsUpdateRequest,
         BillingSeatsUpdateResponse,
         BillingSummary,
@@ -66,6 +67,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
         BillingCheckoutResponse,
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
+        BillingProviderStatus,
         BillingSeatsUpdateRequest,
         BillingSeatsUpdateResponse,
         BillingSummary,
@@ -92,6 +94,17 @@ def _optional_text(value):
         return None
     text = str(value).strip()
     return text or None
+
+
+def _stripe_mode(secret_key: str) -> str:
+    value = (secret_key or "").strip()
+    if not value:
+        return "disabled"
+    if value.startswith("sk_live_"):
+        return "live"
+    if value.startswith("sk_test_"):
+        return "test"
+    return "configured"
 
 
 def _request_id(request: Request):
@@ -246,6 +259,36 @@ async def get_billing_summary(
     subscription = get_or_default_subscription(user["org_id"], billing_store)
     usage = calculate_seat_usage(user["org_id"], identity_repo, billing_store)
     return build_billing_summary(subscription, usage)
+
+
+@router.get("/billing/status", response_model=BillingProviderStatus)
+async def get_billing_status(
+    user=Depends(require_roles([ROLE_ADMIN])),
+    billing_store=Depends(get_billing_store),
+):
+    subscription = get_or_default_subscription(user["org_id"], billing_store)
+    secret_key = _optional_text(os.environ.get("STRIPE_SECRET_KEY")) or ""
+    webhook_secret = _optional_text(os.environ.get("STRIPE_WEBHOOK_SECRET")) or ""
+    dispatcher_price_id = _optional_text(os.environ.get("STRIPE_DISPATCHER_PRICE_ID")) or ""
+    driver_price_id = _optional_text(os.environ.get("STRIPE_DRIVER_PRICE_ID")) or ""
+
+    has_secret = bool(secret_key)
+    has_webhook_secret = bool(webhook_secret)
+    has_dispatcher_price = bool(dispatcher_price_id)
+    has_driver_price = bool(driver_price_id)
+
+    return BillingProviderStatus(
+        org_id=user["org_id"],
+        stripe_mode=_stripe_mode(secret_key),
+        checkout_enabled=has_secret and (has_dispatcher_price or has_driver_price),
+        webhook_signature_verification_enabled=has_webhook_secret,
+        stripe_secret_key_configured=has_secret,
+        stripe_webhook_secret_configured=has_webhook_secret,
+        stripe_dispatcher_price_id_configured=has_dispatcher_price,
+        stripe_driver_price_id_configured=has_driver_price,
+        stripe_customer_id=subscription.stripe_customer_id,
+        stripe_subscription_id=subscription.stripe_subscription_id,
+    )
 
 
 @router.post("/billing/seats", response_model=BillingSeatsUpdateResponse)

@@ -40,6 +40,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - Explicit `stops` with `lat/lng` are still supported as an override
 - Billing + seat management:
   - `GET /billing/summary` (Admin)
+  - `GET /billing/status` (Admin)
   - `POST /billing/checkout` (Admin)
   - `POST /billing/seats` (Admin)
   - `POST /billing/invitations` (Admin)

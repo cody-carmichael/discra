@@ -31,6 +31,8 @@
     billingCheckoutForm: document.getElementById("billing-checkout-form"),
     billingInviteForm: document.getElementById("billing-invite-form"),
     billingActivateForm: document.getElementById("billing-activate-form"),
+    refreshInvitations: document.getElementById("refresh-invitations"),
+    billingInvitations: document.getElementById("billing-invitations"),
     billingMessage: document.getElementById("billing-message"),
     mapStyleUrl: document.getElementById("map-style-url"),
     mapContainer: document.getElementById("driver-map"),
@@ -85,6 +87,7 @@
 
   function setBillingInteractiveState(enabled) {
     el.refreshBilling.disabled = !enabled;
+    el.refreshInvitations.disabled = !enabled;
     el.billingSeatsForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
     });
@@ -116,6 +119,7 @@
       setBillingInteractiveState(false);
       el.billingStatus.textContent = "No billing provider status loaded.";
       el.billingSummary.textContent = "No billing summary loaded.";
+      el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
       return;
     }
     isAuthorizedRole = hasAllowedRole(claims);
@@ -507,6 +511,56 @@
     el.billingStatus.textContent = JSON.stringify(statusPayload, null, 2);
   }
 
+  function renderBillingInvitations(invitations) {
+    if (!invitations || !invitations.length) {
+      el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
+      return;
+    }
+
+    el.billingInvitations.innerHTML = invitations
+      .map(function (invitation) {
+        const status = C.escapeHtml(invitation.status || "-");
+        const invitationId = C.escapeHtml(invitation.invitation_id || "-");
+        const userId = C.escapeHtml(invitation.user_id || "-");
+        const role = C.escapeHtml(invitation.role || "-");
+        const email = C.escapeHtml(invitation.email || "-");
+        const updatedAt = C.escapeHtml(C.formatTimestamp(invitation.updated_at));
+        const activateDisabled = invitation.status === "Accepted" ? "disabled" : "";
+        const cancelDisabled = invitation.status === "Pending" ? "" : "disabled";
+
+        return (
+          "<li>" +
+          "<strong>" +
+          invitationId +
+          "</strong><br>" +
+          "User: " +
+          userId +
+          " | Role: " +
+          role +
+          " | Status: " +
+          status +
+          "<br>Email: " +
+          email +
+          " | Updated: " +
+          updatedAt +
+          "<div class=\"actions-stack\">" +
+          "<button class=\"btn btn-accent\" data-invitation-action=\"activate\" data-invitation-id=\"" +
+          invitationId +
+          "\" " +
+          activateDisabled +
+          ">Activate</button>" +
+          "<button class=\"btn btn-ghost\" data-invitation-action=\"cancel\" data-invitation-id=\"" +
+          invitationId +
+          "\" " +
+          cancelDisabled +
+          ">Cancel</button>" +
+          "</div>" +
+          "</li>"
+        );
+      })
+      .join("");
+  }
+
   async function refreshBillingSummary() {
     if (!requireAdmin(el.billingMessage)) {
       renderBillingSummary(null);
@@ -521,6 +575,19 @@
       renderBillingStatus(statusPayload);
       renderBillingSummary(summary);
       C.showMessage(el.billingMessage, "Loaded billing summary.", "success");
+    } catch (error) {
+      C.showMessage(el.billingMessage, error.message, "error");
+    }
+  }
+
+  async function refreshBillingInvitations() {
+    if (!requireAdmin(el.billingMessage)) {
+      renderBillingInvitations([]);
+      return;
+    }
+    try {
+      const invitations = await C.requestJson(apiBase, "/billing/invitations", { token });
+      renderBillingInvitations(invitations || []);
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -635,6 +702,7 @@
       C.showMessage(el.billingMessage, "Invitation created: " + invitation.invitation_id, "success");
       el.billingInviteForm.reset();
       await refreshBillingSummary();
+      await refreshBillingInvitations();
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -659,6 +727,42 @@
       C.showMessage(el.billingMessage, "Invitation activated for " + (userRecord.user_id || "user"), "success");
       el.billingActivateForm.reset();
       await refreshBillingSummary();
+      await refreshBillingInvitations();
+    } catch (error) {
+      C.showMessage(el.billingMessage, error.message, "error");
+    }
+  }
+
+  async function onInvitationActionClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const action = target.getAttribute("data-invitation-action");
+    const invitationId = target.getAttribute("data-invitation-id");
+    if (!action || !invitationId) {
+      return;
+    }
+    if (!requireAdmin(el.billingMessage)) {
+      return;
+    }
+
+    try {
+      if (action === "activate") {
+        await C.requestJson(apiBase, "/billing/invitations/" + invitationId + "/activate", {
+          method: "POST",
+          token,
+        });
+        C.showMessage(el.billingMessage, "Invitation activated: " + invitationId, "success");
+      } else if (action === "cancel") {
+        await C.requestJson(apiBase, "/billing/invitations/" + invitationId + "/cancel", {
+          method: "POST",
+          token,
+        });
+        C.showMessage(el.billingMessage, "Invitation cancelled: " + invitationId, "success");
+      }
+      await refreshBillingSummary();
+      await refreshBillingInvitations();
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -793,6 +897,7 @@
     renderDriverList([]);
     renderBillingStatus(null);
     renderBillingSummary(null);
+    renderBillingInvitations([]);
     C.showMessage(el.authMessage, "Token cleared.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
@@ -825,15 +930,18 @@
       await refreshDrivers();
       if (isAdminRole) {
         await refreshBillingSummary();
+        await refreshBillingInvitations();
       } else {
         renderBillingStatus(null);
         renderBillingSummary(null);
+        renderBillingInvitations([]);
       }
     } else {
       renderOrders([]);
       renderDriverList([]);
       renderBillingStatus(null);
       renderBillingSummary(null);
+      renderBillingInvitations([]);
     }
   }
 
@@ -852,10 +960,12 @@
   el.refreshDrivers.addEventListener("click", refreshDrivers);
   el.optimizeForm.addEventListener("submit", optimizeRoute);
   el.refreshBilling.addEventListener("click", refreshBillingSummary);
+  el.refreshInvitations.addEventListener("click", refreshBillingInvitations);
   el.billingSeatsForm.addEventListener("submit", updateBillingSeats);
   el.billingCheckoutForm.addEventListener("submit", startBillingCheckout);
   el.billingInviteForm.addEventListener("submit", createBillingInvitation);
   el.billingActivateForm.addEventListener("submit", activateBillingInvitation);
+  el.billingInvitations.addEventListener("click", onInvitationActionClick);
   el.loginHostedUi.addEventListener("click", function () {
     launchHostedLogin().catch(function (error) {
       C.showMessage(el.authMessage, error.message, "error");

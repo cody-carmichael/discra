@@ -170,6 +170,11 @@
         <label class="field field-span-2"><span>Invitation ID</span><input name="invitation_id" required></label>
         <button class="btn btn-ghost field-span-2" type="submit">Activate Invitation</button>
       </form>
+      <div class="panel-title-row">
+        <h3>Invitations</h3>
+        <button id="refresh-invitations" class="btn btn-ghost" type="button">Refresh</button>
+      </div>
+      <ul id="billing-invitations" class="driver-list"></ul>
       <p id="billing-message" class="message"></p>
     </section>
   </main>

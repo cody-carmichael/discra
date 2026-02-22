@@ -23,6 +23,10 @@ Parameters:
     Type: String
     Default: ""
     Description: Optional Amazon Location route calculator name for matrix calls
+  LocationPlaceIndexName:
+    Type: String
+    Default: ""
+    Description: Optional Amazon Location place index name for address geocoding
   StripeSecretKey:
     Type: String
     Default: ""
@@ -359,6 +363,7 @@ Resources:
           DRIVER_LOCATIONS_TABLE: !Ref DriverLocationsTable
           DRIVER_LOCATION_TTL_SECONDS: "7200"
           LOCATION_ROUTE_CALCULATOR_NAME: !Ref LocationRouteCalculatorName
+          LOCATION_PLACE_INDEX_NAME: !Ref LocationPlaceIndexName
           USE_IN_MEMORY_ROUTE_MATRIX: "false"
           ROUTE_OPTIMIZATION_TIMEOUT_SECONDS: "5"
           SEAT_SUBSCRIPTIONS_TABLE: !Ref SeatSubscriptionsTable
@@ -402,6 +407,7 @@ Resources:
             Effect: Allow
             Action:
               - geo:CalculateRouteMatrix
+              - geo:SearchPlaceIndexForText
             Resource: "*"
       Events:
         BackendHealthGet:

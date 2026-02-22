@@ -34,8 +34,10 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
 - Route optimization:
   - `POST /routes/optimize` (Admin/Dispatcher)
   - Uses Amazon Location `CalculateRouteMatrix` when `LOCATION_ROUTE_CALCULATOR_NAME` is set
+  - Geocodes assigned order delivery addresses via Amazon Location place index when `LOCATION_PLACE_INDEX_NAME` is set
   - Uses OR-Tools for route ordering (single driver path)
-  - Provide explicit `stops` with `lat/lng` in the request payload
+  - If `stops` is omitted, assigned orders for the driver are geocoded and optimized automatically
+  - Explicit `stops` with `lat/lng` are still supported as an override
 - Billing + seat management:
   - `GET /billing/summary` (Admin)
   - `POST /billing/seats` (Admin)
@@ -140,6 +142,13 @@ Optional frontend helper config:
 $env:COGNITO_HOSTED_UI_DOMAIN="your-domain.auth.us-east-1.amazoncognito.com"
 $env:FRONTEND_COGNITO_CLIENT_ID="your-app-client-id"
 $env:FRONTEND_MAP_STYLE_URL="https://demotiles.maplibre.org/style.json"
+```
+
+Optional Amazon Location routing/geocoding config:
+
+```powershell
+$env:LOCATION_ROUTE_CALCULATOR_NAME="your-route-calculator"
+$env:LOCATION_PLACE_INDEX_NAME="your-place-index"
 ```
 
 For Hosted UI login in deployed environments, configure Cognito app client:

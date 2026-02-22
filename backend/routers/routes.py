@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status as http_status
 
 try:
     from backend.auth import ROLE_ADMIN, ROLE_DISPATCHER, require_roles
+    from backend.geocode_service import get_address_geocoder
     from backend.location_service import get_driver_location_store
     from backend.route_service import get_route_matrix_provider, solve_open_route
     from backend.routers.orders import get_assigned_orders_for_driver
@@ -15,6 +16,7 @@ try:
     )
 except ModuleNotFoundError:  # local run from backend/ directory
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, require_roles
+    from geocode_service import get_address_geocoder
     from location_service import get_driver_location_store
     from route_service import get_route_matrix_provider, solve_open_route
     from routers.orders import get_assigned_orders_for_driver
@@ -31,13 +33,46 @@ def _stops_from_assigned_orders(org_id: str, driver_id: str) -> List[RouteStopIn
             detail="No assigned orders found for driver",
         )
 
-    raise HTTPException(
-        status_code=http_status.HTTP_400_BAD_REQUEST,
-        detail=(
-            "Assigned orders no longer store delivery coordinates. "
-            "Provide explicit stops with lat/lng in the request payload."
-        ),
-    )
+    geocoder = get_address_geocoder()
+    geocode_cache = {}
+    unresolved_order_ids = []
+    stops = []
+
+    for order in assigned:
+        delivery = (order.delivery or "").strip()
+        if not delivery:
+            unresolved_order_ids.append(order.id)
+            continue
+
+        if delivery in geocode_cache:
+            point = geocode_cache[delivery]
+        else:
+            point = geocoder.geocode(delivery)
+            geocode_cache[delivery] = point
+
+        if point is None:
+            unresolved_order_ids.append(order.id)
+            continue
+
+        stops.append(
+            RouteStopInput(
+                order_id=order.id,
+                lat=point.lat,
+                lng=point.lng,
+                address=order.delivery,
+            )
+        )
+
+    if unresolved_order_ids:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Unable to geocode delivery addresses for assigned orders: "
+                + ", ".join(unresolved_order_ids)
+            ),
+        )
+
+    return stops
 
 
 def _resolve_start_position(

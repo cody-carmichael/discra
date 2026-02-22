@@ -90,12 +90,15 @@ After `sam local start-api`:
 - `dimensions` (string)
 - `weight` (number)
 
-`POST /dev/backend/routes/optimize` now requires explicit `stops` with `lat`/`lng` if you want automatic optimization.
+`POST /dev/backend/routes/optimize` accepts optional explicit `stops` (`lat`/`lng`) overrides.
+If `stops` is omitted, the backend geocodes assigned order delivery addresses and optimizes automatically.
 
 ## Cognito auth parameters
 `template.yaml` now expects these deploy parameters:
 - `CognitoUserPoolId`
 - `CognitoAppClientId`
+- `LocationRouteCalculatorName` (optional Amazon Location route calculator for matrix calls)
+- `LocationPlaceIndexName` (optional Amazon Location place index for address geocoding)
 - `OrdersWebhookToken` (shared secret for `/backend/webhooks/orders`)
 - `OrdersWebhookHmacSecret` (optional HMAC secret for signed `/backend/webhooks/orders` payloads)
 - `OrdersWebhookMaxSkewSeconds` (optional timestamp skew window for signed payloads; default `300`)

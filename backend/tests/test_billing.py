@@ -98,6 +98,59 @@ def test_admin_can_read_default_billing_summary():
     assert body["driver_seats"]["available"] == 0
 
 
+def test_admin_can_read_billing_status_defaults(monkeypatch):
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("STRIPE_DISPATCHER_PRICE_ID", raising=False)
+    monkeypatch.delenv("STRIPE_DRIVER_PRICE_ID", raising=False)
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+
+    response = client.get("/billing/status", headers=_auth_header(admin_token))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["stripe_mode"] == "disabled"
+    assert body["checkout_enabled"] is False
+    assert body["webhook_signature_verification_enabled"] is False
+    assert body["stripe_secret_key_configured"] is False
+    assert body["stripe_dispatcher_price_id_configured"] is False
+    assert body["stripe_driver_price_id_configured"] is False
+    assert body["stripe_subscription_id"] is None
+
+
+def test_admin_can_read_billing_status_when_stripe_configured(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_123")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_123")
+    monkeypatch.setenv("STRIPE_DISPATCHER_PRICE_ID", "price_dispatch")
+    monkeypatch.setenv("STRIPE_DRIVER_PRICE_ID", "price_driver")
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+
+    billing_store = get_billing_store()
+    billing_store.upsert_subscription(
+        SeatSubscriptionRecord(
+            org_id="org-1",
+            stripe_customer_id="cus_abc",
+            stripe_subscription_id="sub_abc",
+            dispatcher_seat_limit=2,
+            driver_seat_limit=4,
+            created_at=billing_router._utc_now(),
+            updated_at=billing_router._utc_now(),
+        )
+    )
+
+    response = client.get("/billing/status", headers=_auth_header(admin_token))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["stripe_mode"] == "test"
+    assert body["checkout_enabled"] is True
+    assert body["webhook_signature_verification_enabled"] is True
+    assert body["stripe_secret_key_configured"] is True
+    assert body["stripe_webhook_secret_configured"] is True
+    assert body["stripe_dispatcher_price_id_configured"] is True
+    assert body["stripe_driver_price_id_configured"] is True
+    assert body["stripe_customer_id"] == "cus_abc"
+    assert body["stripe_subscription_id"] == "sub_abc"
+
+
 def test_checkout_creates_session_when_subscription_missing():
     admin_token = make_token("admin-1", "org-1", ["Admin"])
     app.dependency_overrides[billing_router.get_stripe_client] = lambda: _FakeStripeClient()

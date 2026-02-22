@@ -135,6 +135,19 @@ class BillingSummary(BaseModel):
     updated_at: datetime
 
 
+class BillingProviderStatus(BaseModel):
+    org_id: str
+    stripe_mode: str
+    checkout_enabled: bool
+    webhook_signature_verification_enabled: bool
+    stripe_secret_key_configured: bool
+    stripe_webhook_secret_configured: bool
+    stripe_dispatcher_price_id_configured: bool
+    stripe_driver_price_id_configured: bool
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+
+
 class BillingSeatsUpdateRequest(BaseModel):
     dispatcher_seat_limit: Optional[int] = Field(default=None, ge=0, le=10000)
     driver_seat_limit: Optional[int] = Field(default=None, ge=0, le=10000)

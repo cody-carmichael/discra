@@ -77,6 +77,7 @@ After `sam local start-api`:
 - `GET /dev/backend/drivers?active_minutes=30` (Admin/Dispatcher)
 - `POST /dev/backend/routes/optimize` (Admin/Dispatcher)
 - `GET /dev/backend/billing/summary` (Admin)
+- `GET /dev/backend/billing/status` (Admin)
 - `POST /dev/backend/billing/checkout` (Admin)
 - `POST /dev/backend/billing/seats` (Admin)
 - `POST /dev/backend/billing/invitations` (Admin)
@@ -166,3 +167,4 @@ Hosted UI setup notes:
 20. Mobile route optimization UX: selected-driver optimization, ordered stop context, and map handoff to Google Maps
 21. Admin billing console UX: seat summary, seat limit updates, and invitation create/activate flows
 22. Stripe checkout flow: Admin endpoint + UI action to start subscription checkout when no Stripe subscription exists
+23. Billing readiness visibility: Admin status endpoint + console indicators for Stripe configuration and linkage

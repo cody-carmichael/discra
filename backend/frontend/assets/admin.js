@@ -25,6 +25,7 @@
     routeResult: document.getElementById("route-result"),
     routeMessage: document.getElementById("route-message"),
     refreshBilling: document.getElementById("refresh-billing"),
+    billingStatus: document.getElementById("billing-status"),
     billingSummary: document.getElementById("billing-summary"),
     billingSeatsForm: document.getElementById("billing-seats-form"),
     billingCheckoutForm: document.getElementById("billing-checkout-form"),
@@ -113,6 +114,7 @@
       isAdminRole = false;
       setInteractiveState(false);
       setBillingInteractiveState(false);
+      el.billingStatus.textContent = "No billing provider status loaded.";
       el.billingSummary.textContent = "No billing summary loaded.";
       return;
     }
@@ -497,13 +499,26 @@
     el.billingSummary.textContent = JSON.stringify(summary, null, 2);
   }
 
+  function renderBillingStatus(statusPayload) {
+    if (!statusPayload) {
+      el.billingStatus.textContent = "No billing provider status loaded.";
+      return;
+    }
+    el.billingStatus.textContent = JSON.stringify(statusPayload, null, 2);
+  }
+
   async function refreshBillingSummary() {
     if (!requireAdmin(el.billingMessage)) {
       renderBillingSummary(null);
+      renderBillingStatus(null);
       return;
     }
     try {
-      const summary = await C.requestJson(apiBase, "/billing/summary", { token });
+      const [statusPayload, summary] = await Promise.all([
+        C.requestJson(apiBase, "/billing/status", { token }),
+        C.requestJson(apiBase, "/billing/summary", { token }),
+      ]);
+      renderBillingStatus(statusPayload);
       renderBillingSummary(summary);
       C.showMessage(el.billingMessage, "Loaded billing summary.", "success");
     } catch (error) {
@@ -776,6 +791,7 @@
     setToken("");
     renderOrders([]);
     renderDriverList([]);
+    renderBillingStatus(null);
     renderBillingSummary(null);
     C.showMessage(el.authMessage, "Token cleared.", "success");
     if (logoutUrl) {
@@ -810,11 +826,13 @@
       if (isAdminRole) {
         await refreshBillingSummary();
       } else {
+        renderBillingStatus(null);
         renderBillingSummary(null);
       }
     } else {
       renderOrders([]);
       renderDriverList([]);
+      renderBillingStatus(null);
       renderBillingSummary(null);
     }
   }

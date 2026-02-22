@@ -79,6 +79,7 @@ After `sam local start-api`:
 - `GET /dev/backend/billing/summary` (Admin)
 - `GET /dev/backend/billing/status` (Admin)
 - `POST /dev/backend/billing/checkout` (Admin)
+- `POST /dev/backend/billing/portal` (Admin)
 - `POST /dev/backend/billing/seats` (Admin)
 - `GET /dev/backend/billing/invitations` (Admin)
 - `POST /dev/backend/billing/invitations` (Admin)
@@ -171,3 +172,4 @@ Hosted UI setup notes:
 22. Stripe checkout flow: Admin endpoint + UI action to start subscription checkout when no Stripe subscription exists
 23. Billing readiness visibility: Admin status endpoint + console indicators for Stripe configuration and linkage
 24. Billing invitation lifecycle: list invitations and cancel pending invitations from Admin console
+25. Stripe billing self-service: Admin endpoint + console action to open Stripe Billing Portal for linked customers

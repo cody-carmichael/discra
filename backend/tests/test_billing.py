@@ -85,6 +85,10 @@ class _FakeStripeClient:
         del org_id, dispatcher_seat_limit, driver_seat_limit, success_url, cancel_url, customer_id
         return {"id": "cs_test_123", "url": "https://checkout.stripe.test/session/cs_test_123"}
 
+    def create_billing_portal_session(self, customer_id: str, return_url: str):
+        del customer_id, return_url
+        return {"id": "bps_test_123", "url": "https://billing.stripe.test/session/bps_test_123"}
+
 
 def test_admin_can_read_default_billing_summary():
     admin_token = make_token("admin-1", "org-1", ["Admin"])
@@ -209,6 +213,50 @@ def test_checkout_updates_existing_subscription_without_session():
 
     audit_events = get_audit_log_store().list_events("org-1", limit=10)
     assert any(event.action == "billing.subscription.updated_via_api" for event in audit_events)
+
+
+def test_portal_requires_linked_stripe_customer():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    app.dependency_overrides[billing_router.get_stripe_client] = lambda: _FakeStripeClient()
+
+    response = client.post(
+        "/billing/portal",
+        json={"return_url": "https://example.com/admin"},
+        headers=_auth_header(admin_token),
+    )
+    assert response.status_code == 409
+    assert "not linked" in response.json()["detail"].lower()
+
+
+def test_portal_creates_session_for_linked_customer():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    app.dependency_overrides[billing_router.get_stripe_client] = lambda: _FakeStripeClient()
+
+    billing_store = get_billing_store()
+    billing_store.upsert_subscription(
+        SeatSubscriptionRecord(
+            org_id="org-1",
+            stripe_customer_id="cus_existing",
+            stripe_subscription_id="sub_existing",
+            dispatcher_seat_limit=1,
+            driver_seat_limit=1,
+            created_at=billing_router._utc_now(),
+            updated_at=billing_router._utc_now(),
+        )
+    )
+
+    response = client.post(
+        "/billing/portal",
+        json={"return_url": "https://example.com/admin"},
+        headers=_auth_header(admin_token),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["portal_session_id"] == "bps_test_123"
+    assert body["portal_url"].startswith("https://billing.stripe.test/")
+
+    audit_events = get_audit_log_store().list_events("org-1", limit=10)
+    assert any(event.action == "billing.portal.session_created" for event in audit_events)
 
 
 def test_invitation_respects_dispatcher_seat_limit():

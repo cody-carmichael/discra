@@ -10,7 +10,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from backend.app import app
 from backend.audit_store import get_audit_log_store, reset_in_memory_audit_log_store
-from backend.billing_service import reset_in_memory_billing_store
+from backend.billing_service import get_billing_store, reset_in_memory_billing_store
+from backend.routers import billing as billing_router
+from backend.schemas import SeatSubscriptionRecord
 from backend.repositories import _IN_MEMORY_REPO
 
 client = TestClient(app)
@@ -43,10 +45,45 @@ def _test_env(monkeypatch):
     reset_in_memory_audit_log_store()
     _IN_MEMORY_REPO._orgs.clear()
     _IN_MEMORY_REPO._users.clear()
+    app.dependency_overrides.clear()
+    yield
+    app.dependency_overrides.clear()
 
 
 def _auth_header(token: str):
     return {"Authorization": f"Bearer {token}"}
+
+
+class _FakeStripeClient:
+    def parse_webhook_event(self, payload: bytes, signature_header):
+        del signature_header
+        return json.loads(payload.decode("utf-8"))
+
+    def update_subscription_quantities(self, subscription_id: str, dispatcher_seat_limit: int, driver_seat_limit: int):
+        return {
+            "id": subscription_id,
+            "customer": "cus_test",
+            "status": "active",
+            "metadata": {"plan_name": "seat-based"},
+            "items": {
+                "data": [
+                    {"id": "si_dispatch", "quantity": dispatcher_seat_limit, "price": {"id": "price_dispatcher"}},
+                    {"id": "si_driver", "quantity": driver_seat_limit, "price": {"id": "price_driver"}},
+                ]
+            },
+        }
+
+    def create_checkout_session(
+        self,
+        org_id: str,
+        dispatcher_seat_limit: int,
+        driver_seat_limit: int,
+        success_url: str,
+        cancel_url: str,
+        customer_id=None,
+    ):
+        del org_id, dispatcher_seat_limit, driver_seat_limit, success_url, cancel_url, customer_id
+        return {"id": "cs_test_123", "url": "https://checkout.stripe.test/session/cs_test_123"}
 
 
 def test_admin_can_read_default_billing_summary():
@@ -59,6 +96,66 @@ def test_admin_can_read_default_billing_summary():
     assert body["driver_seats"]["total"] == 0
     assert body["dispatcher_seats"]["available"] == 0
     assert body["driver_seats"]["available"] == 0
+
+
+def test_checkout_creates_session_when_subscription_missing():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    app.dependency_overrides[billing_router.get_stripe_client] = lambda: _FakeStripeClient()
+
+    response = client.post(
+        "/billing/checkout",
+        json={
+            "dispatcher_seat_limit": 2,
+            "driver_seat_limit": 3,
+            "success_url": "https://example.com/admin?checkout=success",
+            "cancel_url": "https://example.com/admin?checkout=cancel",
+        },
+        headers=_auth_header(admin_token),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "checkout_session"
+    assert body["checkout_session_id"] == "cs_test_123"
+    assert body["checkout_url"].startswith("https://checkout.stripe.test/")
+
+    audit_events = get_audit_log_store().list_events("org-1", limit=10)
+    assert any(event.action == "billing.checkout.session_created" for event in audit_events)
+
+
+def test_checkout_updates_existing_subscription_without_session():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    app.dependency_overrides[billing_router.get_stripe_client] = lambda: _FakeStripeClient()
+
+    billing_store = get_billing_store()
+    existing = SeatSubscriptionRecord(
+        org_id="org-1",
+        stripe_customer_id="cus_existing",
+        stripe_subscription_id="sub_existing",
+        dispatcher_seat_limit=1,
+        driver_seat_limit=1,
+        created_at=billing_router._utc_now(),
+        updated_at=billing_router._utc_now(),
+    )
+    billing_store.upsert_subscription(existing)
+
+    response = client.post(
+        "/billing/checkout",
+        json={
+            "dispatcher_seat_limit": 4,
+            "driver_seat_limit": 5,
+            "success_url": "https://example.com/admin?checkout=success",
+            "cancel_url": "https://example.com/admin?checkout=cancel",
+        },
+        headers=_auth_header(admin_token),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "subscription_update"
+    assert body["summary"]["dispatcher_seats"]["total"] == 4
+    assert body["summary"]["driver_seats"]["total"] == 5
+
+    audit_events = get_audit_log_store().list_events("org-1", limit=10)
+    assert any(event.action == "billing.subscription.updated_via_api" for event in audit_events)
 
 
 def test_invitation_respects_dispatcher_seat_limit():

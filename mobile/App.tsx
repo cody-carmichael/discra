@@ -125,18 +125,32 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 }
 
 function roleSummary(token: string): string {
+  return extractTokenGroups(token).join(", ");
+}
+
+function extractTokenGroups(token: string): string[] {
   const payload = decodeJwtPayload(token);
   if (!payload) {
-    return "";
+    return [];
   }
   const groups = payload["cognito:groups"] ?? payload.groups;
   if (Array.isArray(groups)) {
-    return groups.join(", ");
+    return groups.map((item) => String(item));
   }
   if (groups) {
-    return String(groups);
+    return [String(groups)];
   }
-  return "";
+  return [];
+}
+
+function looksLikeJwt(token: string): boolean {
+  const trimmed = (token || "").trim();
+  return trimmed.split(".").length >= 2;
+}
+
+function looksLikeBackendApiBase(url: string): boolean {
+  const value = normalizeApiBase(url);
+  return value.endsWith("/backend");
 }
 
 function inferContentType(uri: string, fallback: string): string {
@@ -365,8 +379,35 @@ export default function App() {
     };
   }, []);
 
-  const hasConfig = useMemo(() => !!normalizeApiBase(apiBase) && !!token.trim(), [apiBase, token]);
   const tokenRoleText = useMemo(() => roleSummary(token), [token]);
+  const tokenGroups = useMemo(() => extractTokenGroups(token), [token]);
+  const workspaceAllowed = useMemo(() => {
+    if (workspace === "admin") {
+      return tokenGroups.includes("Admin") || tokenGroups.includes("Dispatcher");
+    }
+    return tokenGroups.includes("Driver");
+  }, [tokenGroups, workspace]);
+  const sessionValidationMessage = useMemo(() => {
+    if (!normalizeApiBase(apiBase)) {
+      return "API base URL is required.";
+    }
+    if (!looksLikeBackendApiBase(apiBase)) {
+      return "API base should end with /backend (example: .../dev/backend).";
+    }
+    if (!token.trim()) {
+      return "JWT token is required.";
+    }
+    if (!looksLikeJwt(token)) {
+      return "JWT token format appears invalid.";
+    }
+    if (workspace === "admin" && !workspaceAllowed) {
+      return "Admin/Dispatcher workspace requires Admin or Dispatcher role.";
+    }
+    if (workspace === "driver" && !workspaceAllowed) {
+      return "Driver workspace requires Driver role.";
+    }
+    return "";
+  }, [apiBase, token, workspace, workspaceAllowed]);
   const selectedDriver = useMemo(
     () => drivers.find((driver) => driver.driver_id === selectedDriverId) || null,
     [drivers, selectedDriverId]
@@ -393,6 +434,14 @@ export default function App() {
 
   function setMessage(message: string) {
     setStatusMessage(message);
+  }
+
+  function ensureWorkspaceAccess(): boolean {
+    if (sessionValidationMessage) {
+      setMessage(sessionValidationMessage);
+      return false;
+    }
+    return true;
   }
 
   async function withLoading(action: () => Promise<void>) {
@@ -429,9 +478,9 @@ export default function App() {
   }
 
   async function flushQueue(silent: boolean = false) {
-    if (!hasConfig) {
-      if (!silent) {
-        setMessage("API base and JWT token are required.");
+    if (!ensureWorkspaceAccess()) {
+      if (silent) {
+        return;
       }
       return;
     }
@@ -634,8 +683,7 @@ export default function App() {
   }
 
   async function submitPod(order: OrderRecord) {
-    if (!hasConfig) {
-      setMessage("API base and JWT token are required.");
+    if (!ensureWorkspaceAccess()) {
       return;
     }
     const orderId = order.id;
@@ -745,8 +793,7 @@ export default function App() {
   }
 
   async function refreshAdminData() {
-    if (!hasConfig) {
-      setMessage("API base and JWT token are required.");
+    if (!ensureWorkspaceAccess()) {
       return;
     }
     await withLoading(async () => {
@@ -799,8 +846,7 @@ export default function App() {
   }
 
   async function refreshDriverInbox() {
-    if (!hasConfig) {
-      setMessage("API base and JWT token are required.");
+    if (!ensureWorkspaceAccess()) {
       return;
     }
     await withLoading(async () => {
@@ -812,6 +858,9 @@ export default function App() {
   }
 
   async function assignOrder(orderId: string) {
+    if (!ensureWorkspaceAccess()) {
+      return;
+    }
     const driverId = (assignInputs[orderId] || "").trim();
     if (!driverId) {
       setMessage("Driver ID is required for assignment.");
@@ -828,6 +877,9 @@ export default function App() {
   }
 
   async function unassignOrder(orderId: string) {
+    if (!ensureWorkspaceAccess()) {
+      return;
+    }
     await withLoading(async () => {
       await apiRequest<OrderRecord>(apiBase, `/orders/${orderId}/unassign`, {
         method: "POST",
@@ -838,6 +890,9 @@ export default function App() {
   }
 
   async function updateOrderStatus(orderId: string, status: string, nextWorkspace: Workspace) {
+    if (!ensureWorkspaceAccess()) {
+      return;
+    }
     await withLoading(async () => {
       try {
         await apiRequest<OrderRecord>(apiBase, `/orders/${orderId}/status`, {
@@ -868,8 +923,7 @@ export default function App() {
   }
 
   async function sendDriverLocation() {
-    if (!hasConfig) {
-      setMessage("API base and JWT token are required.");
+    if (!ensureWorkspaceAccess()) {
       return;
     }
     const permission = await Location.requestForegroundPermissionsAsync();
@@ -923,8 +977,7 @@ export default function App() {
       setMessage("Auto-share disabled.");
       return;
     }
-    if (!hasConfig) {
-      setMessage("API base and JWT token are required.");
+    if (!ensureWorkspaceAccess()) {
       return;
     }
     sendDriverLocation().catch((error) => {
@@ -1027,6 +1080,7 @@ export default function App() {
           <Text style={styles.metaText}>Use `/dev/backend` API base from deployed SAM endpoint.</Text>
           {tokenRoleText ? <Text style={styles.metaText}>Token roles: {tokenRoleText}</Text> : null}
           {queue.length ? <Text style={styles.metaText}>Queued driver events: {queue.length}</Text> : null}
+          {sessionValidationMessage ? <Text style={styles.validationText}>{sessionValidationMessage}</Text> : null}
         </View>
 
         {workspace === "admin" ? (
@@ -1542,5 +1596,10 @@ const styles = StyleSheet.create({
     color: "#9ab7c3",
     fontSize: 12,
     marginTop: 8,
+  },
+  validationText: {
+    color: "#ffb347",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });

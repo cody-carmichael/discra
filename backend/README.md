@@ -1,4 +1,4 @@
-Discra Python backend (`PR1` to `PR17`) for migration from Java Lambda handlers.
+Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
 
 ## Implemented so far
 - FastAPI app adapted to Lambda with Mangum (`backend/app.py`).
@@ -61,6 +61,7 @@ Discra Python backend (`PR1` to `PR17`) for migration from Java Lambda handlers.
   - Admin/Dispatcher: mobile dispatch + driver tracking + in-app active-driver map and route context
   - Driver: inbox/status/location updates + POD photo/signature capture + POD metadata submit
   - Hosted UI deep-link login/logout and offline queue sync for driver status/location events
+  - Release hardening: session validation warnings, EAS build profiles, mobile CI typecheck workflow, smoke-test checklist
 
 ## Local development
 ```powershell

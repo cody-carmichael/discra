@@ -427,6 +427,18 @@ class StripeClient(ABC):
     ) -> Dict[str, Any]:
         raise NotImplementedError
 
+    @abstractmethod
+    def create_checkout_session(
+        self,
+        org_id: str,
+        dispatcher_seat_limit: int,
+        driver_seat_limit: int,
+        success_url: str,
+        cancel_url: str,
+        customer_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        raise NotImplementedError
+
 
 class DisabledStripeClient(StripeClient):
     def parse_webhook_event(self, payload: bytes, signature_header: Optional[str]) -> Dict[str, Any]:
@@ -441,6 +453,18 @@ class DisabledStripeClient(StripeClient):
     ) -> Dict[str, Any]:
         del subscription_id, dispatcher_seat_limit, driver_seat_limit
         return {}
+
+    def create_checkout_session(
+        self,
+        org_id: str,
+        dispatcher_seat_limit: int,
+        driver_seat_limit: int,
+        success_url: str,
+        cancel_url: str,
+        customer_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        del org_id, dispatcher_seat_limit, driver_seat_limit, success_url, cancel_url, customer_id
+        raise RuntimeError("Stripe checkout is not configured")
 
 
 class StripeSdkClient(StripeClient):
@@ -512,6 +536,49 @@ class StripeSdkClient(StripeClient):
             items=updates,
             proration_behavior="create_prorations",
         )
+
+    def create_checkout_session(
+        self,
+        org_id: str,
+        dispatcher_seat_limit: int,
+        driver_seat_limit: int,
+        success_url: str,
+        cancel_url: str,
+        customer_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if not self._api_key:
+            raise RuntimeError("STRIPE_SECRET_KEY is required to create checkout sessions")
+
+        line_items = []
+        if self._dispatcher_price_id and dispatcher_seat_limit > 0:
+            line_items.append({"price": self._dispatcher_price_id, "quantity": dispatcher_seat_limit})
+        if self._driver_price_id and driver_seat_limit > 0:
+            line_items.append({"price": self._driver_price_id, "quantity": driver_seat_limit})
+
+        if not line_items:
+            raise RuntimeError("At least one Stripe seat price id must be configured with a non-zero quantity")
+
+        params: Dict[str, Any] = {
+            "mode": "subscription",
+            "line_items": line_items,
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+            "allow_promotion_codes": True,
+            "client_reference_id": org_id,
+            "metadata": {"org_id": org_id, "plan_name": "seat-based"},
+            "subscription_data": {
+                "metadata": {
+                    "org_id": org_id,
+                    "plan_name": "seat-based",
+                    "dispatcher_seat_limit": str(dispatcher_seat_limit),
+                    "driver_seat_limit": str(driver_seat_limit),
+                }
+            },
+        }
+        if customer_id:
+            params["customer"] = customer_id
+
+        return stripe.checkout.Session.create(**params)
 
 
 def get_stripe_client() -> StripeClient:

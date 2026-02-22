@@ -144,6 +144,20 @@ class BillingSeatsUpdateResponse(BaseModel):
     summary: BillingSummary
 
 
+class BillingCheckoutRequest(BaseModel):
+    dispatcher_seat_limit: Optional[int] = Field(default=None, ge=0, le=10000)
+    driver_seat_limit: Optional[int] = Field(default=None, ge=0, le=10000)
+    success_url: str = Field(..., min_length=1, max_length=2000)
+    cancel_url: str = Field(..., min_length=1, max_length=2000)
+
+
+class BillingCheckoutResponse(BaseModel):
+    mode: str
+    checkout_url: Optional[str] = None
+    checkout_session_id: Optional[str] = None
+    summary: Optional[BillingSummary] = None
+
+
 class BillingInvitationCreateRequest(BaseModel):
     user_id: str = Field(..., min_length=1, max_length=128)
     email: Optional[str] = Field(default=None, min_length=3, max_length=320)

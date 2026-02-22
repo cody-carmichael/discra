@@ -26,6 +26,8 @@ try:
     from backend.order_store import get_order_store
     from backend.repositories import get_identity_repository
     from backend.schemas import (
+        BillingCheckoutRequest,
+        BillingCheckoutResponse,
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
         BillingSeatsUpdateRequest,
@@ -60,6 +62,8 @@ except ModuleNotFoundError:  # local run from backend/ directory
     from order_store import get_order_store
     from repositories import get_identity_repository
     from schemas import (
+        BillingCheckoutRequest,
+        BillingCheckoutResponse,
         BillingInvitationCreateRequest,
         BillingInvitationRecord,
         BillingSeatsUpdateRequest,
@@ -332,6 +336,153 @@ async def update_billing_seats(
         },
     )
     return BillingSeatsUpdateResponse(summary=summary)
+
+
+@router.post("/billing/checkout", response_model=BillingCheckoutResponse)
+async def start_billing_checkout(
+    payload: BillingCheckoutRequest,
+    request: Request,
+    user=Depends(require_roles([ROLE_ADMIN])),
+    identity_repo=Depends(get_identity_repository),
+    billing_store=Depends(get_billing_store),
+    stripe_client=Depends(get_stripe_client),
+    audit_store=Depends(get_audit_log_store),
+):
+    if payload.dispatcher_seat_limit is None and payload.driver_seat_limit is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="At least one seat limit value is required",
+        )
+
+    success_url = _optional_text(payload.success_url)
+    cancel_url = _optional_text(payload.cancel_url)
+    if not success_url or not cancel_url:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="success_url and cancel_url are required",
+        )
+
+    subscription = get_or_default_subscription(user["org_id"], billing_store)
+    usage = calculate_seat_usage(user["org_id"], identity_repo, billing_store)
+    dispatcher_limit = (
+        payload.dispatcher_seat_limit
+        if payload.dispatcher_seat_limit is not None
+        else subscription.dispatcher_seat_limit
+    )
+    driver_limit = (
+        payload.driver_seat_limit
+        if payload.driver_seat_limit is not None
+        else subscription.driver_seat_limit
+    )
+
+    if dispatcher_limit < usage.dispatcher_active + usage.dispatcher_pending:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Dispatcher seat limit cannot be lower than active + pending dispatchers",
+        )
+    if driver_limit < usage.driver_active + usage.driver_pending:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Driver seat limit cannot be lower than active + pending drivers",
+        )
+    if dispatcher_limit == 0 and driver_limit == 0:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="At least one seat limit must be greater than zero",
+        )
+
+    if subscription.stripe_subscription_id:
+        updated_subscription = SeatSubscriptionRecord(
+            org_id=subscription.org_id,
+            plan_name=subscription.plan_name,
+            status=subscription.status,
+            stripe_customer_id=subscription.stripe_customer_id,
+            stripe_subscription_id=subscription.stripe_subscription_id,
+            dispatcher_seat_limit=dispatcher_limit,
+            driver_seat_limit=driver_limit,
+            created_at=subscription.created_at,
+            updated_at=_utc_now(),
+        )
+
+        try:
+            stripe_subscription = stripe_client.update_subscription_quantities(
+                subscription_id=updated_subscription.stripe_subscription_id,
+                dispatcher_seat_limit=updated_subscription.dispatcher_seat_limit,
+                driver_seat_limit=updated_subscription.driver_seat_limit,
+            )
+            if stripe_subscription:
+                updated_subscription = _merge_stripe_subscription_snapshot(
+                    current=updated_subscription,
+                    stripe_subscription=stripe_subscription,
+                )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=http_status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to sync seat limits with Stripe: {exc}",
+            ) from exc
+
+        persisted = billing_store.upsert_subscription(updated_subscription)
+        summary = build_billing_summary(persisted, usage)
+        _audit_event(
+            audit_store,
+            org_id=user["org_id"],
+            action="billing.subscription.updated_via_api",
+            actor_id=user.get("sub"),
+            actor_roles=user.get("groups") or [],
+            target_type="seat_subscription",
+            target_id=user["org_id"],
+            request=request,
+            details={
+                "dispatcher_seat_limit": persisted.dispatcher_seat_limit,
+                "driver_seat_limit": persisted.driver_seat_limit,
+                "stripe_subscription_id": persisted.stripe_subscription_id,
+            },
+        )
+        return BillingCheckoutResponse(mode="subscription_update", summary=summary)
+
+    try:
+        checkout_session = stripe_client.create_checkout_session(
+            org_id=user["org_id"],
+            dispatcher_seat_limit=dispatcher_limit,
+            driver_seat_limit=driver_limit,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            customer_id=subscription.stripe_customer_id,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to create Stripe checkout session: {exc}",
+        ) from exc
+
+    checkout_session_id = _optional_text(checkout_session.get("id")) if isinstance(checkout_session, dict) else None
+    checkout_url = _optional_text(checkout_session.get("url")) if isinstance(checkout_session, dict) else None
+    if not checkout_url:
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail="Stripe checkout session did not return a redirect URL",
+        )
+
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="billing.checkout.session_created",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="seat_subscription",
+        target_id=user["org_id"],
+        request=request,
+        details={
+            "dispatcher_seat_limit": dispatcher_limit,
+            "driver_seat_limit": driver_limit,
+            "stripe_checkout_session_id": checkout_session_id,
+        },
+    )
+    return BillingCheckoutResponse(
+        mode="checkout_session",
+        checkout_url=checkout_url,
+        checkout_session_id=checkout_session_id,
+    )
 
 
 @router.post("/billing/invitations", response_model=BillingInvitationRecord)

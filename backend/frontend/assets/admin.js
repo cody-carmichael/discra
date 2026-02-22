@@ -27,6 +27,7 @@
     refreshBilling: document.getElementById("refresh-billing"),
     billingSummary: document.getElementById("billing-summary"),
     billingSeatsForm: document.getElementById("billing-seats-form"),
+    billingCheckoutForm: document.getElementById("billing-checkout-form"),
     billingInviteForm: document.getElementById("billing-invite-form"),
     billingActivateForm: document.getElementById("billing-activate-form"),
     billingMessage: document.getElementById("billing-message"),
@@ -84,6 +85,9 @@
   function setBillingInteractiveState(enabled) {
     el.refreshBilling.disabled = !enabled;
     el.billingSeatsForm.querySelectorAll("input, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
+    el.billingCheckoutForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
     });
     el.billingInviteForm.querySelectorAll("input, select, button").forEach(function (element) {
@@ -539,6 +543,54 @@
     }
   }
 
+  async function startBillingCheckout(event) {
+    event.preventDefault();
+    if (!requireAdmin(el.billingMessage)) {
+      return;
+    }
+
+    const formData = new FormData(el.billingCheckoutForm);
+    const dispatcherLimit = C.toIntOrNull(formData.get("dispatcher_seat_limit"));
+    const driverLimit = C.toIntOrNull(formData.get("driver_seat_limit"));
+    if (dispatcherLimit === null && driverLimit === null) {
+      C.showMessage(el.billingMessage, "Provide at least one checkout seat limit value.", "error");
+      return;
+    }
+
+    const currentPageUrl = window.location.origin + window.location.pathname;
+    const payload = {
+      success_url: currentPageUrl + "?billing=success",
+      cancel_url: currentPageUrl + "?billing=cancel",
+    };
+    if (dispatcherLimit !== null) {
+      payload.dispatcher_seat_limit = dispatcherLimit;
+    }
+    if (driverLimit !== null) {
+      payload.driver_seat_limit = driverLimit;
+    }
+
+    try {
+      const response = await C.requestJson(apiBase, "/billing/checkout", {
+        method: "POST",
+        token,
+        json: payload,
+      });
+      if (response.mode === "subscription_update" && response.summary) {
+        renderBillingSummary(response.summary);
+        C.showMessage(el.billingMessage, "Stripe subscription updated.", "success");
+        return;
+      }
+      if (response.mode === "checkout_session" && response.checkout_url) {
+        C.showMessage(el.billingMessage, "Redirecting to Stripe checkout...", "success");
+        window.location.assign(response.checkout_url);
+        return;
+      }
+      C.showMessage(el.billingMessage, "Checkout response did not include a redirect URL.", "error");
+    } catch (error) {
+      C.showMessage(el.billingMessage, error.message, "error");
+    }
+  }
+
   async function createBillingInvitation(event) {
     event.preventDefault();
     if (!requireAdmin(el.billingMessage)) {
@@ -736,6 +788,19 @@
     setInteractiveState(false);
     setBillingInteractiveState(false);
     renderClaims();
+    const params = new URLSearchParams(window.location.search);
+    const billingState = params.get("billing");
+    if (billingState === "success") {
+      C.showMessage(el.billingMessage, "Stripe checkout completed. Refresh summary to confirm webhook sync.", "success");
+    } else if (billingState === "cancel") {
+      C.showMessage(el.billingMessage, "Stripe checkout canceled.", "error");
+    }
+    if (billingState) {
+      params.delete("billing");
+      const nextQuery = params.toString();
+      const nextUrl = window.location.pathname + (nextQuery ? "?" + nextQuery : "");
+      history.replaceState(null, "", nextUrl);
+    }
     registerServiceWorker();
     await loadUiConfig();
     await finishHostedLoginCallback();
@@ -770,6 +835,7 @@
   el.optimizeForm.addEventListener("submit", optimizeRoute);
   el.refreshBilling.addEventListener("click", refreshBillingSummary);
   el.billingSeatsForm.addEventListener("submit", updateBillingSeats);
+  el.billingCheckoutForm.addEventListener("submit", startBillingCheckout);
   el.billingInviteForm.addEventListener("submit", createBillingInvitation);
   el.billingActivateForm.addEventListener("submit", activateBillingInvitation);
   el.loginHostedUi.addEventListener("click", function () {

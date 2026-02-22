@@ -40,6 +40,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - Explicit `stops` with `lat/lng` are still supported as an override
 - Billing + seat management:
   - `GET /billing/summary` (Admin)
+  - `POST /billing/checkout` (Admin)
   - `POST /billing/seats` (Admin)
   - `POST /billing/invitations` (Admin)
   - `POST /billing/invitations/{invitationId}/activate` (Admin)
@@ -52,7 +53,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
 - Minimal web UIs:
   - `GET /ui` (workspace picker)
   - `GET /ui/admin` (Admin/Dispatcher console)
-  - Admin console includes seat-billing controls for `GET /billing/summary`, `POST /billing/seats`, `POST /billing/invitations`, and invitation activation
+  - Admin console includes seat-billing controls for `GET /billing/summary`, `POST /billing/checkout`, `POST /billing/seats`, `POST /billing/invitations`, and invitation activation
   - `GET /ui/admin-sw.js` (Admin/Dispatcher PWA service worker)
   - `GET /ui/driver` (Driver web app with POD + location updates)
   - `GET /ui/driver-sw.js` (Driver PWA service worker)

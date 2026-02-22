@@ -46,6 +46,23 @@ type RouteContextPoint = {
   longitude: number;
 };
 
+type RouteOptimizedStop = {
+  sequence: number;
+  order_id: string;
+  lat: number;
+  lng: number;
+  address?: string | null;
+  distance_from_previous_meters: number;
+  duration_from_previous_seconds: number;
+};
+
+type RouteOptimizeResponse = {
+  matrix_source: string;
+  total_distance_meters: number;
+  total_duration_seconds: number;
+  ordered_stops: RouteOptimizedStop[];
+};
+
 type PodPresignUpload = {
   artifact_type: "photo" | "signature";
   key: string;
@@ -223,6 +240,30 @@ function tryParseLatLng(value: string): RouteContextPoint | null {
   };
 }
 
+function formatDistanceMiles(meters: number): string {
+  if (!Number.isFinite(meters) || meters < 0) {
+    return "-";
+  }
+  const miles = meters / 1609.344;
+  return `${miles.toFixed(1)} mi`;
+}
+
+function formatDurationShort(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "-";
+  }
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (remainingMinutes === 0) {
+    return `${hours}h`;
+  }
+  return `${hours}h ${remainingMinutes}m`;
+}
+
 type ApiRequestOptions = {
   method?: "GET" | "POST";
   token: string;
@@ -283,6 +324,10 @@ export default function App() {
   const [autoShareOn, setAutoShareOn] = useState(false);
   const [adminMapRegion, setAdminMapRegion] = useState<Region | null>(null);
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
+  const [routePlanDriverId, setRoutePlanDriverId] = useState<string | null>(null);
+  const [selectedDriverRoutePlan, setSelectedDriverRoutePlan] = useState<RouteOptimizeResponse | null>(null);
+  const [routePlanError, setRoutePlanError] = useState("");
+  const [isRoutePlanLoading, setIsRoutePlanLoading] = useState(false);
   const locationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -418,11 +463,26 @@ export default function App() {
     }
     return orders.filter((order) => order.assigned_to === selectedDriverId);
   }, [orders, selectedDriverId]);
+  const selectedRoutePlan = useMemo(() => {
+    if (!selectedDriverId) {
+      return null;
+    }
+    if (routePlanDriverId !== selectedDriverId) {
+      return null;
+    }
+    return selectedDriverRoutePlan;
+  }, [selectedDriverId, routePlanDriverId, selectedDriverRoutePlan]);
   const selectedDriverRoutePoints = useMemo<RouteContextPoint[]>(() => {
     if (!selectedDriver) {
       return [];
     }
     const points: RouteContextPoint[] = [{ latitude: selectedDriver.lat, longitude: selectedDriver.lng }];
+    if (selectedRoutePlan?.ordered_stops?.length) {
+      for (const stop of selectedRoutePlan.ordered_stops) {
+        points.push({ latitude: stop.lat, longitude: stop.lng });
+      }
+      return points;
+    }
     for (const order of selectedDriverOrders) {
       const parsed = tryParseLatLng(order.delivery);
       if (parsed) {
@@ -430,7 +490,7 @@ export default function App() {
       }
     }
     return points;
-  }, [selectedDriver, selectedDriverOrders]);
+  }, [selectedDriver, selectedDriverOrders, selectedRoutePlan]);
 
   function setMessage(message: string) {
     setStatusMessage(message);
@@ -451,6 +511,50 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function loadDriverRoutePlan(driverId: string, silent: boolean) {
+    if (!driverId) {
+      setRoutePlanDriverId(null);
+      setSelectedDriverRoutePlan(null);
+      setRoutePlanError("");
+      return;
+    }
+
+    setIsRoutePlanLoading(true);
+    setRoutePlanError("");
+    try {
+      const routePlan = await apiRequest<RouteOptimizeResponse>(apiBase, "/routes/optimize", {
+        method: "POST",
+        token,
+        json: { driver_id: driverId },
+      });
+      setRoutePlanDriverId(driverId);
+      setSelectedDriverRoutePlan(routePlan);
+      if (!silent) {
+        setMessage(
+          `Optimized ${routePlan.ordered_stops.length} stops (${formatDistanceMiles(routePlan.total_distance_meters)}, ${formatDurationShort(routePlan.total_duration_seconds)}).`
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to optimize route.";
+      setRoutePlanDriverId(driverId);
+      setSelectedDriverRoutePlan(null);
+      setRoutePlanError(message);
+      if (!silent) {
+        setMessage(message);
+      }
+    } finally {
+      setIsRoutePlanLoading(false);
+    }
+  }
+
+  function routeStopDestination(stop: RouteOptimizedStop): string {
+    const address = (stop.address || "").trim();
+    if (address) {
+      return address;
+    }
+    return `${stop.lat},${stop.lng}`;
   }
 
   function enqueueOperation(operation: QueuedOperation) {
@@ -804,15 +908,16 @@ export default function App() {
       setOrders(ordersResponse || []);
       setDrivers(driversResponse || []);
       setAdminMapRegion(buildMapRegion(driversResponse || []));
-      setSelectedDriverId((current) => {
-        if (!driversResponse || !driversResponse.length) {
-          return null;
+      let nextSelectedDriverId: string | null = null;
+      if (driversResponse && driversResponse.length) {
+        if (selectedDriverId && driversResponse.some((driver) => driver.driver_id === selectedDriverId)) {
+          nextSelectedDriverId = selectedDriverId;
+        } else {
+          nextSelectedDriverId = driversResponse[0].driver_id;
         }
-        if (current && driversResponse.some((driver) => driver.driver_id === current)) {
-          return current;
-        }
-        return driversResponse[0].driver_id;
-      });
+      }
+      setSelectedDriverId(nextSelectedDriverId);
+      await loadDriverRoutePlan(nextSelectedDriverId || "", true);
       setMessage(`Loaded ${ordersResponse.length} orders and ${driversResponse.length} active drivers.`);
     });
   }
@@ -825,11 +930,40 @@ export default function App() {
       latitudeDelta: 0.04,
       longitudeDelta: 0.04,
     });
+    loadDriverRoutePlan(driver.driver_id, true).catch(() => undefined);
+  }
+
+  async function optimizeSelectedDriverRoute() {
+    if (!ensureWorkspaceAccess()) {
+      return;
+    }
+    if (!selectedDriver) {
+      setMessage("Select an active driver first.");
+      return;
+    }
+    await withLoading(async () => {
+      await loadDriverRoutePlan(selectedDriver.driver_id, false);
+    });
   }
 
   async function openSelectedDriverRoute() {
     if (!selectedDriver) {
       setMessage("Select an active driver first.");
+      return;
+    }
+    const routeStops = selectedRoutePlan?.ordered_stops || [];
+    if (routeStops.length) {
+      const destination = routeStopDestination(routeStops[routeStops.length - 1]);
+      const waypoints = routeStops.slice(0, -1).map((stop) => routeStopDestination(stop));
+      const params = new URLSearchParams();
+      params.set("api", "1");
+      params.set("origin", `${selectedDriver.lat},${selectedDriver.lng}`);
+      params.set("destination", destination);
+      if (waypoints.length) {
+        params.set("waypoints", waypoints.join("|"));
+      }
+      params.set("travelmode", "driving");
+      await Linking.openURL(`https://www.google.com/maps/dir/?${params.toString()}`);
       return;
     }
     if (!selectedDriverOrders.length) {
@@ -1123,15 +1257,44 @@ export default function App() {
               <Text style={styles.metaText}>
                 Selected driver: {selectedDriver ? selectedDriver.driver_id : "None"}
               </Text>
-              <Text style={styles.metaText}>
-                Map route line appears when delivery values include `lat,lng` coordinates.
-              </Text>
+              {selectedRoutePlan ? (
+                <Text style={styles.metaText}>
+                  Optimized via {selectedRoutePlan.matrix_source}:{" "}
+                  {formatDistanceMiles(selectedRoutePlan.total_distance_meters)} /{" "}
+                  {formatDurationShort(selectedRoutePlan.total_duration_seconds)}
+                </Text>
+              ) : (
+                <Text style={styles.metaText}>No optimized route loaded yet.</Text>
+              )}
+              {isRoutePlanLoading ? <Text style={styles.metaText}>Optimizing route...</Text> : null}
+              {routePlanError && routePlanDriverId === selectedDriverId ? (
+                <Text style={styles.validationText}>{routePlanError}</Text>
+              ) : null}
               <View style={styles.row}>
+                <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => optimizeSelectedDriverRoute().catch(onError)}>
+                  <Text style={styles.buttonText}>Optimize Route</Text>
+                </Pressable>
                 <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => openSelectedDriverRoute().catch(onError)}>
-                  <Text style={styles.buttonGhostText}>Open First Stop Route</Text>
+                  <Text style={styles.buttonGhostText}>Open Route in Maps</Text>
                 </Pressable>
               </View>
-              {selectedDriverOrders.length ? (
+              {selectedRoutePlan && selectedRoutePlan.ordered_stops.length ? (
+                selectedRoutePlan.ordered_stops.map((stop) => {
+                  const order = orders.find((candidate) => candidate.id === stop.order_id);
+                  return (
+                    <View key={`route-order-${stop.order_id}`} style={styles.routeStopCard}>
+                      <Text style={styles.routeStopTitle}>
+                        {stop.sequence}. {order ? `#${order.reference_number} - ${order.customer_name}` : stop.order_id}
+                      </Text>
+                      <Text style={styles.metaText}>Delivery: {stop.address || routeStopDestination(stop)}</Text>
+                      <Text style={styles.metaText}>
+                        Leg: {formatDistanceMiles(stop.distance_from_previous_meters)} /{" "}
+                        {formatDurationShort(stop.duration_from_previous_seconds)}
+                      </Text>
+                    </View>
+                  );
+                })
+              ) : selectedDriverOrders.length ? (
                 selectedDriverOrders.map((order) => (
                   <View key={`route-order-${order.id}`} style={styles.routeStopCard}>
                     <Text style={styles.routeStopTitle}>

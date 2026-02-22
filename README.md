@@ -162,3 +162,4 @@ Hosted UI setup notes:
 17. Mobile map view: in-app Admin/Dispatcher map visualization + route context for active drivers
 18. Mobile release hardening: in-app validation, Expo build profiles, smoke-test checklist, and deployment notes
 19. Route optimization completeness: remove manual stops requirement via address geocoding + assigned-order route generation
+20. Mobile route optimization UX: selected-driver optimization, ordered stop context, and map handoff to Google Maps

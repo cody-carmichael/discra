@@ -789,7 +789,7 @@ async def order_ingest_webhook(request: Request):
     except ValidationError as exc:
         raise HTTPException(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=exc.errors(),
+            detail=exc.errors(include_context=False),
         ) from exc
 
     duplicate_external_ids = []
@@ -830,6 +830,8 @@ async def order_ingest_webhook(request: Request):
                 delivery=incoming.delivery,
                 dimensions=incoming.dimensions,
                 weight=incoming.weight,
+                time_window_start=incoming.time_window_start,
+                time_window_end=incoming.time_window_end,
                 phone=incoming.phone,
                 email=incoming.email,
                 notes=incoming.notes,
@@ -854,6 +856,8 @@ async def order_ingest_webhook(request: Request):
             delivery=incoming.delivery,
             dimensions=incoming.dimensions,
             weight=incoming.weight,
+            time_window_start=incoming.time_window_start,
+            time_window_end=incoming.time_window_end,
             phone=incoming.phone,
             email=incoming.email,
             notes=incoming.notes,

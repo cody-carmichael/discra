@@ -35,22 +35,28 @@ def _webhook_payload(
     pick_up_address: str,
     delivery: str,
     reference_number: int,
+    time_window_start: Optional[str] = None,
+    time_window_end: Optional[str] = None,
 ):
+    order_payload = {
+        "external_order_id": external_order_id,
+        "customer_name": customer_name,
+        "reference_number": reference_number,
+        "pick_up_address": pick_up_address,
+        "delivery": delivery,
+        "dimensions": "12x8x6 in",
+        "weight": 6.4,
+        "num_packages": 1,
+    }
+    if time_window_start:
+        order_payload["time_window_start"] = time_window_start
+    if time_window_end:
+        order_payload["time_window_end"] = time_window_end
+
     return {
         "org_id": org_id,
         "source": "shopify",
-        "orders": [
-            {
-                "external_order_id": external_order_id,
-                "customer_name": customer_name,
-                "reference_number": reference_number,
-                "pick_up_address": pick_up_address,
-                "delivery": delivery,
-                "dimensions": "12x8x6 in",
-                "weight": 6.4,
-                "num_packages": 1,
-            }
-        ],
+        "orders": [order_payload],
     }
 
 
@@ -199,6 +205,55 @@ def test_orders_webhook_creates_orders_visible_to_dispatchers():
     assert len(orders) == 2
     assert {item["external_order_id"] for item in orders} == {"ext-1", "ext-2"}
     assert all(item["source"] == "shopify" for item in orders)
+
+
+def test_orders_webhook_persists_time_window_fields():
+    payload = _webhook_payload(
+        "org-1",
+        "ext-time-window",
+        "Alice",
+        "Warehouse A",
+        "100 Main",
+        221,
+        time_window_start="2026-03-02T10:00:00Z",
+        time_window_end="2026-03-02T12:30:00Z",
+    )
+    webhook = client.post(
+        "/webhooks/orders",
+        json=payload,
+        headers={"x-orders-webhook-token": "orders-secret"},
+    )
+    assert webhook.status_code == 200
+
+    dispatcher_token = make_token("disp-1", "org-1", ["Dispatcher"])
+    list_response = client.get(
+        "/orders/",
+        headers={"Authorization": f"Bearer {dispatcher_token}"},
+    )
+    assert list_response.status_code == 200
+    order = next((item for item in list_response.json() if item["external_order_id"] == "ext-time-window"), None)
+    assert order is not None
+    assert order["time_window_start"] == "2026-03-02T10:00:00Z"
+    assert order["time_window_end"] == "2026-03-02T12:30:00Z"
+
+
+def test_orders_webhook_rejects_invalid_time_window():
+    payload = _webhook_payload(
+        "org-1",
+        "ext-bad-window",
+        "Alice",
+        "Warehouse A",
+        "100 Main",
+        222,
+        time_window_start="2026-03-02T13:00:00Z",
+        time_window_end="2026-03-02T12:30:00Z",
+    )
+    webhook = client.post(
+        "/webhooks/orders",
+        json=payload,
+        headers={"x-orders-webhook-token": "orders-secret"},
+    )
+    assert webhook.status_code == 422
 
 
 def test_orders_webhook_rejects_duplicate_external_ids_in_single_payload():

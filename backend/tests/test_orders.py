@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import sys
+from typing import Optional
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,8 +27,15 @@ def make_token(sub: str, org_id: str, groups):
     return f"{header.decode()}.{body.decode()}."
 
 
-def make_order_payload(customer_name: str, pick_up_address: str, delivery: str, reference_number: int = 1001):
-    return {
+def make_order_payload(
+    customer_name: str,
+    pick_up_address: str,
+    delivery: str,
+    reference_number: int = 1001,
+    time_window_start: Optional[str] = None,
+    time_window_end: Optional[str] = None,
+):
+    payload = {
         "customer_name": customer_name,
         "reference_number": reference_number,
         "pick_up_address": pick_up_address,
@@ -36,6 +44,11 @@ def make_order_payload(customer_name: str, pick_up_address: str, delivery: str, 
         "weight": 4.5,
         "num_packages": 1,
     }
+    if time_window_start:
+        payload["time_window_start"] = time_window_start
+    if time_window_end:
+        payload["time_window_end"] = time_window_end
+    return payload
 
 
 @pytest.fixture(autouse=True)
@@ -66,6 +79,35 @@ def test_create_and_list_order_for_tenant():
     listed = list_response.json()
     assert len(listed) == 1
     assert listed[0]["id"] == created["id"]
+
+
+def test_create_order_with_time_window():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    payload = make_order_payload(
+        "Alice",
+        "Warehouse 1",
+        "123 Main St",
+        time_window_start="2026-03-01T09:00:00Z",
+        time_window_end="2026-03-01T11:00:00Z",
+    )
+    created = client.post("/orders/", json=payload, headers={"Authorization": f"Bearer {admin_token}"})
+    assert created.status_code == 200
+    body = created.json()
+    assert body["time_window_start"] == "2026-03-01T09:00:00Z"
+    assert body["time_window_end"] == "2026-03-01T11:00:00Z"
+
+
+def test_create_order_rejects_invalid_time_window():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    payload = make_order_payload(
+        "Alice",
+        "Warehouse 1",
+        "123 Main St",
+        time_window_start="2026-03-01T12:00:00Z",
+        time_window_end="2026-03-01T11:00:00Z",
+    )
+    created = client.post("/orders/", json=payload, headers={"Authorization": f"Bearer {admin_token}"})
+    assert created.status_code == 422
 
 
 def test_cross_tenant_order_access_is_hidden():

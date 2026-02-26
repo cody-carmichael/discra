@@ -1,8 +1,16 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+def _to_utc(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 class OrderCreate(BaseModel):
@@ -12,10 +20,20 @@ class OrderCreate(BaseModel):
     delivery: str = Field(..., min_length=1, max_length=300)
     dimensions: str = Field(..., min_length=1, max_length=120)
     weight: float = Field(..., gt=0)
+    time_window_start: Optional[datetime] = None
+    time_window_end: Optional[datetime] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
     num_packages: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def validate_time_window(self):
+        start_utc = _to_utc(self.time_window_start)
+        end_utc = _to_utc(self.time_window_end)
+        if start_utc and end_utc and end_utc < start_utc:
+            raise ValueError("time_window_end must be greater than or equal to time_window_start")
+        return self
 
 
 class OrderStatus(str, Enum):
@@ -35,6 +53,8 @@ class Order(BaseModel):
     delivery: str
     dimensions: str
     weight: float
+    time_window_start: Optional[datetime] = None
+    time_window_end: Optional[datetime] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
@@ -211,10 +231,20 @@ class WebhookOrderInput(BaseModel):
     delivery: str = Field(..., min_length=1, max_length=300)
     dimensions: str = Field(..., min_length=1, max_length=120)
     weight: float = Field(..., gt=0)
+    time_window_start: Optional[datetime] = None
+    time_window_end: Optional[datetime] = None
     phone: Optional[str] = Field(default=None, max_length=40)
     email: Optional[str] = Field(default=None, max_length=320)
     notes: Optional[str] = Field(default=None, max_length=1000)
     num_packages: int = Field(default=1, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def validate_time_window(self):
+        start_utc = _to_utc(self.time_window_start)
+        end_utc = _to_utc(self.time_window_end)
+        if start_utc and end_utc and end_utc < start_utc:
+            raise ValueError("time_window_end must be greater than or equal to time_window_start")
+        return self
 
 
 class OrdersWebhookRequest(BaseModel):

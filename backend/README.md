@@ -23,6 +23,9 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
     - `delivery` (string)
     - `dimensions` (string)
     - `weight` (number)
+  - `POST /orders` optional scheduling fields:
+    - `time_window_start` (datetime)
+    - `time_window_end` (datetime, must be >= start)
 - POD workflow:
   - `POST /pod/presign` (Driver only)
   - `POST /pod/metadata` (Driver only)
@@ -141,6 +144,25 @@ When `ORDERS_WEBHOOK_HMAC_SECRET` is set, clients must also provide:
 - `x-orders-webhook-signature` (`sha256=<hex>` or `<hex>`)
 
 Signature input format: `"{timestamp}.{raw_json_body}"` with HMAC-SHA256.
+
+Pilot/demo seed helper (posts directly to `/webhooks/orders`):
+
+```powershell
+python ..\tools\pilot\seed_orders_webhook.py `
+  --endpoint "https://<api-id>.execute-api.us-east-1.amazonaws.com/dev/backend/webhooks/orders" `
+  --token "<ORDERS_WEBHOOK_TOKEN>" `
+  --org-id "org-pilot-1" `
+  --count 75 `
+  --batch-size 50
+```
+
+When HMAC signing is enabled, also pass:
+
+```powershell
+--hmac-secret "<ORDERS_WEBHOOK_HMAC_SECRET>"
+```
+
+The seed helper reads `ORDERS_WEBHOOK_TOKEN` and `ORDERS_WEBHOOK_HMAC_SECRET` from environment variables when flags are omitted.
 
 Optional frontend helper config:
 

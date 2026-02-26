@@ -128,6 +128,13 @@ Hosted UI setup notes:
 - Signature input format: `"{timestamp}.{raw_json_body}"` using HMAC-SHA256.
 - Rejects payloads outside `OrdersWebhookMaxSkewSeconds` to reduce replay risk.
 
+### Pilot seed helper
+- Use `tools/pilot/seed_orders_webhook.py` to generate pilot/demo orders through the webhook.
+- Example:
+  - `python tools/pilot/seed_orders_webhook.py --endpoint "https://<api-id>.execute-api.us-east-1.amazonaws.com/dev/backend/webhooks/orders" --token "<ORDERS_WEBHOOK_TOKEN>" --org-id "org-pilot-1" --count 75 --batch-size 50`
+- The script also reads `ORDERS_WEBHOOK_TOKEN` and `ORDERS_WEBHOOK_HMAC_SECRET` from environment variables.
+- If HMAC signing is enabled, include `--hmac-secret "<ORDERS_WEBHOOK_HMAC_SECRET>"`.
+
 ## POD upload constraints
 - Uploads use short-lived S3 presigned POST policies (default `300` seconds).
 - Allowed types:
@@ -173,3 +180,5 @@ Hosted UI setup notes:
 23. Billing readiness visibility: Admin status endpoint + console indicators for Stripe configuration and linkage
 24. Billing invitation lifecycle: list invitations and cancel pending invitations from Admin console
 25. Stripe billing self-service: Admin endpoint + console action to open Stripe Billing Portal for linked customers
+26. Pilot onboarding toolkit: seeded order generation script for webhook-based order ingestion
+27. Order time-window support: optional `time_window_start`/`time_window_end` in API + webhook with validation and UI/mobile visibility

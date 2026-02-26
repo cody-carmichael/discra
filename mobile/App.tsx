@@ -30,6 +30,8 @@ type OrderRecord = {
   delivery: string;
   dimensions: string;
   weight: number;
+  time_window_start?: string | null;
+  time_window_end?: string | null;
   status: string;
   assigned_to?: string | null;
 };
@@ -1315,6 +1317,10 @@ export default function App() {
                 </Text>
                 <Text style={styles.orderMeta}>Pick Up: {order.pick_up_address}</Text>
                 <Text style={styles.orderMeta}>Delivery: {order.delivery}</Text>
+                <Text style={styles.orderMeta}>
+                  Window: {formatTime(order.time_window_start || undefined)} -{" "}
+                  {formatTime(order.time_window_end || undefined)}
+                </Text>
                 <TextInput
                   style={styles.input}
                   value={assignInputs[order.id] ?? order.assigned_to ?? ""}
@@ -1399,6 +1405,10 @@ export default function App() {
                 </Text>
                 <Text style={styles.orderMeta}>Pick Up: {order.pick_up_address}</Text>
                 <Text style={styles.orderMeta}>Delivery: {order.delivery}</Text>
+                <Text style={styles.orderMeta}>
+                  Window: {formatTime(order.time_window_start || undefined)} -{" "}
+                  {formatTime(order.time_window_end || undefined)}
+                </Text>
                 <View style={styles.statusWrap}>
                   {DRIVER_STATUS.map((status) => (
                     <Pressable

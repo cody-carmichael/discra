@@ -205,6 +205,12 @@
   }
 
   function normalizeCreatePayload(formData) {
+    const startRaw = formData.get("time_window_start");
+    const endRaw = formData.get("time_window_end");
+    const startDate = startRaw ? new Date(startRaw) : null;
+    const endDate = endRaw ? new Date(endRaw) : null;
+    const timeWindowStart = startDate && !Number.isNaN(startDate.getTime()) ? startDate.toISOString() : null;
+    const timeWindowEnd = endDate && !Number.isNaN(endDate.getTime()) ? endDate.toISOString() : null;
     const payload = {
       customer_name: formData.get("customer_name"),
       reference_number: C.toIntOrNull(formData.get("reference_number")),
@@ -212,6 +218,8 @@
       delivery: formData.get("delivery"),
       dimensions: formData.get("dimensions"),
       weight: C.toNumberOrNull(formData.get("weight")),
+      time_window_start: timeWindowStart,
+      time_window_end: timeWindowEnd,
       phone: formData.get("phone") || null,
       email: formData.get("email") || null,
       notes: formData.get("notes") || null,
@@ -283,6 +291,10 @@
         C.escapeHtml(order.dimensions || "-") +
         " | Wt: " +
         C.escapeHtml(order.weight || "-") +
+        "</small><br><small>Window: " +
+        C.escapeHtml(C.formatTimestamp(order.time_window_start)) +
+        " -> " +
+        C.escapeHtml(C.formatTimestamp(order.time_window_end)) +
         "</small></td>" +
         "<td>" +
         C.escapeHtml(order.status) +
@@ -341,6 +353,10 @@
         C.escapeHtml(order.pick_up_address || "-") +
         "<br>Delivery: " +
         C.escapeHtml(order.delivery || "-") +
+        "<br>Window: " +
+        C.escapeHtml(C.formatTimestamp(order.time_window_start)) +
+        " -> " +
+        C.escapeHtml(C.formatTimestamp(order.time_window_end)) +
         "<br>Status: " +
         C.escapeHtml(order.status) +
         "<br>Assigned: " +

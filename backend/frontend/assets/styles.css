@@ -243,6 +243,22 @@ select:focus {
   grid-column: span 2;
 }
 
+.orders-filters {
+  margin: 0 0 0.7rem;
+  align-items: flex-end;
+}
+
+.orders-filters .field {
+  flex: 1 1 180px;
+  margin: 0;
+}
+
+.orders-filters .filter-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 .table-wrap {
   overflow-x: auto;
   border: 1px solid rgba(136, 174, 194, 0.22);
@@ -445,6 +461,15 @@ canvas.signature-pad {
 
   .orders-mobile {
     display: grid;
+  }
+
+  .orders-filters .field {
+    flex-basis: 100%;
+  }
+
+  .orders-filters .filter-actions {
+    margin-left: 0;
+    width: 100%;
   }
 }
 

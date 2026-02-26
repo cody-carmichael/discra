@@ -15,6 +15,11 @@
     createForm: document.getElementById("create-order-form"),
     createMessage: document.getElementById("create-order-message"),
     refreshOrders: document.getElementById("refresh-orders"),
+    ordersFilterForm: document.getElementById("orders-filter-form"),
+    ordersStatusFilter: document.getElementById("orders-status-filter"),
+    ordersAssignedFilter: document.getElementById("orders-assigned-filter"),
+    ordersSearchFilter: document.getElementById("orders-search-filter"),
+    ordersClearFilters: document.getElementById("orders-clear-filters"),
     ordersBody: document.getElementById("orders-tbody"),
     ordersMobile: document.getElementById("orders-mobile"),
     ordersMessage: document.getElementById("orders-message"),
@@ -49,6 +54,11 @@
   let lastOrders = [];
   let isAuthorizedRole = false;
   let isAdminRole = false;
+  let orderFilters = {
+    status: "",
+    assignedTo: "",
+    search: "",
+  };
 
   function claimsRoles(claims) {
     if (!claims) {
@@ -80,6 +90,9 @@
       element.disabled = !enabled;
     });
     el.refreshOrders.disabled = !enabled;
+    el.ordersFilterForm.querySelectorAll("input, select, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
     el.refreshDrivers.disabled = !enabled;
     el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
       element.disabled = !enabled;
@@ -104,6 +117,66 @@
     el.billingActivateForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
     });
+  }
+
+  function _readOrderFilters() {
+    return {
+      status: (el.ordersStatusFilter.value || "").trim(),
+      assignedTo: (el.ordersAssignedFilter.value || "").trim(),
+      search: (el.ordersSearchFilter.value || "").trim(),
+    };
+  }
+
+  function _writeOrderFilters() {
+    el.ordersStatusFilter.value = orderFilters.status || "";
+    el.ordersAssignedFilter.value = orderFilters.assignedTo || "";
+    el.ordersSearchFilter.value = orderFilters.search || "";
+  }
+
+  function _ordersPathFromFilters() {
+    const params = new URLSearchParams();
+    if (orderFilters.status) {
+      params.set("status", orderFilters.status);
+    }
+    if (orderFilters.assignedTo) {
+      params.set("assignedTo", orderFilters.assignedTo);
+    }
+    return "/orders/" + (params.toString() ? "?" + params.toString() : "");
+  }
+
+  function _filterOrdersBySearch(orders) {
+    if (!orderFilters.search) {
+      return orders;
+    }
+    const search = orderFilters.search.toLowerCase();
+    return (orders || []).filter(function (order) {
+      const ref = order.reference_number === null || order.reference_number === undefined ? "" : String(order.reference_number);
+      const haystack = [
+        order.id,
+        order.external_order_id,
+        order.customer_name,
+        ref,
+        order.pick_up_address,
+        order.delivery,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.indexOf(search) >= 0;
+    });
+  }
+
+  async function applyOrderFilters(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    orderFilters = _readOrderFilters();
+    await refreshOrders();
+  }
+
+  async function clearOrderFilters() {
+    orderFilters = { status: "", assignedTo: "", search: "" };
+    _writeOrderFilters();
+    await refreshOrders();
   }
 
   function registerServiceWorker() {
@@ -397,9 +470,14 @@
       return;
     }
     try {
-      const orders = await C.requestJson(apiBase, "/orders/", { token });
-      renderOrders(orders || []);
-      C.showMessage(el.ordersMessage, "Loaded " + (orders || []).length + " orders.", "success");
+      const orders = await C.requestJson(apiBase, _ordersPathFromFilters(), { token });
+      const filteredOrders = _filterOrdersBySearch(orders || []);
+      renderOrders(filteredOrders || []);
+      C.showMessage(
+        el.ordersMessage,
+        "Loaded " + (filteredOrders || []).length + " orders.",
+        "success"
+      );
     } catch (error) {
       C.showMessage(el.ordersMessage, error.message, "error");
     }
@@ -968,6 +1046,7 @@
     registerServiceWorker();
     await loadUiConfig();
     await finishHostedLoginCallback();
+    _writeOrderFilters();
     if (isAuthorizedRole) {
       await refreshOrders();
       await refreshDrivers();
@@ -998,6 +1077,16 @@
   });
   el.createForm.addEventListener("submit", createOrder);
   el.refreshOrders.addEventListener("click", refreshOrders);
+  el.ordersFilterForm.addEventListener("submit", function (event) {
+    applyOrderFilters(event).catch(function (error) {
+      C.showMessage(el.ordersMessage, error.message, "error");
+    });
+  });
+  el.ordersClearFilters.addEventListener("click", function () {
+    clearOrderFilters().catch(function (error) {
+      C.showMessage(el.ordersMessage, error.message, "error");
+    });
+  });
   el.ordersBody.addEventListener("click", onOrderActionClick);
   el.ordersMobile.addEventListener("click", onOrderActionClick);
   el.refreshDrivers.addEventListener("click", refreshDrivers);

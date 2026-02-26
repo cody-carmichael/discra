@@ -182,3 +182,4 @@ Hosted UI setup notes:
 25. Stripe billing self-service: Admin endpoint + console action to open Stripe Billing Portal for linked customers
 26. Pilot onboarding toolkit: seeded order generation script for webhook-based order ingestion
 27. Order time-window support: optional `time_window_start`/`time_window_end` in API + webhook with validation and UI/mobile visibility
+28. Admin dispatch queue filtering: status + assigned driver server-side filters and client-side search for high-volume webhook order selection

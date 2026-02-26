@@ -71,6 +71,20 @@ class AssignRequest(BaseModel):
     driver_id: str
 
 
+class BulkAssignRequest(BaseModel):
+    order_ids: List[str] = Field(..., min_length=1, max_length=200)
+    driver_id: str = Field(..., min_length=1, max_length=128)
+
+
+class BulkUnassignRequest(BaseModel):
+    order_ids: List[str] = Field(..., min_length=1, max_length=200)
+
+
+class BulkOrderMutationResponse(BaseModel):
+    updated: int
+    order_ids: List[str] = Field(default_factory=list)
+
+
 class StatusUpdateRequest(BaseModel):
     status: OrderStatus
     notes: Optional[str] = Field(default=None, max_length=500)

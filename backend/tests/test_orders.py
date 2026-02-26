@@ -243,3 +243,71 @@ def test_reassign_writes_order_reassigned_audit_event():
 
     audit_events = get_audit_log_store().list_events("org-a", limit=10)
     assert any(event.action == "order.reassigned" for event in audit_events)
+
+
+def test_bulk_assign_and_unassign_orders():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    order_ids = []
+    for reference in (7001, 7002):
+        created = client.post(
+            "/orders/",
+            json=make_order_payload(
+                f"Bulk {reference}",
+                "Warehouse 8",
+                f"{reference} Market St",
+                reference_number=reference,
+            ),
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert created.status_code == 200
+        order_ids.append(created.json()["id"])
+
+    bulk_assign = client.post(
+        "/orders/bulk-assign",
+        json={"order_ids": order_ids, "driver_id": "driver-42"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert bulk_assign.status_code == 200
+    assert bulk_assign.json()["updated"] == 2
+
+    listed = client.get("/orders/?status=Assigned", headers={"Authorization": f"Bearer {admin_token}"})
+    assert listed.status_code == 200
+    assigned_ids = {item["id"] for item in listed.json()}
+    assert set(order_ids).issubset(assigned_ids)
+
+    bulk_unassign = client.post(
+        "/orders/bulk-unassign",
+        json={"order_ids": order_ids},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert bulk_unassign.status_code == 200
+    assert bulk_unassign.json()["updated"] == 2
+
+    for order_id in order_ids:
+        order_response = client.get(f"/orders/{order_id}", headers={"Authorization": f"Bearer {admin_token}"})
+        assert order_response.status_code == 200
+        body = order_response.json()
+        assert body["status"] == "Created"
+        assert body["assigned_to"] is None
+
+    audit_events = get_audit_log_store().list_events("org-a", limit=20)
+    actions = [event.action for event in audit_events]
+    assert "order.bulk_assigned" in actions
+    assert "order.bulk_unassigned" in actions
+
+
+def test_bulk_assign_requires_driver_id():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    created = client.post(
+        "/orders/",
+        json=make_order_payload("Bulk missing driver", "Warehouse 9", "901 Main", reference_number=9001),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    order_id = created.json()["id"]
+
+    bulk_assign = client.post(
+        "/orders/bulk-assign",
+        json={"order_ids": [order_id], "driver_id": "   "},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert bulk_assign.status_code == 400

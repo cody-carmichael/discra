@@ -14,6 +14,12 @@
     authMessage: document.getElementById("auth-message"),
     createForm: document.getElementById("create-order-form"),
     createMessage: document.getElementById("create-order-message"),
+    bulkDriverId: document.getElementById("bulk-driver-id"),
+    bulkAssignSelected: document.getElementById("bulk-assign-selected"),
+    bulkUnassignSelected: document.getElementById("bulk-unassign-selected"),
+    clearSelection: document.getElementById("clear-selection"),
+    selectionCount: document.getElementById("selection-count"),
+    selectAllOrders: document.getElementById("select-all-orders"),
     refreshOrders: document.getElementById("refresh-orders"),
     ordersFilterForm: document.getElementById("orders-filter-form"),
     ordersStatusFilter: document.getElementById("orders-status-filter"),
@@ -54,6 +60,7 @@
   let lastOrders = [];
   let isAuthorizedRole = false;
   let isAdminRole = false;
+  let selectedOrderIds = new Set();
   let orderFilters = {
     status: "",
     assignedTo: "",
@@ -90,6 +97,11 @@
       element.disabled = !enabled;
     });
     el.refreshOrders.disabled = !enabled;
+    el.bulkDriverId.disabled = !enabled;
+    el.bulkAssignSelected.disabled = !enabled;
+    el.bulkUnassignSelected.disabled = !enabled;
+    el.clearSelection.disabled = !enabled;
+    el.selectAllOrders.disabled = !enabled;
     el.ordersFilterForm.querySelectorAll("input, select, button").forEach(function (element) {
       element.disabled = !enabled;
     });
@@ -179,6 +191,50 @@
     await refreshOrders();
   }
 
+  function _syncSelectAllCheckbox() {
+    if (!lastOrders.length) {
+      el.selectAllOrders.checked = false;
+      el.selectAllOrders.indeterminate = false;
+      return;
+    }
+    const selectedCount = lastOrders.filter(function (order) {
+      return selectedOrderIds.has(order.id);
+    }).length;
+    el.selectAllOrders.checked = selectedCount > 0 && selectedCount === lastOrders.length;
+    el.selectAllOrders.indeterminate = selectedCount > 0 && selectedCount < lastOrders.length;
+  }
+
+  function _renderSelectionCount() {
+    const count = selectedOrderIds.size;
+    el.selectionCount.textContent = count + " selected";
+    if (!count) {
+      el.selectionCount.classList.add("status-idle");
+      el.selectionCount.classList.remove("status-live");
+      return;
+    }
+    el.selectionCount.classList.remove("status-idle");
+    el.selectionCount.classList.add("status-live");
+  }
+
+  function _pruneSelectionToVisibleOrders() {
+    const visibleIds = new Set(lastOrders.map(function (order) {
+      return order.id;
+    }));
+    selectedOrderIds = new Set(
+      Array.from(selectedOrderIds).filter(function (orderId) {
+        return visibleIds.has(orderId);
+      })
+    );
+    _syncSelectAllCheckbox();
+    _renderSelectionCount();
+  }
+
+  function _clearSelection() {
+    selectedOrderIds = new Set();
+    _syncSelectAllCheckbox();
+    _renderSelectionCount();
+  }
+
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) {
       return;
@@ -192,6 +248,7 @@
     if (!claims) {
       isAuthorizedRole = false;
       isAdminRole = false;
+      _clearSelection();
       setInteractiveState(false);
       setBillingInteractiveState(false);
       el.billingStatus.textContent = "No billing provider status loaded.";
@@ -201,6 +258,9 @@
     }
     isAuthorizedRole = hasAllowedRole(claims);
     isAdminRole = hasAdminRole(claims);
+    if (!isAuthorizedRole) {
+      _clearSelection();
+    }
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
@@ -334,13 +394,15 @@
 
   function renderOrders(orders) {
     lastOrders = orders || [];
+    _pruneSelectionToVisibleOrders();
     if (!lastOrders.length) {
-      el.ordersBody.innerHTML = "<tr><td colspan=\"7\">No orders available.</td></tr>";
+      el.ordersBody.innerHTML = "<tr><td colspan=\"8\">No orders available.</td></tr>";
       el.ordersMobile.innerHTML = "<p class=\"panel-help\">No orders available.</p>";
       return;
     }
 
     const rows = lastOrders.map(function (order) {
+      const isSelected = selectedOrderIds.has(order.id);
       const statusOptions = C.STATUS_VALUES.map(function (statusValue) {
         const selected = statusValue === order.status ? "selected" : "";
         return "<option " + selected + " value=\"" + statusValue + "\">" + statusValue + "</option>";
@@ -348,6 +410,11 @@
 
       return (
         "<tr>" +
+        "<td><input type=\"checkbox\" data-select-order-id=\"" +
+        C.escapeHtml(order.id) +
+        "\" " +
+        (isSelected ? "checked" : "") +
+        "></td>" +
         "<td>" +
         orderCell(order) +
         "</td>" +
@@ -405,6 +472,7 @@
     el.ordersBody.innerHTML = rows.join("");
 
     const mobileCards = lastOrders.map(function (order) {
+      const isSelected = selectedOrderIds.has(order.id);
       const statusOptions = C.STATUS_VALUES.map(function (statusValue) {
         const selected = statusValue === order.status ? "selected" : "";
         return "<option " + selected + " value=\"" + statusValue + "\">" + statusValue + "</option>";
@@ -417,6 +485,11 @@
         "<h3>" +
         C.escapeHtml(order.customer_name) +
         "</h3>" +
+        "<label class=\"field\"><span>Select</span><input type=\"checkbox\" data-select-order-id=\"" +
+        C.escapeHtml(order.id) +
+        "\" " +
+        (isSelected ? "checked" : "") +
+        "></label>" +
         "<p class=\"mobile-order-meta\">" +
         "Order: " +
         C.escapeHtml(order.id) +
@@ -462,6 +535,8 @@
       );
     });
     el.ordersMobile.innerHTML = mobileCards.join("");
+    _syncSelectAllCheckbox();
+    _renderSelectionCount();
   }
 
   async function refreshOrders() {
@@ -504,6 +579,91 @@
       token,
       json: { status: statusValue },
     });
+  }
+
+  function onOrderSelectionChange(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+    const orderId = target.getAttribute("data-select-order-id");
+    if (!orderId) {
+      return;
+    }
+    if (target.checked) {
+      selectedOrderIds.add(orderId);
+    } else {
+      selectedOrderIds.delete(orderId);
+    }
+    _syncSelectAllCheckbox();
+    _renderSelectionCount();
+  }
+
+  function toggleSelectAllOrders() {
+    if (!lastOrders.length) {
+      _clearSelection();
+      return;
+    }
+    if (el.selectAllOrders.checked) {
+      lastOrders.forEach(function (order) {
+        selectedOrderIds.add(order.id);
+      });
+    } else {
+      lastOrders.forEach(function (order) {
+        selectedOrderIds.delete(order.id);
+      });
+    }
+    renderOrders(lastOrders);
+  }
+
+  function _selectedOrderIdList() {
+    return Array.from(selectedOrderIds);
+  }
+
+  async function bulkAssignSelectedOrders() {
+    if (!requireAuthorized(el.ordersMessage)) {
+      return;
+    }
+    const orderIds = _selectedOrderIdList();
+    if (!orderIds.length) {
+      C.showMessage(el.ordersMessage, "Select at least one order first.", "error");
+      return;
+    }
+    const driverId = (el.bulkDriverId.value || "").trim();
+    if (!driverId) {
+      C.showMessage(el.ordersMessage, "Driver ID is required for bulk assign.", "error");
+      return;
+    }
+    await C.requestJson(apiBase, "/orders/bulk-assign", {
+      method: "POST",
+      token,
+      json: {
+        order_ids: orderIds,
+        driver_id: driverId,
+      },
+    });
+    C.showMessage(el.ordersMessage, "Bulk assigned " + orderIds.length + " order(s).", "success");
+    await refreshOrders();
+  }
+
+  async function bulkUnassignSelectedOrders() {
+    if (!requireAuthorized(el.ordersMessage)) {
+      return;
+    }
+    const orderIds = _selectedOrderIdList();
+    if (!orderIds.length) {
+      C.showMessage(el.ordersMessage, "Select at least one order first.", "error");
+      return;
+    }
+    await C.requestJson(apiBase, "/orders/bulk-unassign", {
+      method: "POST",
+      token,
+      json: {
+        order_ids: orderIds,
+      },
+    });
+    C.showMessage(el.ordersMessage, "Bulk unassigned " + orderIds.length + " order(s).", "success");
+    await refreshOrders();
   }
 
   function ensureMap() {
@@ -1047,6 +1207,8 @@
     await loadUiConfig();
     await finishHostedLoginCallback();
     _writeOrderFilters();
+    _renderSelectionCount();
+    _syncSelectAllCheckbox();
     if (isAuthorizedRole) {
       await refreshOrders();
       await refreshDrivers();
@@ -1077,6 +1239,21 @@
   });
   el.createForm.addEventListener("submit", createOrder);
   el.refreshOrders.addEventListener("click", refreshOrders);
+  el.bulkAssignSelected.addEventListener("click", function () {
+    bulkAssignSelectedOrders().catch(function (error) {
+      C.showMessage(el.ordersMessage, error.message, "error");
+    });
+  });
+  el.bulkUnassignSelected.addEventListener("click", function () {
+    bulkUnassignSelectedOrders().catch(function (error) {
+      C.showMessage(el.ordersMessage, error.message, "error");
+    });
+  });
+  el.clearSelection.addEventListener("click", function () {
+    _clearSelection();
+    renderOrders(lastOrders);
+  });
+  el.selectAllOrders.addEventListener("change", toggleSelectAllOrders);
   el.ordersFilterForm.addEventListener("submit", function (event) {
     applyOrderFilters(event).catch(function (error) {
       C.showMessage(el.ordersMessage, error.message, "error");
@@ -1087,6 +1264,8 @@
       C.showMessage(el.ordersMessage, error.message, "error");
     });
   });
+  el.ordersBody.addEventListener("change", onOrderSelectionChange);
+  el.ordersMobile.addEventListener("change", onOrderSelectionChange);
   el.ordersBody.addEventListener("click", onOrderActionClick);
   el.ordersMobile.addEventListener("click", onOrderActionClick);
   el.refreshDrivers.addEventListener("click", refreshDrivers);

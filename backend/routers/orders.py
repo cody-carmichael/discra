@@ -14,12 +14,32 @@ try:
     )
     from backend.audit_store import get_audit_log_store, new_event_id
     from backend.order_store import get_order_store
-    from backend.schemas import AuditLogRecord, AssignRequest, Order, OrderCreate, OrderStatus, StatusUpdateRequest
+    from backend.schemas import (
+        AuditLogRecord,
+        AssignRequest,
+        BulkAssignRequest,
+        BulkOrderMutationResponse,
+        BulkUnassignRequest,
+        Order,
+        OrderCreate,
+        OrderStatus,
+        StatusUpdateRequest,
+    )
 except ModuleNotFoundError:  # local run from backend/ directory
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
     from audit_store import get_audit_log_store, new_event_id
     from order_store import get_order_store
-    from schemas import AuditLogRecord, AssignRequest, Order, OrderCreate, OrderStatus, StatusUpdateRequest
+    from schemas import (
+        AuditLogRecord,
+        AssignRequest,
+        BulkAssignRequest,
+        BulkOrderMutationResponse,
+        BulkUnassignRequest,
+        Order,
+        OrderCreate,
+        OrderStatus,
+        StatusUpdateRequest,
+    )
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -67,6 +87,23 @@ def _request_id(request: Request):
     if request_id:
         return str(request_id)
     return request.headers.get("x-correlation-id") or request.headers.get("x-request-id")
+
+
+def _unique_order_ids(order_ids: List[str]) -> List[str]:
+    unique_ids = []
+    seen = set()
+    for raw_id in order_ids:
+        order_id = (raw_id or "").strip()
+        if not order_id or order_id in seen:
+            continue
+        seen.add(order_id)
+        unique_ids.append(order_id)
+    if not unique_ids:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="At least one valid order_id is required",
+        )
+    return unique_ids
 
 
 def _audit_event(
@@ -203,6 +240,85 @@ async def unassign_order(
         },
     )
     return saved
+
+
+@router.post("/bulk-assign", response_model=BulkOrderMutationResponse)
+async def bulk_assign_orders(
+    body: BulkAssignRequest,
+    request: Request,
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    order_store=Depends(get_order_store),
+    audit_store=Depends(get_audit_log_store),
+):
+    unique_order_ids = _unique_order_ids(body.order_ids)
+    driver_id = body.driver_id.strip()
+    if not driver_id:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="driver_id is required",
+        )
+
+    updated_ids = []
+    for order_id in unique_order_ids:
+        order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
+        order.assigned_to = driver_id
+        order.status = OrderStatus.ASSIGNED
+        order_store.upsert_order(order)
+        updated_ids.append(order.id)
+
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="order.bulk_assigned",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="orders",
+        target_id="bulk",
+        request=request,
+        details={
+            "updated": len(updated_ids),
+            "driver_id": driver_id,
+            "order_ids": updated_ids,
+            "status": OrderStatus.ASSIGNED.value,
+        },
+    )
+    return BulkOrderMutationResponse(updated=len(updated_ids), order_ids=updated_ids)
+
+
+@router.post("/bulk-unassign", response_model=BulkOrderMutationResponse)
+async def bulk_unassign_orders(
+    body: BulkUnassignRequest,
+    request: Request,
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    order_store=Depends(get_order_store),
+    audit_store=Depends(get_audit_log_store),
+):
+    unique_order_ids = _unique_order_ids(body.order_ids)
+
+    updated_ids = []
+    for order_id in unique_order_ids:
+        order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
+        order.assigned_to = None
+        order.status = OrderStatus.CREATED
+        order_store.upsert_order(order)
+        updated_ids.append(order.id)
+
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="order.bulk_unassigned",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="orders",
+        target_id="bulk",
+        request=request,
+        details={
+            "updated": len(updated_ids),
+            "order_ids": updated_ids,
+            "status": OrderStatus.CREATED.value,
+        },
+    )
+    return BulkOrderMutationResponse(updated=len(updated_ids), order_ids=updated_ids)
 
 
 @router.post("/{order_id}/status", response_model=Order)

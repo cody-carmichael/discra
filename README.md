@@ -69,6 +69,8 @@ After `sam local start-api`:
 - `GET /dev/backend/orders/{orderId}`
 - `POST /dev/backend/orders/{orderId}/assign` (Admin/Dispatcher)
 - `POST /dev/backend/orders/{orderId}/unassign` (Admin/Dispatcher)
+- `POST /dev/backend/orders/bulk-assign` (Admin/Dispatcher)
+- `POST /dev/backend/orders/bulk-unassign` (Admin/Dispatcher)
 - `POST /dev/backend/orders/{orderId}/status` (Driver/Admin/Dispatcher)
 - `GET /dev/backend/orders/driver/inbox` (Driver)
 - `POST /dev/backend/pod/presign` (Driver)
@@ -183,3 +185,4 @@ Hosted UI setup notes:
 26. Pilot onboarding toolkit: seeded order generation script for webhook-based order ingestion
 27. Order time-window support: optional `time_window_start`/`time_window_end` in API + webhook with validation and UI/mobile visibility
 28. Admin dispatch queue filtering: status + assigned driver server-side filters and client-side search for high-volume webhook order selection
+29. Bulk dispatch actions: multi-select orders with bulk assign/unassign endpoints and Admin queue controls

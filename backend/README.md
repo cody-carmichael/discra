@@ -15,6 +15,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
 - Initial multi-tenant order routes with app-layer RBAC:
   - `POST /orders`, `GET /orders`, `GET /orders/{id}`
   - `POST /orders/{id}/assign`, `POST /orders/{id}/unassign`
+  - `POST /orders/bulk-assign`, `POST /orders/bulk-unassign`
   - `POST /orders/{id}/status`
   - `GET /orders/driver/inbox`
   - `POST /orders` required fields:
@@ -61,7 +62,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - `GET /ui` (workspace picker)
   - `GET /ui/admin` (Admin/Dispatcher console)
   - Admin console includes seat-billing controls for `GET /billing/summary`, `GET /billing/status`, `POST /billing/checkout`, `POST /billing/portal`, `POST /billing/seats`, `GET /billing/invitations`, `POST /billing/invitations`, invitation activation, and invitation cancellation
-  - Admin order queue supports status + assigned-driver filters and free-text search (customer/reference/external id)
+  - Admin order queue supports status + assigned-driver filters, free-text search (customer/reference/external id), and bulk assign/unassign for selected orders
   - `GET /ui/admin-sw.js` (Admin/Dispatcher PWA service worker)
   - `GET /ui/driver` (Driver web app with POD + location updates)
   - `GET /ui/driver-sw.js` (Driver PWA service worker)

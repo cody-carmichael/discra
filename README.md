@@ -115,6 +115,16 @@ If `stops` is omitted, the backend geocodes assigned order delivery addresses an
 - `CognitoHostedUiDomain` (optional hosted UI helper domain for frontend pages)
 - `FrontendMapStyleUrl` (optional MapLibre style JSON URL)
 
+### Bootstrap automation (PR33)
+- Use `tools/bootstrap/bootstrap-dev.ps1` to automate dev/pilot setup:
+  - validates `aws` + `sam` CLI presence
+  - ensures Cognito groups (`Admin`, `Dispatcher`, `Driver`)
+  - generates/reuses secrets and writes SAM parameter overrides file
+- Example:
+  - `tools\bootstrap\bootstrap-dev.ps1 -CognitoUserPoolId "us-east-1_abc123" -CognitoAppClientId "app-client-id"`
+- Generated overrides file:
+  - `tools/bootstrap/.generated/sam-parameter-overrides.txt`
+
 API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 `/backend/health` and `/backend/version` remain public for parity checks.
 
@@ -192,3 +202,4 @@ Hosted UI setup notes:
 30. Driver roster endpoint + UI suggestions: role-filtered `/users` lookup to improve assign and bulk-assign accuracy
 31. Audit log visibility: role-restricted `/audit/logs` API + Admin/Dispatcher audit viewer with filters
 32. Dispatch KPI summary: `/reports/dispatch-summary` API + Admin/Dispatcher summary panel for order/status/driver activity
+33. Environment bootstrap automation: Cognito group setup + generated SAM deploy parameter overrides for dev/pilot environments

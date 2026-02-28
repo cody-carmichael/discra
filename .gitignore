@@ -16,3 +16,6 @@ mobile/node_modules/
 mobile/.expo/
 mobile/.expo-shared/
 mobile/dist/
+
+# Local bootstrap outputs (may include secrets)
+tools/bootstrap/.generated/

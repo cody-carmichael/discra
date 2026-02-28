@@ -97,6 +97,14 @@ Open:
 - `http://127.0.0.1:8000/health`
 - `http://127.0.0.1:8000/version`
 
+Bootstrap helper for deploy parameters and Cognito groups:
+
+```powershell
+..\tools\bootstrap\bootstrap-dev.ps1 `
+  -CognitoUserPoolId "us-east-1_abc123" `
+  -CognitoAppClientId "app-client-id"
+```
+
 For protected routes in local direct Uvicorn mode without Cognito:
 
 ```powershell

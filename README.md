@@ -125,6 +125,21 @@ If `stops` is omitted, the backend geocodes assigned order delivery addresses an
 - Generated overrides file:
   - `tools/bootstrap/.generated/sam-parameter-overrides.txt`
 
+### Smoke checks (PR34)
+- Use `tools/smoke/run-smoke.ps1` to validate a deployed stack quickly.
+- Checks:
+  - `GET /health`
+  - `GET /version`
+  - `GET /backend/health`
+  - `GET /backend/version`
+  - optional `GET /admin/ping` (when `AdminToken` is provided)
+  - optional `POST /backend/webhooks/orders` (when `OrdersWebhookToken` is provided)
+- Example:
+  - `tools\smoke\run-smoke.ps1 -ApiBaseUrl "https://<api-id>.execute-api.us-east-1.amazonaws.com/dev" -AdminToken "<ADMIN_TOKEN>" -OrdersWebhookToken "<ORDERS_WEBHOOK_TOKEN>" -OrdersWebhookHmacSecret "<ORDERS_WEBHOOK_HMAC_SECRET>"`
+- GitHub Actions manual run:
+  - workflow: `.github/workflows/smoke-dev.yml`
+  - input: `api_base_url`
+
 API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 `/backend/health` and `/backend/version` remain public for parity checks.
 
@@ -203,3 +218,4 @@ Hosted UI setup notes:
 31. Audit log visibility: role-restricted `/audit/logs` API + Admin/Dispatcher audit viewer with filters
 32. Dispatch KPI summary: `/reports/dispatch-summary` API + Admin/Dispatcher summary panel for order/status/driver activity
 33. Environment bootstrap automation: Cognito group setup + generated SAM deploy parameter overrides for dev/pilot environments
+34. Deploy smoke checks: reusable script + manual GitHub Actions workflow for post-deploy endpoint and webhook validation

@@ -126,6 +126,15 @@ Then call:
 - `http://127.0.0.1:3000/dev/backend/version` (new Python endpoint)
 - `http://127.0.0.1:3000/dev/backend/ui` (frontend entrypoint)
 
+For deployed-stack smoke checks:
+
+```powershell
+..\tools\smoke\run-smoke.ps1 `
+  -ApiBaseUrl "https://<api-id>.execute-api.us-east-1.amazonaws.com/dev" `
+  -AdminToken "<ADMIN_TOKEN>" `
+  -OrdersWebhookToken "<ORDERS_WEBHOOK_TOKEN>"
+```
+
 For local POD testing without AWS resources:
 
 ```powershell

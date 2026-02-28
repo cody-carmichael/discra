@@ -19,3 +19,6 @@ mobile/dist/
 
 # Local bootstrap outputs (may include secrets)
 tools/bootstrap/.generated/
+
+# Local pilot handoff outputs
+tools/pilot/.generated/

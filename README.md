@@ -166,6 +166,11 @@ Hosted UI setup notes:
   - `python tools/pilot/seed_orders_webhook.py --endpoint "https://<api-id>.execute-api.us-east-1.amazonaws.com/dev/backend/webhooks/orders" --token "<ORDERS_WEBHOOK_TOKEN>" --org-id "org-pilot-1" --count 75 --batch-size 50`
 - The script also reads `ORDERS_WEBHOOK_TOKEN` and `ORDERS_WEBHOOK_HMAC_SECRET` from environment variables.
 - If HMAC signing is enabled, include `--hmac-secret "<ORDERS_WEBHOOK_HMAC_SECRET>"`.
+- Use `tools/pilot/export-pilot-summary.ps1` to generate a shareable URL/stack summary for external testers.
+- Example:
+  - `tools\pilot\export-pilot-summary.ps1 -StackName "discra-api-dev" -Region "us-east-1"`
+- Pilot UAT checklist:
+  - `docs/pilot-uat-checklist.md`
 
 ## POD upload constraints
 - Uploads use short-lived S3 presigned POST policies (default `300` seconds).
@@ -223,3 +228,4 @@ Hosted UI setup notes:
 34. Deploy smoke checks: reusable script + manual GitHub Actions workflow for post-deploy endpoint and webhook validation
 35. Deploy workflow hardening: auto-run smoke checks from `deploy-dev` against the freshly deployed stack
 36. Backend CI lint gate: run low-noise Ruff checks (`E9,F63,F7,F82`) alongside tests and SAM build
+37. Pilot handoff pack: stack-output export script + UAT checklist for external user testing

@@ -191,6 +191,15 @@ When HMAC signing is enabled, also pass:
 
 The seed helper reads `ORDERS_WEBHOOK_TOKEN` and `ORDERS_WEBHOOK_HMAC_SECRET` from environment variables when flags are omitted.
 
+Generate a tester-facing stack summary from CloudFormation outputs:
+
+```powershell
+..\tools\pilot\export-pilot-summary.ps1 -StackName "discra-api-dev" -Region "us-east-1"
+```
+
+Pilot UAT checklist:
+- `..\docs\pilot-uat-checklist.md`
+
 Optional frontend helper config:
 
 ```powershell

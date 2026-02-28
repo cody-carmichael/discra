@@ -139,6 +139,8 @@ If `stops` is omitted, the backend geocodes assigned order delivery addresses an
 - GitHub Actions manual run:
   - workflow: `.github/workflows/smoke-dev.yml`
   - input: `api_base_url`
+- GitHub Actions deploy integration (PR35):
+  - `.github/workflows/deploy-dev.yml` now runs smoke checks automatically after successful `sam deploy`.
 
 API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 `/backend/health` and `/backend/version` remain public for parity checks.
@@ -219,3 +221,4 @@ Hosted UI setup notes:
 32. Dispatch KPI summary: `/reports/dispatch-summary` API + Admin/Dispatcher summary panel for order/status/driver activity
 33. Environment bootstrap automation: Cognito group setup + generated SAM deploy parameter overrides for dev/pilot environments
 34. Deploy smoke checks: reusable script + manual GitHub Actions workflow for post-deploy endpoint and webhook validation
+35. Deploy workflow hardening: auto-run smoke checks from `deploy-dev` against the freshly deployed stack

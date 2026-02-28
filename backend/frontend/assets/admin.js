@@ -29,12 +29,21 @@
     ordersBody: document.getElementById("orders-tbody"),
     ordersMobile: document.getElementById("orders-mobile"),
     ordersMessage: document.getElementById("orders-message"),
+    driverOptions: document.getElementById("driver-options"),
     refreshDrivers: document.getElementById("refresh-drivers"),
     driversMessage: document.getElementById("drivers-message"),
     driverList: document.getElementById("driver-list"),
     optimizeForm: document.getElementById("optimize-form"),
     routeResult: document.getElementById("route-result"),
     routeMessage: document.getElementById("route-message"),
+    refreshAuditLogs: document.getElementById("refresh-audit-logs"),
+    auditFilterForm: document.getElementById("audit-filter-form"),
+    auditActionFilter: document.getElementById("audit-action-filter"),
+    auditTargetFilter: document.getElementById("audit-target-filter"),
+    auditActorFilter: document.getElementById("audit-actor-filter"),
+    auditLimitFilter: document.getElementById("audit-limit-filter"),
+    auditLogsView: document.getElementById("audit-logs-view"),
+    auditMessage: document.getElementById("audit-message"),
     refreshBilling: document.getElementById("refresh-billing"),
     billingStatus: document.getElementById("billing-status"),
     billingSummary: document.getElementById("billing-summary"),
@@ -65,6 +74,12 @@
     status: "",
     assignedTo: "",
     search: "",
+  };
+  let auditFilters = {
+    action: "",
+    targetType: "",
+    actorId: "",
+    limit: 50,
   };
 
   function claimsRoles(claims) {
@@ -109,6 +124,10 @@
     el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
       element.disabled = !enabled;
     });
+    el.refreshAuditLogs.disabled = !enabled;
+    el.auditFilterForm.querySelectorAll("input, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
   }
 
   function setBillingInteractiveState(enabled) {
@@ -137,6 +156,39 @@
       assignedTo: (el.ordersAssignedFilter.value || "").trim(),
       search: (el.ordersSearchFilter.value || "").trim(),
     };
+  }
+
+  function _readAuditFilters() {
+    const parsedLimit = Number.parseInt(el.auditLimitFilter.value || "50", 10);
+    const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
+    return {
+      action: (el.auditActionFilter.value || "").trim(),
+      targetType: (el.auditTargetFilter.value || "").trim(),
+      actorId: (el.auditActorFilter.value || "").trim(),
+      limit: safeLimit,
+    };
+  }
+
+  function _writeAuditFilters() {
+    el.auditActionFilter.value = auditFilters.action || "";
+    el.auditTargetFilter.value = auditFilters.targetType || "";
+    el.auditActorFilter.value = auditFilters.actorId || "";
+    el.auditLimitFilter.value = String(auditFilters.limit || 50);
+  }
+
+  function _auditLogsPathFromFilters() {
+    const params = new URLSearchParams();
+    params.set("limit", String(auditFilters.limit || 50));
+    if (auditFilters.action) {
+      params.set("action", auditFilters.action);
+    }
+    if (auditFilters.targetType) {
+      params.set("target_type", auditFilters.targetType);
+    }
+    if (auditFilters.actorId) {
+      params.set("actor_id", auditFilters.actorId);
+    }
+    return "/audit/logs?" + params.toString();
   }
 
   function _writeOrderFilters() {
@@ -189,6 +241,14 @@
     orderFilters = { status: "", assignedTo: "", search: "" };
     _writeOrderFilters();
     await refreshOrders();
+  }
+
+  async function applyAuditFilters(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    auditFilters = _readAuditFilters();
+    await refreshAuditLogs();
   }
 
   function _syncSelectAllCheckbox() {
@@ -249,11 +309,13 @@
       isAuthorizedRole = false;
       isAdminRole = false;
       _clearSelection();
+      renderDriverOptions([]);
       setInteractiveState(false);
       setBillingInteractiveState(false);
       el.billingStatus.textContent = "No billing provider status loaded.";
       el.billingSummary.textContent = "No billing summary loaded.";
       el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
+      el.auditLogsView.textContent = "No audit logs loaded.";
       return;
     }
     isAuthorizedRole = hasAllowedRole(claims);
@@ -264,6 +326,7 @@
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
+      renderDriverOptions([]);
       C.showMessage(el.authMessage, "This console requires Admin or Dispatcher role.", "error");
       return;
     }
@@ -443,7 +506,7 @@
         C.escapeHtml(order.assigned_to || "-") +
         "</td>" +
         "<td>" +
-        "<input class=\"compact-input\" data-driver-id=\"" +
+        "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
         C.escapeHtml(order.id) +
         "\" placeholder=\"driver sub\" value=\"" +
         C.escapeHtml(order.assigned_to || "") +
@@ -509,7 +572,7 @@
         C.escapeHtml(order.assigned_to || "-") +
         "</p>" +
         "<div class=\"mobile-order-actions\">" +
-        "<input class=\"compact-input\" data-driver-id=\"" +
+        "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
         C.escapeHtml(order.id) +
         "\" placeholder=\"driver sub\" value=\"" +
         C.escapeHtml(order.assigned_to || "") +
@@ -739,6 +802,49 @@
       .join("");
   }
 
+  function renderDriverOptions(users) {
+    if (!el.driverOptions) {
+      return;
+    }
+    if (!users || !users.length) {
+      el.driverOptions.innerHTML = "";
+      return;
+    }
+    const seen = new Set();
+    const options = [];
+    users.forEach(function (user) {
+      const userId = (user && user.user_id ? String(user.user_id) : "").trim();
+      if (!userId || seen.has(userId)) {
+        return;
+      }
+      seen.add(userId);
+      const username = user && user.username ? String(user.username).trim() : "";
+      const email = user && user.email ? String(user.email).trim() : "";
+      const label = [username, email].filter(Boolean).join(" | ");
+      options.push(
+        "<option value=\"" +
+        C.escapeHtml(userId) +
+        "\"" +
+        (label ? " label=\"" + C.escapeHtml(label) + "\"" : "") +
+        "></option>"
+      );
+    });
+    el.driverOptions.innerHTML = options.join("");
+  }
+
+  async function refreshAssignableDrivers() {
+    if (!token || !isAuthorizedRole) {
+      renderDriverOptions([]);
+      return;
+    }
+    try {
+      const users = await C.requestJson(apiBase, "/users?role=Driver", { token });
+      renderDriverOptions(users || []);
+    } catch (error) {
+      renderDriverOptions([]);
+    }
+  }
+
   async function refreshDrivers() {
     if (!requireAuthorized(el.driversMessage)) {
       return;
@@ -750,6 +856,20 @@
       C.showMessage(el.driversMessage, "Loaded " + (drivers || []).length + " active drivers.", "success");
     } catch (error) {
       C.showMessage(el.driversMessage, error.message, "error");
+    }
+  }
+
+  async function refreshAuditLogs() {
+    if (!requireAuthorized(el.auditMessage)) {
+      el.auditLogsView.textContent = "No audit logs loaded.";
+      return;
+    }
+    try {
+      const events = await C.requestJson(apiBase, _auditLogsPathFromFilters(), { token });
+      el.auditLogsView.textContent = JSON.stringify(events || [], null, 2);
+      C.showMessage(el.auditMessage, "Loaded " + (events || []).length + " audit event(s).", "success");
+    } catch (error) {
+      C.showMessage(el.auditMessage, error.message, "error");
     }
   }
 
@@ -984,6 +1104,7 @@
       el.billingInviteForm.reset();
       await refreshBillingSummary();
       await refreshBillingInvitations();
+      await refreshAssignableDrivers();
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -1009,6 +1130,7 @@
       el.billingActivateForm.reset();
       await refreshBillingSummary();
       await refreshBillingInvitations();
+      await refreshAssignableDrivers();
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -1044,6 +1166,7 @@
       }
       await refreshBillingSummary();
       await refreshBillingInvitations();
+      await refreshAssignableDrivers();
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -1207,11 +1330,14 @@
     await loadUiConfig();
     await finishHostedLoginCallback();
     _writeOrderFilters();
+    _writeAuditFilters();
     _renderSelectionCount();
     _syncSelectAllCheckbox();
     if (isAuthorizedRole) {
+      await refreshAssignableDrivers();
       await refreshOrders();
       await refreshDrivers();
+      await refreshAuditLogs();
       if (isAdminRole) {
         await refreshBillingSummary();
         await refreshBillingInvitations();
@@ -1232,9 +1358,15 @@
   el.saveToken.addEventListener("click", function () {
     setToken(el.token.value);
     C.showMessage(el.authMessage, "Token saved.", "success");
+    if (isAuthorizedRole) {
+      refreshAssignableDrivers().catch(function () {
+        renderDriverOptions([]);
+      });
+    }
   });
   el.clearToken.addEventListener("click", function () {
     setToken("");
+    renderDriverOptions([]);
     C.showMessage(el.authMessage, "Token cleared.", "success");
   });
   el.createForm.addEventListener("submit", createOrder);
@@ -1269,6 +1401,12 @@
   el.ordersBody.addEventListener("click", onOrderActionClick);
   el.ordersMobile.addEventListener("click", onOrderActionClick);
   el.refreshDrivers.addEventListener("click", refreshDrivers);
+  el.refreshAuditLogs.addEventListener("click", refreshAuditLogs);
+  el.auditFilterForm.addEventListener("submit", function (event) {
+    applyAuditFilters(event).catch(function (error) {
+      C.showMessage(el.auditMessage, error.message, "error");
+    });
+  });
   el.optimizeForm.addEventListener("submit", optimizeRoute);
   el.refreshBilling.addEventListener("click", refreshBillingSummary);
   el.refreshInvitations.addEventListener("click", refreshBillingInvitations);

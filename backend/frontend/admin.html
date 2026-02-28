@@ -83,7 +83,7 @@
       <div class="panel-title-row">
         <h2>Order Queue</h2>
         <div class="row">
-          <input id="bulk-driver-id" class="compact-input" placeholder="driver sub for bulk assign">
+          <input id="bulk-driver-id" class="compact-input" list="driver-options" placeholder="driver sub for bulk assign">
           <button id="bulk-assign-selected" class="btn btn-primary" type="button">Assign Selected</button>
           <button id="bulk-unassign-selected" class="btn btn-ghost" type="button">Unassign Selected</button>
           <button id="clear-selection" class="btn btn-ghost" type="button">Clear Selection</button>
@@ -91,6 +91,7 @@
           <button id="refresh-orders" class="btn btn-ghost">Refresh</button>
         </div>
       </div>
+      <datalist id="driver-options"></datalist>
       <form id="orders-filter-form" class="row orders-filters">
         <label class="field">
           <span>Status</span>
@@ -213,6 +214,21 @@
       </div>
       <ul id="billing-invitations" class="driver-list"></ul>
       <p id="billing-message" class="message"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title-row">
+        <h2>Audit Logs</h2>
+        <button id="refresh-audit-logs" class="btn btn-ghost" type="button">Refresh</button>
+      </div>
+      <form id="audit-filter-form" class="form-grid">
+        <label class="field"><span>Action (optional)</span><input id="audit-action-filter" name="action" placeholder="order.assigned"></label>
+        <label class="field"><span>Target Type (optional)</span><input id="audit-target-filter" name="target_type" placeholder="order"></label>
+        <label class="field"><span>Actor ID (optional)</span><input id="audit-actor-filter" name="actor_id" placeholder="admin-123"></label>
+        <label class="field"><span>Limit</span><input id="audit-limit-filter" name="limit" type="number" min="1" max="200" value="50"></label>
+      </form>
+      <pre id="audit-logs-view" class="claims-view">No audit logs loaded.</pre>
+      <p id="audit-message" class="message"></p>
     </section>
   </main>
 

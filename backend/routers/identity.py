@@ -1,17 +1,22 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
 
 try:
-    from backend.auth import ROLE_ADMIN, get_current_user, require_roles
+    from backend.audit_store import get_audit_log_store
+    from backend.auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
     from backend.repositories import get_identity_repository
-    from backend.schemas import OrganizationRecord, OrganizationUpdateRequest, UserRecord
+    from backend.schemas import AuditLogRecord, OrganizationRecord, OrganizationUpdateRequest, UserRecord
 except ModuleNotFoundError:  # local run from backend/ directory
-    from auth import ROLE_ADMIN, get_current_user, require_roles
+    from audit_store import get_audit_log_store
+    from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
     from repositories import get_identity_repository
-    from schemas import OrganizationRecord, OrganizationUpdateRequest, UserRecord
+    from schemas import AuditLogRecord, OrganizationRecord, OrganizationUpdateRequest, UserRecord
 
 router = APIRouter(tags=["identity"])
+_USER_LIST_ROLES = {ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER}
 
 
 def _default_org_name(user) -> str:
@@ -70,6 +75,27 @@ async def sync_current_user_record(
     return _sync_user(user, repo)
 
 
+@router.get("/users", response_model=List[UserRecord])
+async def list_users(
+    role: Optional[str] = Query(default=None),
+    active_only: bool = Query(default=True),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    repo=Depends(get_identity_repository),
+):
+    if role is not None and role not in _USER_LIST_ROLES:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role filter '{role}'",
+        )
+
+    users = repo.list_users(user["org_id"])
+    if active_only:
+        users = [record for record in users if record.is_active]
+    if role is not None:
+        users = [record for record in users if role in (record.roles or [])]
+    return sorted(users, key=lambda record: record.user_id)
+
+
 @router.get("/orgs/me", response_model=OrganizationRecord)
 async def get_current_org(
     user=Depends(get_current_user),
@@ -93,3 +119,22 @@ async def update_current_org(
         updated_at=datetime.now(timezone.utc),
     )
     return repo.upsert_org(updated)
+
+
+@router.get("/audit/logs", response_model=List[AuditLogRecord])
+async def list_audit_logs(
+    limit: int = Query(default=100, ge=1, le=500),
+    action: Optional[str] = Query(default=None),
+    target_type: Optional[str] = Query(default=None),
+    actor_id: Optional[str] = Query(default=None),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    audit_store=Depends(get_audit_log_store),
+):
+    events = audit_store.list_events(user["org_id"], limit=limit)
+    if action:
+        events = [event for event in events if event.action == action]
+    if target_type:
+        events = [event for event in events if event.target_type == target_type]
+    if actor_id:
+        events = [event for event in events if event.actor_id == actor_id]
+    return events

@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from backend.app import app
+from backend.audit_store import reset_in_memory_audit_log_store
+from backend.order_store import reset_in_memory_order_store
 
 client = TestClient(app)
 
@@ -30,6 +32,10 @@ def make_token(sub: str, org_id: str, groups, email: str = "user@example.com"):
 def _test_env(monkeypatch):
     monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
     monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
+    monkeypatch.setenv("USE_IN_MEMORY_ORDER_STORE", "true")
+    monkeypatch.setenv("USE_IN_MEMORY_AUDIT_LOG_STORE", "true")
+    reset_in_memory_order_store()
+    reset_in_memory_audit_log_store()
 
 
 def test_get_users_me_creates_or_updates_record():
@@ -110,3 +116,50 @@ def test_list_users_rejects_invalid_role_filter():
         headers={"Authorization": f"Bearer {dispatcher_token}"},
     )
     assert response.status_code == 400
+
+
+def test_dispatcher_can_view_audit_logs_for_org():
+    org_id = "org-700"
+    admin_token = make_token("admin-700", org_id, ["Admin"])
+    dispatcher_token = make_token("dispatcher-700", org_id, ["Dispatcher"])
+
+    created = client.post(
+        "/orders/",
+        json={
+            "customer_name": "Audit Order",
+            "reference_number": 7001,
+            "pick_up_address": "Warehouse A",
+            "delivery": "100 Main",
+            "dimensions": "12x8x5 in",
+            "weight": 4.2,
+            "num_packages": 1,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert created.status_code == 200
+
+    assigned = client.post(
+        f"/orders/{created.json()['id']}/assign",
+        json={"driver_id": "driver-700"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert assigned.status_code == 200
+
+    response = client.get(
+        "/audit/logs?action=order.assigned",
+        headers={"Authorization": f"Bearer {dispatcher_token}"},
+    )
+    assert response.status_code == 200
+    events = response.json()
+    assert len(events) >= 1
+    assert all(event["action"] == "order.assigned" for event in events)
+    assert all(event["org_id"] == org_id for event in events)
+
+
+def test_driver_cannot_view_audit_logs():
+    driver_token = make_token("driver-701", "org-701", ["Driver"])
+    response = client.get(
+        "/audit/logs",
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    assert response.status_code == 403

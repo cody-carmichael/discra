@@ -5,13 +5,15 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
 
 try:
+    from backend.audit_store import get_audit_log_store
     from backend.auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
     from backend.repositories import get_identity_repository
-    from backend.schemas import OrganizationRecord, OrganizationUpdateRequest, UserRecord
+    from backend.schemas import AuditLogRecord, OrganizationRecord, OrganizationUpdateRequest, UserRecord
 except ModuleNotFoundError:  # local run from backend/ directory
+    from audit_store import get_audit_log_store
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
     from repositories import get_identity_repository
-    from schemas import OrganizationRecord, OrganizationUpdateRequest, UserRecord
+    from schemas import AuditLogRecord, OrganizationRecord, OrganizationUpdateRequest, UserRecord
 
 router = APIRouter(tags=["identity"])
 _USER_LIST_ROLES = {ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER}
@@ -117,3 +119,22 @@ async def update_current_org(
         updated_at=datetime.now(timezone.utc),
     )
     return repo.upsert_org(updated)
+
+
+@router.get("/audit/logs", response_model=List[AuditLogRecord])
+async def list_audit_logs(
+    limit: int = Query(default=100, ge=1, le=500),
+    action: Optional[str] = Query(default=None),
+    target_type: Optional[str] = Query(default=None),
+    actor_id: Optional[str] = Query(default=None),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    audit_store=Depends(get_audit_log_store),
+):
+    events = audit_store.list_events(user["org_id"], limit=limit)
+    if action:
+        events = [event for event in events if event.action == action]
+    if target_type:
+        events = [event for event in events if event.target_type == target_type]
+    if actor_id:
+        events = [event for event in events if event.actor_id == actor_id]
+    return events

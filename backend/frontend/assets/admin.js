@@ -36,6 +36,14 @@
     optimizeForm: document.getElementById("optimize-form"),
     routeResult: document.getElementById("route-result"),
     routeMessage: document.getElementById("route-message"),
+    refreshAuditLogs: document.getElementById("refresh-audit-logs"),
+    auditFilterForm: document.getElementById("audit-filter-form"),
+    auditActionFilter: document.getElementById("audit-action-filter"),
+    auditTargetFilter: document.getElementById("audit-target-filter"),
+    auditActorFilter: document.getElementById("audit-actor-filter"),
+    auditLimitFilter: document.getElementById("audit-limit-filter"),
+    auditLogsView: document.getElementById("audit-logs-view"),
+    auditMessage: document.getElementById("audit-message"),
     refreshBilling: document.getElementById("refresh-billing"),
     billingStatus: document.getElementById("billing-status"),
     billingSummary: document.getElementById("billing-summary"),
@@ -66,6 +74,12 @@
     status: "",
     assignedTo: "",
     search: "",
+  };
+  let auditFilters = {
+    action: "",
+    targetType: "",
+    actorId: "",
+    limit: 50,
   };
 
   function claimsRoles(claims) {
@@ -110,6 +124,10 @@
     el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
       element.disabled = !enabled;
     });
+    el.refreshAuditLogs.disabled = !enabled;
+    el.auditFilterForm.querySelectorAll("input, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
   }
 
   function setBillingInteractiveState(enabled) {
@@ -138,6 +156,39 @@
       assignedTo: (el.ordersAssignedFilter.value || "").trim(),
       search: (el.ordersSearchFilter.value || "").trim(),
     };
+  }
+
+  function _readAuditFilters() {
+    const parsedLimit = Number.parseInt(el.auditLimitFilter.value || "50", 10);
+    const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
+    return {
+      action: (el.auditActionFilter.value || "").trim(),
+      targetType: (el.auditTargetFilter.value || "").trim(),
+      actorId: (el.auditActorFilter.value || "").trim(),
+      limit: safeLimit,
+    };
+  }
+
+  function _writeAuditFilters() {
+    el.auditActionFilter.value = auditFilters.action || "";
+    el.auditTargetFilter.value = auditFilters.targetType || "";
+    el.auditActorFilter.value = auditFilters.actorId || "";
+    el.auditLimitFilter.value = String(auditFilters.limit || 50);
+  }
+
+  function _auditLogsPathFromFilters() {
+    const params = new URLSearchParams();
+    params.set("limit", String(auditFilters.limit || 50));
+    if (auditFilters.action) {
+      params.set("action", auditFilters.action);
+    }
+    if (auditFilters.targetType) {
+      params.set("target_type", auditFilters.targetType);
+    }
+    if (auditFilters.actorId) {
+      params.set("actor_id", auditFilters.actorId);
+    }
+    return "/audit/logs?" + params.toString();
   }
 
   function _writeOrderFilters() {
@@ -190,6 +241,14 @@
     orderFilters = { status: "", assignedTo: "", search: "" };
     _writeOrderFilters();
     await refreshOrders();
+  }
+
+  async function applyAuditFilters(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    auditFilters = _readAuditFilters();
+    await refreshAuditLogs();
   }
 
   function _syncSelectAllCheckbox() {
@@ -256,6 +315,7 @@
       el.billingStatus.textContent = "No billing provider status loaded.";
       el.billingSummary.textContent = "No billing summary loaded.";
       el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
+      el.auditLogsView.textContent = "No audit logs loaded.";
       return;
     }
     isAuthorizedRole = hasAllowedRole(claims);
@@ -799,6 +859,20 @@
     }
   }
 
+  async function refreshAuditLogs() {
+    if (!requireAuthorized(el.auditMessage)) {
+      el.auditLogsView.textContent = "No audit logs loaded.";
+      return;
+    }
+    try {
+      const events = await C.requestJson(apiBase, _auditLogsPathFromFilters(), { token });
+      el.auditLogsView.textContent = JSON.stringify(events || [], null, 2);
+      C.showMessage(el.auditMessage, "Loaded " + (events || []).length + " audit event(s).", "success");
+    } catch (error) {
+      C.showMessage(el.auditMessage, error.message, "error");
+    }
+  }
+
   function renderBillingSummary(summary) {
     if (!summary) {
       el.billingSummary.textContent = "No billing summary loaded.";
@@ -1256,12 +1330,14 @@
     await loadUiConfig();
     await finishHostedLoginCallback();
     _writeOrderFilters();
+    _writeAuditFilters();
     _renderSelectionCount();
     _syncSelectAllCheckbox();
     if (isAuthorizedRole) {
       await refreshAssignableDrivers();
       await refreshOrders();
       await refreshDrivers();
+      await refreshAuditLogs();
       if (isAdminRole) {
         await refreshBillingSummary();
         await refreshBillingInvitations();
@@ -1325,6 +1401,12 @@
   el.ordersBody.addEventListener("click", onOrderActionClick);
   el.ordersMobile.addEventListener("click", onOrderActionClick);
   el.refreshDrivers.addEventListener("click", refreshDrivers);
+  el.refreshAuditLogs.addEventListener("click", refreshAuditLogs);
+  el.auditFilterForm.addEventListener("submit", function (event) {
+    applyAuditFilters(event).catch(function (error) {
+      C.showMessage(el.auditMessage, error.message, "error");
+    });
+  });
   el.optimizeForm.addEventListener("submit", optimizeRoute);
   el.refreshBilling.addEventListener("click", refreshBillingSummary);
   el.refreshInvitations.addEventListener("click", refreshBillingInvitations);

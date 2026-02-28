@@ -222,3 +222,4 @@ Hosted UI setup notes:
 33. Environment bootstrap automation: Cognito group setup + generated SAM deploy parameter overrides for dev/pilot environments
 34. Deploy smoke checks: reusable script + manual GitHub Actions workflow for post-deploy endpoint and webhook validation
 35. Deploy workflow hardening: auto-run smoke checks from `deploy-dev` against the freshly deployed stack
+36. Backend CI lint gate: run low-noise Ruff checks (`E9,F63,F7,F82`) alongside tests and SAM build

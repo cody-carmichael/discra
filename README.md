@@ -80,6 +80,7 @@ After `sam local start-api`:
 - `POST /dev/backend/drivers/location` (Driver)
 - `GET /dev/backend/drivers?active_minutes=30` (Admin/Dispatcher)
 - `POST /dev/backend/routes/optimize` (Admin/Dispatcher)
+- `GET /dev/backend/reports/dispatch-summary` (Admin/Dispatcher)
 - `GET /dev/backend/billing/summary` (Admin)
 - `GET /dev/backend/billing/status` (Admin)
 - `POST /dev/backend/billing/checkout` (Admin)
@@ -190,3 +191,4 @@ Hosted UI setup notes:
 29. Bulk dispatch actions: multi-select orders with bulk assign/unassign endpoints and Admin queue controls
 30. Driver roster endpoint + UI suggestions: role-filtered `/users` lookup to improve assign and bulk-assign accuracy
 31. Audit log visibility: role-restricted `/audit/logs` API + Admin/Dispatcher audit viewer with filters
+32. Dispatch KPI summary: `/reports/dispatch-summary` API + Admin/Dispatcher summary panel for order/status/driver activity

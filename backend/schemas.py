@@ -384,3 +384,15 @@ class RouteOptimizeResponse(BaseModel):
     total_distance_meters: float
     total_duration_seconds: float
     ordered_stops: List[RouteOptimizedStop]
+
+
+class DispatchSummaryResponse(BaseModel):
+    org_id: str
+    generated_at: datetime
+    total_orders: int = Field(..., ge=0)
+    assigned_orders: int = Field(..., ge=0)
+    unassigned_orders: int = Field(..., ge=0)
+    terminal_orders: int = Field(..., ge=0)
+    by_status: Dict[str, int] = Field(default_factory=dict)
+    active_drivers: int = Field(..., ge=0)
+    active_driver_ids: List[str] = Field(default_factory=list)

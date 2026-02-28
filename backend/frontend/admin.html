@@ -173,6 +173,18 @@
 
     <section class="panel">
       <div class="panel-title-row">
+        <h2>Dispatch Summary</h2>
+        <button id="refresh-dispatch-summary" class="btn btn-ghost" type="button">Refresh</button>
+      </div>
+      <form id="dispatch-summary-form" class="form-grid">
+        <label class="field"><span>Active Driver Window (minutes)</span><input id="dispatch-active-minutes" name="active_minutes" type="number" min="1" max="1440" value="120"></label>
+      </form>
+      <pre id="dispatch-summary-view" class="claims-view">No dispatch summary loaded.</pre>
+      <p id="dispatch-summary-message" class="message"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title-row">
         <h2>Billing and Seats</h2>
         <button id="refresh-billing" class="btn btn-ghost" type="button">Refresh</button>
       </div>

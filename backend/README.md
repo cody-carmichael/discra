@@ -44,6 +44,9 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - Uses OR-Tools for route ordering (single driver path)
   - If `stops` is omitted, assigned orders for the driver are geocoded and optimized automatically
   - Explicit `stops` with `lat/lng` are still supported as an override
+- Reporting:
+  - `GET /reports/dispatch-summary` (Admin/Dispatcher)
+  - Returns order counts by status, assignment totals, terminal totals, and active driver count
 - Billing + seat management:
   - `GET /billing/summary` (Admin)
   - `GET /billing/status` (Admin)
@@ -66,6 +69,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - Admin console includes seat-billing controls for `GET /billing/summary`, `GET /billing/status`, `POST /billing/checkout`, `POST /billing/portal`, `POST /billing/seats`, `GET /billing/invitations`, `POST /billing/invitations`, invitation activation, and invitation cancellation
   - Admin order queue supports status + assigned-driver filters, free-text search (customer/reference/external id), and bulk assign/unassign for selected orders
   - Driver ID inputs support suggestions from role-filtered user roster lookup
+  - Dispatch summary panel surfaces current order/driver KPI snapshot
   - Admin/Dispatcher audit panel supports filtered audit-log inspection
   - `GET /ui/admin-sw.js` (Admin/Dispatcher PWA service worker)
   - `GET /ui/driver` (Driver web app with POD + location updates)

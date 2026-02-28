@@ -60,3 +60,10 @@ Use this checklist when handing Discra to an external tester for MVP validation.
 - Driver location flow visible to Admin/Dispatcher.
 - Billing summary and seat/invitation flows are reachable by Admin.
 - No P0/P1 defects remain open.
+
+## 8) Feedback capture
+
+- File defects using issue template:
+  - `.github/ISSUE_TEMPLATE/pilot-bug-report.yml`
+- File run-level UAT result using:
+  - `.github/ISSUE_TEMPLATE/pilot-uat-result.yml`

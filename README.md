@@ -171,6 +171,9 @@ Hosted UI setup notes:
   - `tools\pilot\export-pilot-summary.ps1 -StackName "discra-api-dev" -Region "us-east-1"`
 - Pilot UAT checklist:
   - `docs/pilot-uat-checklist.md`
+- Pilot feedback templates:
+  - `.github/ISSUE_TEMPLATE/pilot-bug-report.yml`
+  - `.github/ISSUE_TEMPLATE/pilot-uat-result.yml`
 
 ## POD upload constraints
 - Uploads use short-lived S3 presigned POST policies (default `300` seconds).
@@ -229,3 +232,4 @@ Hosted UI setup notes:
 35. Deploy workflow hardening: auto-run smoke checks from `deploy-dev` against the freshly deployed stack
 36. Backend CI lint gate: run low-noise Ruff checks (`E9,F63,F7,F82`) alongside tests and SAM build
 37. Pilot handoff pack: stack-output export script + UAT checklist for external user testing
+38. Pilot feedback intake: GitHub issue templates for bug reports and UAT run results

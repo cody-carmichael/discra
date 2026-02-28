@@ -83,7 +83,7 @@
       <div class="panel-title-row">
         <h2>Order Queue</h2>
         <div class="row">
-          <input id="bulk-driver-id" class="compact-input" placeholder="driver sub for bulk assign">
+          <input id="bulk-driver-id" class="compact-input" list="driver-options" placeholder="driver sub for bulk assign">
           <button id="bulk-assign-selected" class="btn btn-primary" type="button">Assign Selected</button>
           <button id="bulk-unassign-selected" class="btn btn-ghost" type="button">Unassign Selected</button>
           <button id="clear-selection" class="btn btn-ghost" type="button">Clear Selection</button>
@@ -91,6 +91,7 @@
           <button id="refresh-orders" class="btn btn-ghost">Refresh</button>
         </div>
       </div>
+      <datalist id="driver-options"></datalist>
       <form id="orders-filter-form" class="row orders-filters">
         <label class="field">
           <span>Status</span>

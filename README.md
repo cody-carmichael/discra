@@ -62,6 +62,7 @@ After `sam local start-api`:
 ### Protected endpoints (JWT required)
 - `GET /dev/backend/users/me`
 - `POST /dev/backend/users/me/sync`
+- `GET /dev/backend/users?role=Driver` (Admin/Dispatcher)
 - `GET /dev/backend/orgs/me`
 - `PUT /dev/backend/orgs/me` (Admin only)
 - `GET /dev/backend/orders`
@@ -186,3 +187,4 @@ Hosted UI setup notes:
 27. Order time-window support: optional `time_window_start`/`time_window_end` in API + webhook with validation and UI/mobile visibility
 28. Admin dispatch queue filtering: status + assigned driver server-side filters and client-side search for high-volume webhook order selection
 29. Bulk dispatch actions: multi-select orders with bulk assign/unassign endpoints and Admin queue controls
+30. Driver roster endpoint + UI suggestions: role-filtered `/users` lookup to improve assign and bulk-assign accuracy

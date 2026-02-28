@@ -11,6 +11,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - role checks at application layer (`Admin`, `Dispatcher`, `Driver`)
 - Users/organizations model:
   - `GET /users/me`, `POST /users/me/sync`
+  - `GET /users?role=Driver` (Admin/Dispatcher; role-filtered roster lookup)
   - `GET /orgs/me`, `PUT /orgs/me` (Admin only)
 - Initial multi-tenant order routes with app-layer RBAC:
   - `POST /orders`, `GET /orders`, `GET /orders/{id}`
@@ -63,6 +64,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - `GET /ui/admin` (Admin/Dispatcher console)
   - Admin console includes seat-billing controls for `GET /billing/summary`, `GET /billing/status`, `POST /billing/checkout`, `POST /billing/portal`, `POST /billing/seats`, `GET /billing/invitations`, `POST /billing/invitations`, invitation activation, and invitation cancellation
   - Admin order queue supports status + assigned-driver filters, free-text search (customer/reference/external id), and bulk assign/unassign for selected orders
+  - Driver ID inputs support suggestions from role-filtered user roster lookup
   - `GET /ui/admin-sw.js` (Admin/Dispatcher PWA service worker)
   - `GET /ui/driver` (Driver web app with POD + location updates)
   - `GET /ui/driver-sw.js` (Driver PWA service worker)

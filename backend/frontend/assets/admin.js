@@ -29,6 +29,7 @@
     ordersBody: document.getElementById("orders-tbody"),
     ordersMobile: document.getElementById("orders-mobile"),
     ordersMessage: document.getElementById("orders-message"),
+    driverOptions: document.getElementById("driver-options"),
     refreshDrivers: document.getElementById("refresh-drivers"),
     driversMessage: document.getElementById("drivers-message"),
     driverList: document.getElementById("driver-list"),
@@ -249,6 +250,7 @@
       isAuthorizedRole = false;
       isAdminRole = false;
       _clearSelection();
+      renderDriverOptions([]);
       setInteractiveState(false);
       setBillingInteractiveState(false);
       el.billingStatus.textContent = "No billing provider status loaded.";
@@ -264,6 +266,7 @@
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
+      renderDriverOptions([]);
       C.showMessage(el.authMessage, "This console requires Admin or Dispatcher role.", "error");
       return;
     }
@@ -443,7 +446,7 @@
         C.escapeHtml(order.assigned_to || "-") +
         "</td>" +
         "<td>" +
-        "<input class=\"compact-input\" data-driver-id=\"" +
+        "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
         C.escapeHtml(order.id) +
         "\" placeholder=\"driver sub\" value=\"" +
         C.escapeHtml(order.assigned_to || "") +
@@ -509,7 +512,7 @@
         C.escapeHtml(order.assigned_to || "-") +
         "</p>" +
         "<div class=\"mobile-order-actions\">" +
-        "<input class=\"compact-input\" data-driver-id=\"" +
+        "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
         C.escapeHtml(order.id) +
         "\" placeholder=\"driver sub\" value=\"" +
         C.escapeHtml(order.assigned_to || "") +
@@ -737,6 +740,49 @@
         );
       })
       .join("");
+  }
+
+  function renderDriverOptions(users) {
+    if (!el.driverOptions) {
+      return;
+    }
+    if (!users || !users.length) {
+      el.driverOptions.innerHTML = "";
+      return;
+    }
+    const seen = new Set();
+    const options = [];
+    users.forEach(function (user) {
+      const userId = (user && user.user_id ? String(user.user_id) : "").trim();
+      if (!userId || seen.has(userId)) {
+        return;
+      }
+      seen.add(userId);
+      const username = user && user.username ? String(user.username).trim() : "";
+      const email = user && user.email ? String(user.email).trim() : "";
+      const label = [username, email].filter(Boolean).join(" | ");
+      options.push(
+        "<option value=\"" +
+        C.escapeHtml(userId) +
+        "\"" +
+        (label ? " label=\"" + C.escapeHtml(label) + "\"" : "") +
+        "></option>"
+      );
+    });
+    el.driverOptions.innerHTML = options.join("");
+  }
+
+  async function refreshAssignableDrivers() {
+    if (!token || !isAuthorizedRole) {
+      renderDriverOptions([]);
+      return;
+    }
+    try {
+      const users = await C.requestJson(apiBase, "/users?role=Driver", { token });
+      renderDriverOptions(users || []);
+    } catch (error) {
+      renderDriverOptions([]);
+    }
   }
 
   async function refreshDrivers() {
@@ -984,6 +1030,7 @@
       el.billingInviteForm.reset();
       await refreshBillingSummary();
       await refreshBillingInvitations();
+      await refreshAssignableDrivers();
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -1009,6 +1056,7 @@
       el.billingActivateForm.reset();
       await refreshBillingSummary();
       await refreshBillingInvitations();
+      await refreshAssignableDrivers();
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -1044,6 +1092,7 @@
       }
       await refreshBillingSummary();
       await refreshBillingInvitations();
+      await refreshAssignableDrivers();
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -1210,6 +1259,7 @@
     _renderSelectionCount();
     _syncSelectAllCheckbox();
     if (isAuthorizedRole) {
+      await refreshAssignableDrivers();
       await refreshOrders();
       await refreshDrivers();
       if (isAdminRole) {
@@ -1232,9 +1282,15 @@
   el.saveToken.addEventListener("click", function () {
     setToken(el.token.value);
     C.showMessage(el.authMessage, "Token saved.", "success");
+    if (isAuthorizedRole) {
+      refreshAssignableDrivers().catch(function () {
+        renderDriverOptions([]);
+      });
+    }
   });
   el.clearToken.addEventListener("click", function () {
     setToken("");
+    renderDriverOptions([]);
     C.showMessage(el.authMessage, "Token cleared.", "success");
   });
   el.createForm.addEventListener("submit", createOrder);

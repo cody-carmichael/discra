@@ -28,11 +28,16 @@ sam local start-api --template template.yaml
 
 ## Python backend local run
 ```powershell
-cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app:app --reload --port 8000
+python -m pip install --upgrade pip
+pip install -r backend/requirements.txt
+powershell ./backend/run_local.ps1
+```
+
+Manual equivalent (from repo root):
+```powershell
+python -m uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ## Mobile app local run (React Native + Expo)

@@ -93,6 +93,12 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _as_bool(value: Optional[str], default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _optional_text(value):
     if value is None:
         return None
@@ -109,6 +115,24 @@ def _stripe_mode(secret_key: str) -> str:
     if value.startswith("sk_test_"):
         return "test"
     return "configured"
+
+
+def _require_stripe_webhook_secret():
+    webhook_secret = _optional_text(os.environ.get("STRIPE_WEBHOOK_SECRET"))
+    if webhook_secret:
+        return
+
+    allow_unsigned = _as_bool(
+        os.environ.get("ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET"),
+        default=False,
+    )
+    if allow_unsigned:
+        return
+
+    raise HTTPException(
+        status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Stripe webhook is not configured",
+    )
 
 
 def _request_id(request: Request):
@@ -888,6 +912,7 @@ async def stripe_webhook(
     stripe_client=Depends(get_stripe_client),
     audit_store=Depends(get_audit_log_store),
 ):
+    _require_stripe_webhook_secret()
     payload = await request.body()
     signature = request.headers.get("stripe-signature")
     try:

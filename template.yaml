@@ -155,11 +155,42 @@ Resources:
           AttributeType: S
         - AttributeName: id
           AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: assigned_driver_id
+          AttributeType: S
+        - AttributeName: source_external_order_id
+          AttributeType: S
       KeySchema:
         - AttributeName: org_id
           KeyType: HASH
         - AttributeName: id
           KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: orders_by_status
+          KeySchema:
+            - AttributeName: org_id
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: orders_by_assigned_driver
+          KeySchema:
+            - AttributeName: org_id
+              KeyType: HASH
+            - AttributeName: assigned_driver_id
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: orders_by_external_lookup
+          KeySchema:
+            - AttributeName: org_id
+              KeyType: HASH
+            - AttributeName: source_external_order_id
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
       Tags:
         - Key: App
           Value: Discra
@@ -397,6 +428,7 @@ Resources:
               - !GetAtt OrganizationsTable.Arn
               - !GetAtt UsersTable.Arn
               - !GetAtt OrdersTable.Arn
+              - !Sub "${OrdersTable.Arn}/index/*"
               - !GetAtt PodArtifactsTable.Arn
               - !GetAtt DriverLocationsTable.Arn
               - !GetAtt SeatSubscriptionsTable.Arn

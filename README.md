@@ -28,11 +28,16 @@ sam local start-api --template template.yaml
 
 ## Python backend local run
 ```powershell
-cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app:app --reload --port 8000
+python -m pip install --upgrade pip
+pip install -r backend/requirements.txt
+powershell ./backend/run_local.ps1
+```
+
+Manual equivalent (from repo root):
+```powershell
+python -m uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ## Mobile app local run (React Native + Expo)
@@ -58,6 +63,13 @@ After `sam local start-api`:
 - open `http://127.0.0.1:3000/dev/backend/ui/admin` (mobile-installable dispatch console)
 - open `http://127.0.0.1:3000/dev/backend/ui/driver` (mobile-installable driver app)
 - `curl -H "x-admin-token: <ADMIN_TOKEN>" http://127.0.0.1:3000/dev/admin/ping`
+
+### OpenAPI source of truth
+- `docs/api-contract.yaml` is a legacy reference and not authoritative for current `/backend` routes.
+- Current contract endpoints:
+  - direct backend (`uvicorn`): `http://127.0.0.1:8000/openapi.json`
+  - SAM local: `http://127.0.0.1:3000/dev/backend/openapi.json`
+  - deployed stage: `https://<api-id>.execute-api.<region>.amazonaws.com/dev/backend/openapi.json`
 
 ### Protected endpoints (JWT required)
 - `GET /dev/backend/users/me`
@@ -110,6 +122,7 @@ If `stops` is omitted, the backend geocodes assigned order delivery addresses an
 - `LocationRouteCalculatorName` (optional Amazon Location route calculator for matrix calls)
 - `LocationPlaceIndexName` (optional Amazon Location place index for address geocoding)
 - `OrdersWebhookToken` (shared secret for `/backend/webhooks/orders`)
+- `OrdersWebhookAllowedOrgId` (required org binding for `/backend/webhooks/orders`; payload `org_id` must match)
 - `OrdersWebhookHmacSecret` (optional HMAC secret for signed `/backend/webhooks/orders` payloads)
 - `OrdersWebhookMaxSkewSeconds` (optional timestamp skew window for signed payloads; default `300`)
 - `CognitoHostedUiDomain` (optional hosted UI helper domain for frontend pages)

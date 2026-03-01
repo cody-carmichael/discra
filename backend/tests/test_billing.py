@@ -41,6 +41,7 @@ def _test_env(monkeypatch):
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     monkeypatch.delenv("STRIPE_DISPATCHER_PRICE_ID", raising=False)
     monkeypatch.delenv("STRIPE_DRIVER_PRICE_ID", raising=False)
+    monkeypatch.delenv("ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET", raising=False)
     reset_in_memory_billing_store()
     reset_in_memory_audit_log_store()
     _IN_MEMORY_REPO._orgs.clear()
@@ -385,6 +386,7 @@ def test_admin_can_list_and_cancel_pending_invitations():
 
 
 def test_webhook_syncs_subscription_limits_from_stripe_event(monkeypatch):
+    monkeypatch.setenv("ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET", "true")
     monkeypatch.setenv("STRIPE_DISPATCHER_PRICE_ID", "price_dispatcher")
     monkeypatch.setenv("STRIPE_DRIVER_PRICE_ID", "price_driver")
     admin_token = make_token("admin-1", "org-1", ["Admin"])
@@ -428,6 +430,16 @@ def test_webhook_syncs_subscription_limits_from_stripe_event(monkeypatch):
     webhook_events = [event for event in audit_events if event.action == "billing.subscription.webhook_applied"]
     assert len(webhook_events) == 1
     assert webhook_events[0].details["event_type"] == "customer.subscription.updated"
+
+
+def test_webhook_fails_closed_without_secret():
+    webhook = client.post(
+        "/webhooks/stripe",
+        data=json.dumps({"id": "evt", "type": "customer.subscription.updated", "data": {"object": {}}}),
+        headers={"Content-Type": "application/json"},
+    )
+    assert webhook.status_code == 503
+    assert "not configured" in webhook.json()["detail"].lower()
 
 
 def test_webhook_requires_signature_when_secret_configured(monkeypatch):

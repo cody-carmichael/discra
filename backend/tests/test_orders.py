@@ -184,6 +184,50 @@ def test_assign_and_unassign_order():
     assert "order.unassigned" in actions
 
 
+def test_unassign_rejects_terminal_order():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    created = client.post(
+        "/orders/",
+        json=make_order_payload("Terminal", "Warehouse 10", "42 End St", reference_number=3010),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    order_id = created.json()["id"]
+
+    client.post(
+        f"/orders/{order_id}/assign",
+        json={"driver_id": "driver-1"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "PickedUp"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "EnRoute"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    delivered = client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "Delivered"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert delivered.status_code == 200
+
+    unassign = client.post(
+        f"/orders/{order_id}/unassign",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert unassign.status_code == 409
+
+    order_response = client.get(f"/orders/{order_id}", headers={"Authorization": f"Bearer {admin_token}"})
+    assert order_response.status_code == 200
+    body = order_response.json()
+    assert body["status"] == "Delivered"
+    assert body["assigned_to"] == "driver-1"
+
+
 def test_driver_inbox_and_status_update():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
     driver_token = make_token("driver-1", "org-a", ["Driver"])
@@ -333,3 +377,70 @@ def test_bulk_assign_requires_driver_id():
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert bulk_assign.status_code == 400
+
+
+def test_bulk_assign_prevalidates_order_ids_without_partial_updates():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    first = client.post(
+        "/orders/",
+        json=make_order_payload("Bulk first", "Warehouse 11", "111 Main", reference_number=9011),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["id"]
+    second = client.post(
+        "/orders/",
+        json=make_order_payload("Bulk second", "Warehouse 11", "222 Main", reference_number=9012),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["id"]
+
+    response = client.post(
+        "/orders/bulk-assign",
+        json={"order_ids": [first, "missing-order-id", second], "driver_id": "driver-77"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 404
+
+    first_order = client.get(f"/orders/{first}", headers={"Authorization": f"Bearer {admin_token}"}).json()
+    second_order = client.get(f"/orders/{second}", headers={"Authorization": f"Bearer {admin_token}"}).json()
+    assert first_order["status"] == "Created"
+    assert first_order["assigned_to"] is None
+    assert second_order["status"] == "Created"
+    assert second_order["assigned_to"] is None
+
+
+def test_bulk_unassign_prevalidates_order_ids_without_partial_updates():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    first = client.post(
+        "/orders/",
+        json=make_order_payload("Bulk unassign first", "Warehouse 12", "333 Main", reference_number=9013),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["id"]
+    second = client.post(
+        "/orders/",
+        json=make_order_payload("Bulk unassign second", "Warehouse 12", "444 Main", reference_number=9014),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["id"]
+
+    client.post(
+        f"/orders/{first}/assign",
+        json={"driver_id": "driver-88"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    client.post(
+        f"/orders/{second}/assign",
+        json={"driver_id": "driver-88"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    response = client.post(
+        "/orders/bulk-unassign",
+        json={"order_ids": [first, "missing-order-id", second]},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 404
+
+    first_order = client.get(f"/orders/{first}", headers={"Authorization": f"Bearer {admin_token}"}).json()
+    second_order = client.get(f"/orders/{second}", headers={"Authorization": f"Bearer {admin_token}"}).json()
+    assert first_order["status"] == "Assigned"
+    assert first_order["assigned_to"] == "driver-88"
+    assert second_order["status"] == "Assigned"
+    assert second_order["assigned_to"] == "driver-88"

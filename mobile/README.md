@@ -23,7 +23,7 @@ Native mobile app for Admin/Dispatcher and Driver workflows using React Native +
     - Add delivery notes
     - Submit to `/pod/presign` + `/pod/metadata` then mark delivered
 - Mobile auth and resilience:
-  - Hosted UI login/logout deep links (`discra-mobile://auth/callback`)
+  - Hosted UI login/logout deep links (`discra-mobile://auth/callback`) using Authorization Code + PKCE
   - Offline queue for driver status/location events with manual sync (`Sync Queue`)
 - Release hardening:
   - Expo EAS build profiles (`mobile/eas.json`)

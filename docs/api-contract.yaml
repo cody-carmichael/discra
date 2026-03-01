@@ -1,10 +1,17 @@
 openapi: 3.0.3
 info:
-  title: Discra API
-  version: 0.1.0
+  title: Discra API (Legacy Contract)
+  version: 0.1.0-legacy
   description: >
-    API contract for Discra (Admin, Dispatcher, Driver).
+    LEGACY API contract retained for historical reference during Java-to-Python migration.
+    This file is not the source of truth for current /backend routes.
+    Use FastAPI-generated OpenAPI instead:
+      - Direct backend (uvicorn): /openapi.json
+      - SAM local: /dev/backend/openapi.json
+      - Deployed API Gateway stage: /dev/backend/openapi.json
     Times are ISO-8601 UTC. IDs are server-generated strings.
+x-discra-contract-status: legacy
+x-discra-last-reviewed: "2026-03-01"
 
 servers:
   - url: https://{apiId}.execute-api.us-east-1.amazonaws.com/dev
@@ -34,7 +41,7 @@ paths:
                   value:
                     success: true
                     data: { status: "ok" }
-                    error: null
+                    error: { code: "NONE", message: "No error" }
                     timestamp: "2025-10-16T20:05:00Z"
 
   /version:
@@ -52,7 +59,7 @@ paths:
                   value:
                     success: true
                     data: { version: "0.0.1-tracer" }
-                    error: null
+                    error: { code: "NONE", message: "No error" }
                     timestamp: "2025-10-16T20:05:00Z"
 
   /admin/ping:
@@ -193,6 +200,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  # Legacy pre-migration endpoint family. Not implemented by current FastAPI backend.
   /dispatcher/jobs:
     post:
       tags: [Dispatcher]
@@ -431,7 +439,9 @@ components:
           additionalProperties: true
           nullable: true
         error:
-          $ref: '#/components/schemas/ErrorObject'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/ErrorObject'
           nullable: true
         timestamp:
           type: string

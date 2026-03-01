@@ -50,6 +50,10 @@ Parameters:
     Default: ""
     NoEcho: true
     Description: Shared secret for external order-ingest webhook
+  OrdersWebhookAllowedOrgId:
+    Type: String
+    Default: ""
+    Description: Required org_id allowed for external order-ingest webhook payloads
   OrdersWebhookHmacSecret:
     Type: String
     Default: ""
@@ -373,6 +377,7 @@ Resources:
           STRIPE_DISPATCHER_PRICE_ID: !Ref StripeDispatcherPriceId
           STRIPE_DRIVER_PRICE_ID: !Ref StripeDriverPriceId
           ORDERS_WEBHOOK_TOKEN: !Ref OrdersWebhookToken
+          ORDERS_WEBHOOK_ALLOWED_ORG_ID: !Ref OrdersWebhookAllowedOrgId
           ORDERS_WEBHOOK_HMAC_SECRET: !Ref OrdersWebhookHmacSecret
           ORDERS_WEBHOOK_MAX_SKEW_SECONDS: !Ref OrdersWebhookMaxSkewSeconds
           AUDIT_LOGS_TABLE: !Ref AuditLogsTable

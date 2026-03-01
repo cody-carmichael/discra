@@ -89,9 +89,23 @@ type QueuedOperation =
       heading: number | null;
     };
 
+type PkceSession = {
+  state: string;
+  verifier: string;
+  domain: string;
+  clientId: string;
+};
+
+type PkceChallenge = {
+  challenge: string;
+  method: "S256" | "plain";
+};
+
 const STORAGE_KEY = "discra_mobile_config_v2";
 const STORAGE_QUEUE_KEY = "discra_mobile_queue_v1";
-const DEFAULT_API_BASE = "http://127.0.0.1:3000/dev/backend";
+const STORAGE_PKCE_KEY = "discra_mobile_pkce_v1";
+const DEFAULT_API_BASE = "";
+const API_BASE_PLACEHOLDER = "https://<api-id>.execute-api.<region>.amazonaws.com/dev/backend";
 const REDIRECT_URI = "discra-mobile://auth/callback";
 const DRIVER_STATUS = ["PickedUp", "EnRoute", "Failed", "Delivered"];
 const ADMIN_STATUS = ["Assigned", "PickedUp", "EnRoute", "Delivered", "Failed"];
@@ -127,6 +141,59 @@ function parseHashParams(url: string): URLSearchParams {
     return new URLSearchParams();
   }
   return new URLSearchParams(url.slice(hashIndex + 1));
+}
+
+function parseQueryParams(url: string): URLSearchParams {
+  const queryIndex = url.indexOf("?");
+  if (queryIndex < 0) {
+    return new URLSearchParams();
+  }
+  const hashIndex = url.indexOf("#", queryIndex);
+  const query = hashIndex >= 0 ? url.slice(queryIndex + 1, hashIndex) : url.slice(queryIndex + 1);
+  return new URLSearchParams(query);
+}
+
+function toBase64Url(bytes: Uint8Array): string {
+  if (typeof globalThis.btoa !== "function") {
+    throw new Error("Hosted UI PKCE requires base64 encoding support.");
+  }
+  let binary = "";
+  for (const value of bytes) {
+    binary += String.fromCharCode(value);
+  }
+  return globalThis.btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function randomString(length: number): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj || typeof cryptoObj.getRandomValues !== "function") {
+    throw new Error("Hosted UI PKCE requires secure random support.");
+  }
+  const bytes = new Uint8Array(length);
+  cryptoObj.getRandomValues(bytes);
+  let output = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    output += alphabet[bytes[index] % alphabet.length];
+  }
+  return output;
+}
+
+async function buildPkceChallenge(verifier: string): Promise<PkceChallenge> {
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj || !cryptoObj.subtle || typeof cryptoObj.subtle.digest !== "function") {
+    return { challenge: verifier, method: "plain" };
+  }
+  try {
+    const input = new Uint8Array(verifier.length);
+    for (let index = 0; index < verifier.length; index += 1) {
+      input[index] = verifier.charCodeAt(index);
+    }
+    const digest = await cryptoObj.subtle.digest("SHA-256", input);
+    return { challenge: toBase64Url(new Uint8Array(digest)), method: "S256" };
+  } catch (error) {
+    return { challenge: verifier, method: "plain" };
+  }
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -412,12 +479,12 @@ export default function App() {
 
   useEffect(() => {
     const subscription = Linking.addEventListener("url", (event) => {
-      consumeHostedCallback(event.url);
+      consumeHostedCallback(event.url).catch(() => undefined);
     });
     Linking.getInitialURL()
       .then((initialUrl) => {
         if (initialUrl) {
-          consumeHostedCallback(initialUrl);
+          consumeHostedCallback(initialUrl).catch(() => undefined);
         }
       })
       .catch(() => undefined);
@@ -627,12 +694,26 @@ export default function App() {
       setMessage("Cognito Hosted UI domain and client ID are required.");
       return;
     }
-    const params = new URLSearchParams();
-    params.set("client_id", clientId);
-    params.set("response_type", "token");
-    params.set("scope", "openid email profile");
-    params.set("redirect_uri", REDIRECT_URI);
-    await Linking.openURL(`https://${domain}/login?${params.toString()}`);
+    try {
+      const state = randomString(32);
+      const verifier = randomString(64);
+      const pkce = await buildPkceChallenge(verifier);
+      const session: PkceSession = { state, verifier, domain, clientId };
+      await AsyncStorage.setItem(STORAGE_PKCE_KEY, JSON.stringify(session));
+
+      const params = new URLSearchParams();
+      params.set("client_id", clientId);
+      params.set("response_type", "code");
+      params.set("scope", "openid email profile");
+      params.set("redirect_uri", REDIRECT_URI);
+      params.set("state", state);
+      params.set("code_challenge", pkce.challenge);
+      params.set("code_challenge_method", pkce.method);
+      await Linking.openURL(`https://${domain}/oauth2/authorize?${params.toString()}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to start Hosted UI login.";
+      setMessage(message);
+    }
   }
 
   async function logoutHostedLogin() {
@@ -650,14 +731,105 @@ export default function App() {
     setMessage("Hosted UI logout launched.");
   }
 
-  function consumeHostedCallback(url: string) {
-    const params = parseHashParams(url);
-    const idToken = params.get("id_token");
-    const accessToken = params.get("access_token");
-    const error = params.get("error");
-    const errorDescription = params.get("error_description");
+  async function consumeHostedCallback(url: string) {
+    const query = parseQueryParams(url);
+    const code = (query.get("code") || "").trim();
+    const callbackState = (query.get("state") || "").trim();
+    const error = query.get("error");
+    const errorDescription = query.get("error_description");
     if (error) {
+      await AsyncStorage.removeItem(STORAGE_PKCE_KEY);
       setMessage(errorDescription || error);
+      return;
+    }
+
+    if (code) {
+      const sessionRaw = await AsyncStorage.getItem(STORAGE_PKCE_KEY);
+      if (!sessionRaw) {
+        setMessage("Hosted UI callback missing PKCE session. Start login again.");
+        return;
+      }
+      let session: PkceSession | null = null;
+      try {
+        const parsed = JSON.parse(sessionRaw) as Partial<PkceSession>;
+        if (parsed.state && parsed.verifier && parsed.domain && parsed.clientId) {
+          session = {
+            state: parsed.state,
+            verifier: parsed.verifier,
+            domain: parsed.domain,
+            clientId: parsed.clientId,
+          };
+        }
+      } catch (error) {
+        session = null;
+      }
+      if (!session || !callbackState || callbackState !== session.state) {
+        await AsyncStorage.removeItem(STORAGE_PKCE_KEY);
+        setMessage("Hosted UI state verification failed. Start login again.");
+        return;
+      }
+
+      const form = new URLSearchParams();
+      form.set("grant_type", "authorization_code");
+      form.set("client_id", session.clientId);
+      form.set("code", code);
+      form.set("redirect_uri", REDIRECT_URI);
+      form.set("code_verifier", session.verifier);
+
+      let tokenResponse: Response;
+      try {
+        tokenResponse = await fetch(`https://${session.domain}/oauth2/token`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+          },
+          body: form.toString(),
+        });
+      } catch (error) {
+        await AsyncStorage.removeItem(STORAGE_PKCE_KEY);
+        setMessage("Hosted UI token exchange failed.");
+        return;
+      }
+
+      let tokenPayload: Record<string, unknown> | null = null;
+      try {
+        tokenPayload = (await tokenResponse.json()) as Record<string, unknown>;
+      } catch (error) {
+        tokenPayload = null;
+      }
+
+      await AsyncStorage.removeItem(STORAGE_PKCE_KEY);
+      if (!tokenResponse.ok) {
+        const details =
+          (tokenPayload && typeof tokenPayload.error_description === "string" && tokenPayload.error_description) ||
+          (tokenPayload && typeof tokenPayload.error === "string" && tokenPayload.error) ||
+          "Hosted UI token exchange failed.";
+        setMessage(details);
+        return;
+      }
+
+      const idToken =
+        tokenPayload && typeof tokenPayload.id_token === "string" ? tokenPayload.id_token : "";
+      const accessToken =
+        tokenPayload && typeof tokenPayload.access_token === "string" ? tokenPayload.access_token : "";
+      const nextToken = (idToken || accessToken || "").trim();
+      if (!nextToken) {
+        setMessage("Hosted UI response did not include a token.");
+        return;
+      }
+      setToken(nextToken);
+      setMessage("Hosted UI login complete.");
+      return;
+    }
+
+    // Backward-compatible fallback for existing implicit-flow callbacks.
+    const hash = parseHashParams(url);
+    const idToken = hash.get("id_token");
+    const accessToken = hash.get("access_token");
+    const hashError = hash.get("error");
+    const hashErrorDescription = hash.get("error_description");
+    if (hashError) {
+      setMessage(hashErrorDescription || hashError);
       return;
     }
     const nextToken = (idToken || accessToken || "").trim();
@@ -1157,7 +1329,7 @@ export default function App() {
             autoCapitalize="none"
             autoCorrect={false}
             style={styles.input}
-            placeholder={DEFAULT_API_BASE}
+            placeholder={API_BASE_PLACEHOLDER}
             placeholderTextColor="#6f8d98"
           />
           <Text style={styles.label}>Cognito Hosted UI Domain</Text>

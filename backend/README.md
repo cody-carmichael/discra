@@ -86,11 +86,16 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
 
 ## Local development
 ```powershell
-cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app:app --reload --port 8000
+python -m pip install --upgrade pip
+pip install -r backend/requirements.txt
+powershell ./backend/run_local.ps1
+```
+
+Manual equivalent (from repo root):
+```powershell
+python -m uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Open:
@@ -125,6 +130,13 @@ Then call:
 - `http://127.0.0.1:3000/dev/backend/health` (new Python endpoint)
 - `http://127.0.0.1:3000/dev/backend/version` (new Python endpoint)
 - `http://127.0.0.1:3000/dev/backend/ui` (frontend entrypoint)
+
+OpenAPI source of truth:
+- `docs/api-contract.yaml` is a legacy reference and not authoritative for current `/backend` routes.
+- Current contract endpoints:
+  - direct backend (`uvicorn`): `http://127.0.0.1:8000/openapi.json`
+  - SAM local: `http://127.0.0.1:3000/dev/backend/openapi.json`
+  - deployed stage: `https://<api-id>.execute-api.<region>.amazonaws.com/dev/backend/openapi.json`
 
 For deployed-stack smoke checks:
 

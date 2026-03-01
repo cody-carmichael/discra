@@ -64,6 +64,13 @@ After `sam local start-api`:
 - open `http://127.0.0.1:3000/dev/backend/ui/driver` (mobile-installable driver app)
 - `curl -H "x-admin-token: <ADMIN_TOKEN>" http://127.0.0.1:3000/dev/admin/ping`
 
+### OpenAPI source of truth
+- `docs/api-contract.yaml` is a legacy reference and not authoritative for current `/backend` routes.
+- Current contract endpoints:
+  - direct backend (`uvicorn`): `http://127.0.0.1:8000/openapi.json`
+  - SAM local: `http://127.0.0.1:3000/dev/backend/openapi.json`
+  - deployed stage: `https://<api-id>.execute-api.<region>.amazonaws.com/dev/backend/openapi.json`
+
 ### Protected endpoints (JWT required)
 - `GET /dev/backend/users/me`
 - `POST /dev/backend/users/me/sync`

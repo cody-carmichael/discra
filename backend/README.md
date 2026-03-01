@@ -131,6 +131,13 @@ Then call:
 - `http://127.0.0.1:3000/dev/backend/version` (new Python endpoint)
 - `http://127.0.0.1:3000/dev/backend/ui` (frontend entrypoint)
 
+OpenAPI source of truth:
+- `docs/api-contract.yaml` is a legacy reference and not authoritative for current `/backend` routes.
+- Current contract endpoints:
+  - direct backend (`uvicorn`): `http://127.0.0.1:8000/openapi.json`
+  - SAM local: `http://127.0.0.1:3000/dev/backend/openapi.json`
+  - deployed stage: `https://<api-id>.execute-api.<region>.amazonaws.com/dev/backend/openapi.json`
+
 For deployed-stack smoke checks:
 
 ```powershell

@@ -129,6 +129,28 @@ def test_cross_tenant_order_access_is_hidden():
     assert org_b_list.json() == []
 
 
+def test_no_role_user_cannot_get_or_update_orders():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    no_role_token = make_token("user-no-role", "org-a", [])
+
+    create_response = client.post(
+        "/orders/",
+        json=make_order_payload("Role Check", "Warehouse 2", "456 Broadway", reference_number=2003),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    order_id = create_response.json()["id"]
+
+    get_response = client.get(f"/orders/{order_id}", headers={"Authorization": f"Bearer {no_role_token}"})
+    assert get_response.status_code == 403
+
+    update_response = client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "Assigned"},
+        headers={"Authorization": f"Bearer {no_role_token}"},
+    )
+    assert update_response.status_code == 403
+
+
 def test_assign_and_unassign_order():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
 

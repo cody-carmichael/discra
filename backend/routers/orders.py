@@ -325,7 +325,7 @@ async def bulk_unassign_orders(
 async def update_order_status(
     order_id: str,
     body: StatusUpdateRequest,
-    user=Depends(get_current_user),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
     order_store=Depends(get_order_store),
 ):
     order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
@@ -356,7 +356,11 @@ async def driver_inbox(
 
 
 @router.get("/{order_id}", response_model=Order)
-async def get_order(order_id: str, user=Depends(get_current_user), order_store=Depends(get_order_store)):
+async def get_order(
+    order_id: str,
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
+    order_store=Depends(get_order_store),
+):
     order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
     user_roles = set(user.get("groups") or [])
     if ROLE_DRIVER in user_roles and ROLE_ADMIN not in user_roles and ROLE_DISPATCHER not in user_roles:

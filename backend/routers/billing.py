@@ -194,6 +194,10 @@ def _orders_webhook_hmac_secret() -> str:
     return os.environ.get("ORDERS_WEBHOOK_HMAC_SECRET", "").strip()
 
 
+def _orders_webhook_allowed_org_id() -> str:
+    return (os.environ.get("ORDERS_WEBHOOK_ALLOWED_ORG_ID") or "").strip()
+
+
 def _orders_webhook_max_skew_seconds() -> int:
     raw_value = (os.environ.get("ORDERS_WEBHOOK_MAX_SKEW_SECONDS") or "").strip()
     if not raw_value:
@@ -828,6 +832,18 @@ async def order_ingest_webhook(request: Request):
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Duplicate external_order_id values in payload: " + ", ".join(duplicate_external_ids),
+        )
+
+    allowed_org_id = _orders_webhook_allowed_org_id()
+    if not allowed_org_id:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Orders webhook org binding is not configured",
+        )
+    if payload.org_id != allowed_org_id:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Orders webhook org is not allowed",
         )
 
     order_store = get_order_store()

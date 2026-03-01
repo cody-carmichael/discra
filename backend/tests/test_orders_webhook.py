@@ -91,6 +91,7 @@ def _test_env(monkeypatch):
     monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
     monkeypatch.setenv("USE_IN_MEMORY_ORDER_STORE", "true")
     monkeypatch.setenv("ORDERS_WEBHOOK_TOKEN", "orders-secret")
+    monkeypatch.setenv("ORDERS_WEBHOOK_ALLOWED_ORG_ID", "org-1")
     reset_in_memory_order_store()
 
 
@@ -106,6 +107,29 @@ def test_orders_webhook_rejects_missing_or_bad_token():
         headers={"x-orders-webhook-token": "bad-token"},
     )
     assert bad.status_code == 401
+
+
+def test_orders_webhook_requires_allowed_org_binding_configuration(monkeypatch):
+    monkeypatch.delenv("ORDERS_WEBHOOK_ALLOWED_ORG_ID", raising=False)
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 101)
+    response = client.post(
+        "/webhooks/orders",
+        json=payload,
+        headers={"x-orders-webhook-token": "orders-secret"},
+    )
+    assert response.status_code == 503
+    assert "org binding" in response.json()["detail"].lower()
+
+
+def test_orders_webhook_rejects_mismatched_org():
+    payload = _webhook_payload("org-2", "ext-1", "Alice", "Warehouse A", "100 Main", 102)
+    response = client.post(
+        "/webhooks/orders",
+        json=payload,
+        headers={"x-orders-webhook-token": "orders-secret"},
+    )
+    assert response.status_code == 403
+    assert "not allowed" in response.json()["detail"].lower()
 
 
 def test_orders_webhook_requires_signature_headers_when_hmac_secret_configured(monkeypatch):
@@ -344,15 +368,4 @@ def test_orders_webhook_supports_same_external_id_across_orgs():
         headers={"x-orders-webhook-token": "orders-secret"},
     )
     assert org1.status_code == 200
-    assert org2.status_code == 200
-    assert org1.json()["created"] == 1
-    assert org2.json()["created"] == 1
-
-    admin_org1 = make_token("admin-1", "org-1", ["Admin"])
-    admin_org2 = make_token("admin-2", "org-2", ["Admin"])
-    list_org1 = client.get("/orders/", headers={"Authorization": f"Bearer {admin_org1}"})
-    list_org2 = client.get("/orders/", headers={"Authorization": f"Bearer {admin_org2}"})
-    assert len(list_org1.json()) == 1
-    assert len(list_org2.json()) == 1
-    assert list_org1.json()[0]["customer_name"] == "Alice"
-    assert list_org2.json()[0]["customer_name"] == "Bob"
+    assert org2.status_code == 403

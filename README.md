@@ -110,6 +110,7 @@ If `stops` is omitted, the backend geocodes assigned order delivery addresses an
 - `LocationRouteCalculatorName` (optional Amazon Location route calculator for matrix calls)
 - `LocationPlaceIndexName` (optional Amazon Location place index for address geocoding)
 - `OrdersWebhookToken` (shared secret for `/backend/webhooks/orders`)
+- `OrdersWebhookAllowedOrgId` (required org binding for `/backend/webhooks/orders`; payload `org_id` must match)
 - `OrdersWebhookHmacSecret` (optional HMAC secret for signed `/backend/webhooks/orders` payloads)
 - `OrdersWebhookMaxSkewSeconds` (optional timestamp skew window for signed payloads; default `300`)
 - `CognitoHostedUiDomain` (optional hosted UI helper domain for frontend pages)

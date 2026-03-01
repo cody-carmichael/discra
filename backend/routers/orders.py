@@ -106,6 +106,19 @@ def _unique_order_ids(order_ids: List[str]) -> List[str]:
     return unique_ids
 
 
+def _require_non_terminal_for_unassign(order: Order):
+    if order.status in {OrderStatus.DELIVERED, OrderStatus.FAILED}:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=f"Cannot unassign terminal order {order.id} ({order.status.value})",
+        )
+
+
+def _load_orders_for_mutation(order_ids: List[str], org_id: str, order_store) -> List[Order]:
+    # Pre-validate all order IDs before mutating to avoid partial bulk updates.
+    return [_require_tenant_order(order_id, org_id, order_store=order_store) for order_id in order_ids]
+
+
 def _audit_event(
     audit_store,
     *,
@@ -221,6 +234,7 @@ async def unassign_order(
     audit_store=Depends(get_audit_log_store),
 ):
     order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
+    _require_non_terminal_for_unassign(order)
     previous_assigned_to = order.assigned_to
     order.assigned_to = None
     order.status = OrderStatus.CREATED
@@ -258,9 +272,10 @@ async def bulk_assign_orders(
             detail="driver_id is required",
         )
 
+    orders = _load_orders_for_mutation(unique_order_ids, user["org_id"], order_store)
+
     updated_ids = []
-    for order_id in unique_order_ids:
-        order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
+    for order in orders:
         order.assigned_to = driver_id
         order.status = OrderStatus.ASSIGNED
         order_store.upsert_order(order)
@@ -294,10 +309,12 @@ async def bulk_unassign_orders(
     audit_store=Depends(get_audit_log_store),
 ):
     unique_order_ids = _unique_order_ids(body.order_ids)
+    orders = _load_orders_for_mutation(unique_order_ids, user["org_id"], order_store)
+    for order in orders:
+        _require_non_terminal_for_unassign(order)
 
     updated_ids = []
-    for order_id in unique_order_ids:
-        order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
+    for order in orders:
         order.assigned_to = None
         order.status = OrderStatus.CREATED
         order_store.upsert_order(order)

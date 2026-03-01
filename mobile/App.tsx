@@ -91,7 +91,8 @@ type QueuedOperation =
 
 const STORAGE_KEY = "discra_mobile_config_v2";
 const STORAGE_QUEUE_KEY = "discra_mobile_queue_v1";
-const DEFAULT_API_BASE = "http://127.0.0.1:3000/dev/backend";
+const DEFAULT_API_BASE = "";
+const API_BASE_PLACEHOLDER = "https://<api-id>.execute-api.<region>.amazonaws.com/dev/backend";
 const REDIRECT_URI = "discra-mobile://auth/callback";
 const DRIVER_STATUS = ["PickedUp", "EnRoute", "Failed", "Delivered"];
 const ADMIN_STATUS = ["Assigned", "PickedUp", "EnRoute", "Delivered", "Failed"];
@@ -1157,7 +1158,7 @@ export default function App() {
             autoCapitalize="none"
             autoCorrect={false}
             style={styles.input}
-            placeholder={DEFAULT_API_BASE}
+            placeholder={API_BASE_PLACEHOLDER}
             placeholderTextColor="#6f8d98"
           />
           <Text style={styles.label}>Cognito Hosted UI Domain</Text>

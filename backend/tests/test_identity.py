@@ -163,3 +163,47 @@ def test_driver_cannot_view_audit_logs():
         headers={"Authorization": f"Bearer {driver_token}"},
     )
     assert response.status_code == 403
+
+
+def test_audit_logs_filter_is_applied_before_limit():
+    org_id = "org-702"
+    admin_token = make_token("admin-702", org_id, ["Admin"])
+    dispatcher_token = make_token("dispatcher-702", org_id, ["Dispatcher"])
+
+    created = client.post(
+        "/orders/",
+        json={
+            "customer_name": "Audit Order",
+            "reference_number": 7021,
+            "pick_up_address": "Warehouse A",
+            "delivery": "100 Main",
+            "dimensions": "12x8x5 in",
+            "weight": 4.2,
+            "num_packages": 1,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert created.status_code == 200
+    order_id = created.json()["id"]
+
+    assigned = client.post(
+        f"/orders/{order_id}/assign",
+        json={"driver_id": "driver-702"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert assigned.status_code == 200
+
+    unassigned = client.post(
+        f"/orders/{order_id}/unassign",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert unassigned.status_code == 200
+
+    response = client.get(
+        "/audit/logs?limit=1&action=order.assigned",
+        headers={"Authorization": f"Bearer {dispatcher_token}"},
+    )
+    assert response.status_code == 200
+    events = response.json()
+    assert len(events) == 1
+    assert events[0]["action"] == "order.assigned"

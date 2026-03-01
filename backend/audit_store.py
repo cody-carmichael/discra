@@ -40,8 +40,21 @@ class InMemoryAuditLogStore(AuditLogStore):
         self.items[(event.org_id, event.event_id)] = event
         return event
 
-    def list_events(self, org_id: str, limit: int = 100) -> List[AuditLogRecord]:
+    def list_events(
+        self,
+        org_id: str,
+        limit: int = 100,
+        action: Optional[str] = None,
+        target_type: Optional[str] = None,
+        actor_id: Optional[str] = None,
+    ) -> List[AuditLogRecord]:
         events = [event for (item_org_id, _), event in self.items.items() if item_org_id == org_id]
+        if action:
+            events = [event for event in events if event.action == action]
+        if target_type:
+            events = [event for event in events if event.target_type == target_type]
+        if actor_id:
+            events = [event for event in events if event.actor_id == actor_id]
         events.sort(key=lambda item: item.created_at, reverse=True)
         return events[: max(limit, 0)]
 
@@ -56,14 +69,42 @@ class DynamoAuditLogStore(AuditLogStore):
         self._table.put_item(Item=event.model_dump(mode="json"))
         return event
 
-    def list_events(self, org_id: str, limit: int = 100) -> List[AuditLogRecord]:
+    def list_events(
+        self,
+        org_id: str,
+        limit: int = 100,
+        action: Optional[str] = None,
+        target_type: Optional[str] = None,
+        actor_id: Optional[str] = None,
+    ) -> List[AuditLogRecord]:
         safe_limit = max(min(limit, 500), 1)
-        response = self._table.query(
-            KeyConditionExpression=Key("org_id").eq(org_id),
-            ScanIndexForward=False,
-            Limit=safe_limit,
-        )
-        return [AuditLogRecord.model_validate(item) for item in response.get("Items", [])]
+        matched_events: List[AuditLogRecord] = []
+        exclusive_start_key = None
+
+        while len(matched_events) < safe_limit:
+            query_kwargs = {
+                "KeyConditionExpression": Key("org_id").eq(org_id),
+                "ScanIndexForward": False,
+                "Limit": safe_limit,
+            }
+            if exclusive_start_key:
+                query_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+            response = self._table.query(**query_kwargs)
+            batch = [AuditLogRecord.model_validate(item) for item in response.get("Items", [])]
+            if action:
+                batch = [event for event in batch if event.action == action]
+            if target_type:
+                batch = [event for event in batch if event.target_type == target_type]
+            if actor_id:
+                batch = [event for event in batch if event.actor_id == actor_id]
+            matched_events.extend(batch)
+
+            exclusive_start_key = response.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                break
+
+        return matched_events[:safe_limit]
 
 
 _IN_MEMORY_AUDIT_LOG_STORE = InMemoryAuditLogStore()

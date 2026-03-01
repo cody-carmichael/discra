@@ -130,11 +130,10 @@ async def list_audit_logs(
     user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
     audit_store=Depends(get_audit_log_store),
 ):
-    events = audit_store.list_events(user["org_id"], limit=limit)
-    if action:
-        events = [event for event in events if event.action == action]
-    if target_type:
-        events = [event for event in events if event.target_type == target_type]
-    if actor_id:
-        events = [event for event in events if event.actor_id == actor_id]
-    return events
+    return audit_store.list_events(
+        user["org_id"],
+        limit=limit,
+        action=action,
+        target_type=target_type,
+        actor_id=actor_id,
+    )

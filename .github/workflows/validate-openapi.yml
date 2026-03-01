@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'docs/api-contract.yaml'
+      - '.spectral.yaml'
   workflow_dispatch: {}
 
 jobs:
@@ -12,4 +13,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npm -g install @stoplight/spectral-cli
-      - run: spectral lint docs/api-contract.yaml
+      - run: spectral lint docs/api-contract.yaml --ruleset .spectral.yaml --fail-severity error

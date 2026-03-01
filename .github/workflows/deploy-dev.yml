@@ -141,6 +141,32 @@ jobs:
               Version="${{ github.sha }}" \
               AdminToken="${{ secrets.ADMIN_TOKEN }}"
 
+      - name: Resolve deployed API base URL
+        id: api
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+            --output text)
+          if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "None" ]; then
+            echo "Failed to resolve ApiEndpoint output from $STACK_NAME."
+            exit 1
+          fi
+          API_BASE_URL="${API_ENDPOINT%/}/dev"
+          echo "api_base_url=$API_BASE_URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed API base URL: $API_BASE_URL"
+
+      - name: Smoke check deployed stack
+        shell: pwsh
+        run: |
+          ./tools/smoke/run-smoke.ps1 `
+            -ApiBaseUrl "${{ steps.api.outputs.api_base_url }}" `
+            -AdminToken "${{ secrets.ADMIN_TOKEN }}" `
+            -OrdersWebhookToken "${{ secrets.ORDERS_WEBHOOK_TOKEN }}" `
+            -OrdersWebhookHmacSecret "${{ secrets.ORDERS_WEBHOOK_HMAC_SECRET }}"
+
 
 
 

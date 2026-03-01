@@ -1,0 +1,62 @@
+name: Pilot UAT Result
+description: Submit UAT pass/fail results using the pilot checklist
+title: "[Pilot UAT]: "
+labels:
+  - pilot
+  - uat
+body:
+  - type: input
+    id: tester
+    attributes:
+      label: Tester name
+      placeholder: Firstname Lastname
+    validations:
+      required: true
+
+  - type: input
+    id: test_date
+    attributes:
+      label: Test date
+      description: YYYY-MM-DD
+      placeholder: "2026-02-28"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Stack/stage and region
+      placeholder: discra-api-dev us-east-1
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scenarios
+    attributes:
+      label: Completed scenarios
+      options:
+        - label: Admin flow (create/assign + audit + billing visibility)
+        - label: Dispatcher flow (filters + bulk assign/unassign)
+        - label: Driver flow (inbox + status progression)
+        - label: POD flow (photo + signature + notes)
+        - label: Driver location visibility on Admin/Dispatcher
+        - label: Orders webhook ingest + upsert behavior
+
+  - type: textarea
+    id: failures
+    attributes:
+      label: Failed scenarios and issue links
+      description: List failed checks and related bug issue numbers
+      placeholder: |
+        - Driver flow failed: #123
+        - POD upload failed on mobile: #124
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Overall result and recommendation for next pilot iteration
+    validations:
+      required: true
+

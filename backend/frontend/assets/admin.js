@@ -36,6 +36,11 @@
     optimizeForm: document.getElementById("optimize-form"),
     routeResult: document.getElementById("route-result"),
     routeMessage: document.getElementById("route-message"),
+    refreshDispatchSummary: document.getElementById("refresh-dispatch-summary"),
+    dispatchSummaryForm: document.getElementById("dispatch-summary-form"),
+    dispatchActiveMinutes: document.getElementById("dispatch-active-minutes"),
+    dispatchSummaryView: document.getElementById("dispatch-summary-view"),
+    dispatchSummaryMessage: document.getElementById("dispatch-summary-message"),
     refreshAuditLogs: document.getElementById("refresh-audit-logs"),
     auditFilterForm: document.getElementById("audit-filter-form"),
     auditActionFilter: document.getElementById("audit-action-filter"),
@@ -122,6 +127,10 @@
     });
     el.refreshDrivers.disabled = !enabled;
     el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
+      element.disabled = !enabled;
+    });
+    el.refreshDispatchSummary.disabled = !enabled;
+    el.dispatchSummaryForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
     });
     el.refreshAuditLogs.disabled = !enabled;
@@ -315,6 +324,7 @@
       el.billingStatus.textContent = "No billing provider status loaded.";
       el.billingSummary.textContent = "No billing summary loaded.";
       el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
+      el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
       el.auditLogsView.textContent = "No audit logs loaded.";
       return;
     }
@@ -326,6 +336,7 @@
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
+      el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
       renderDriverOptions([]);
       C.showMessage(el.authMessage, "This console requires Admin or Dispatcher role.", "error");
       return;
@@ -859,6 +870,32 @@
     }
   }
 
+  async function refreshDispatchSummary(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    if (!requireAuthorized(el.dispatchSummaryMessage)) {
+      el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
+      return;
+    }
+
+    const parsedWindow = Number.parseInt(el.dispatchActiveMinutes.value || "120", 10);
+    const activeMinutes = Number.isFinite(parsedWindow) ? Math.min(Math.max(parsedWindow, 1), 1440) : 120;
+    el.dispatchActiveMinutes.value = String(activeMinutes);
+
+    try {
+      const summary = await C.requestJson(
+        apiBase,
+        "/reports/dispatch-summary?active_minutes=" + encodeURIComponent(String(activeMinutes)),
+        { token }
+      );
+      el.dispatchSummaryView.textContent = JSON.stringify(summary, null, 2);
+      C.showMessage(el.dispatchSummaryMessage, "Dispatch summary loaded.", "success");
+    } catch (error) {
+      C.showMessage(el.dispatchSummaryMessage, error.message, "error");
+    }
+  }
+
   async function refreshAuditLogs() {
     if (!requireAuthorized(el.auditMessage)) {
       el.auditLogsView.textContent = "No audit logs loaded.";
@@ -1337,6 +1374,7 @@
       await refreshAssignableDrivers();
       await refreshOrders();
       await refreshDrivers();
+      await refreshDispatchSummary();
       await refreshAuditLogs();
       if (isAdminRole) {
         await refreshBillingSummary();
@@ -1352,6 +1390,7 @@
       renderBillingStatus(null);
       renderBillingSummary(null);
       renderBillingInvitations([]);
+      el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
     }
   }
 
@@ -1367,6 +1406,7 @@
   el.clearToken.addEventListener("click", function () {
     setToken("");
     renderDriverOptions([]);
+    el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
     C.showMessage(el.authMessage, "Token cleared.", "success");
   });
   el.createForm.addEventListener("submit", createOrder);
@@ -1401,6 +1441,16 @@
   el.ordersBody.addEventListener("click", onOrderActionClick);
   el.ordersMobile.addEventListener("click", onOrderActionClick);
   el.refreshDrivers.addEventListener("click", refreshDrivers);
+  el.refreshDispatchSummary.addEventListener("click", function () {
+    refreshDispatchSummary().catch(function (error) {
+      C.showMessage(el.dispatchSummaryMessage, error.message, "error");
+    });
+  });
+  el.dispatchSummaryForm.addEventListener("submit", function (event) {
+    refreshDispatchSummary(event).catch(function (error) {
+      C.showMessage(el.dispatchSummaryMessage, error.message, "error");
+    });
+  });
   el.refreshAuditLogs.addEventListener("click", refreshAuditLogs);
   el.auditFilterForm.addEventListener("submit", function (event) {
     applyAuditFilters(event).catch(function (error) {

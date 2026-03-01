@@ -1,0 +1,28 @@
+name: Smoke Dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Deployed API base URL (example: https://abc.execute-api.us-east-1.amazonaws.com/dev)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run smoke checks
+        shell: pwsh
+        run: |
+          ./tools/smoke/run-smoke.ps1 `
+            -ApiBaseUrl "${{ inputs.api_base_url }}" `
+            -AdminToken "${{ secrets.ADMIN_TOKEN }}" `
+            -OrdersWebhookToken "${{ secrets.ORDERS_WEBHOOK_TOKEN }}" `
+            -OrdersWebhookHmacSecret "${{ secrets.ORDERS_WEBHOOK_HMAC_SECRET }}"

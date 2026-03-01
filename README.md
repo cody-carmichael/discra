@@ -80,6 +80,7 @@ After `sam local start-api`:
 - `POST /dev/backend/drivers/location` (Driver)
 - `GET /dev/backend/drivers?active_minutes=30` (Admin/Dispatcher)
 - `POST /dev/backend/routes/optimize` (Admin/Dispatcher)
+- `GET /dev/backend/reports/dispatch-summary` (Admin/Dispatcher)
 - `GET /dev/backend/billing/summary` (Admin)
 - `GET /dev/backend/billing/status` (Admin)
 - `POST /dev/backend/billing/checkout` (Admin)
@@ -114,6 +115,33 @@ If `stops` is omitted, the backend geocodes assigned order delivery addresses an
 - `CognitoHostedUiDomain` (optional hosted UI helper domain for frontend pages)
 - `FrontendMapStyleUrl` (optional MapLibre style JSON URL)
 
+### Bootstrap automation (PR33)
+- Use `tools/bootstrap/bootstrap-dev.ps1` to automate dev/pilot setup:
+  - validates `aws` + `sam` CLI presence
+  - ensures Cognito groups (`Admin`, `Dispatcher`, `Driver`)
+  - generates/reuses secrets and writes SAM parameter overrides file
+- Example:
+  - `tools\bootstrap\bootstrap-dev.ps1 -CognitoUserPoolId "us-east-1_abc123" -CognitoAppClientId "app-client-id"`
+- Generated overrides file:
+  - `tools/bootstrap/.generated/sam-parameter-overrides.txt`
+
+### Smoke checks (PR34)
+- Use `tools/smoke/run-smoke.ps1` to validate a deployed stack quickly.
+- Checks:
+  - `GET /health`
+  - `GET /version`
+  - `GET /backend/health`
+  - `GET /backend/version`
+  - optional `GET /admin/ping` (when `AdminToken` is provided)
+  - optional `POST /backend/webhooks/orders` (when `OrdersWebhookToken` is provided)
+- Example:
+  - `tools\smoke\run-smoke.ps1 -ApiBaseUrl "https://<api-id>.execute-api.us-east-1.amazonaws.com/dev" -AdminToken "<ADMIN_TOKEN>" -OrdersWebhookToken "<ORDERS_WEBHOOK_TOKEN>" -OrdersWebhookHmacSecret "<ORDERS_WEBHOOK_HMAC_SECRET>"`
+- GitHub Actions manual run:
+  - workflow: `.github/workflows/smoke-dev.yml`
+  - input: `api_base_url`
+- GitHub Actions deploy integration (PR35):
+  - `.github/workflows/deploy-dev.yml` now runs smoke checks automatically after successful `sam deploy`.
+
 API Gateway HTTP API uses a JWT authorizer for `/backend/{proxy+}`.
 `/backend/health` and `/backend/version` remain public for parity checks.
 
@@ -138,6 +166,14 @@ Hosted UI setup notes:
   - `python tools/pilot/seed_orders_webhook.py --endpoint "https://<api-id>.execute-api.us-east-1.amazonaws.com/dev/backend/webhooks/orders" --token "<ORDERS_WEBHOOK_TOKEN>" --org-id "org-pilot-1" --count 75 --batch-size 50`
 - The script also reads `ORDERS_WEBHOOK_TOKEN` and `ORDERS_WEBHOOK_HMAC_SECRET` from environment variables.
 - If HMAC signing is enabled, include `--hmac-secret "<ORDERS_WEBHOOK_HMAC_SECRET>"`.
+- Use `tools/pilot/export-pilot-summary.ps1` to generate a shareable URL/stack summary for external testers.
+- Example:
+  - `tools\pilot\export-pilot-summary.ps1 -StackName "discra-api-dev" -Region "us-east-1"`
+- Pilot UAT checklist:
+  - `docs/pilot-uat-checklist.md`
+- Pilot feedback templates:
+  - `.github/ISSUE_TEMPLATE/pilot-bug-report.yml`
+  - `.github/ISSUE_TEMPLATE/pilot-uat-result.yml`
 
 ## POD upload constraints
 - Uploads use short-lived S3 presigned POST policies (default `300` seconds).
@@ -190,3 +226,10 @@ Hosted UI setup notes:
 29. Bulk dispatch actions: multi-select orders with bulk assign/unassign endpoints and Admin queue controls
 30. Driver roster endpoint + UI suggestions: role-filtered `/users` lookup to improve assign and bulk-assign accuracy
 31. Audit log visibility: role-restricted `/audit/logs` API + Admin/Dispatcher audit viewer with filters
+32. Dispatch KPI summary: `/reports/dispatch-summary` API + Admin/Dispatcher summary panel for order/status/driver activity
+33. Environment bootstrap automation: Cognito group setup + generated SAM deploy parameter overrides for dev/pilot environments
+34. Deploy smoke checks: reusable script + manual GitHub Actions workflow for post-deploy endpoint and webhook validation
+35. Deploy workflow hardening: auto-run smoke checks from `deploy-dev` against the freshly deployed stack
+36. Backend CI lint gate: run low-noise Ruff checks (`E9,F63,F7,F82`) alongside tests and SAM build
+37. Pilot handoff pack: stack-output export script + UAT checklist for external user testing
+38. Pilot feedback intake: GitHub issue templates for bug reports and UAT run results

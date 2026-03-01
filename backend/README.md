@@ -44,6 +44,9 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - Uses OR-Tools for route ordering (single driver path)
   - If `stops` is omitted, assigned orders for the driver are geocoded and optimized automatically
   - Explicit `stops` with `lat/lng` are still supported as an override
+- Reporting:
+  - `GET /reports/dispatch-summary` (Admin/Dispatcher)
+  - Returns order counts by status, assignment totals, terminal totals, and active driver count
 - Billing + seat management:
   - `GET /billing/summary` (Admin)
   - `GET /billing/status` (Admin)
@@ -66,6 +69,7 @@ Discra Python backend (`PR1` to `PR18`) for migration from Java Lambda handlers.
   - Admin console includes seat-billing controls for `GET /billing/summary`, `GET /billing/status`, `POST /billing/checkout`, `POST /billing/portal`, `POST /billing/seats`, `GET /billing/invitations`, `POST /billing/invitations`, invitation activation, and invitation cancellation
   - Admin order queue supports status + assigned-driver filters, free-text search (customer/reference/external id), and bulk assign/unassign for selected orders
   - Driver ID inputs support suggestions from role-filtered user roster lookup
+  - Dispatch summary panel surfaces current order/driver KPI snapshot
   - Admin/Dispatcher audit panel supports filtered audit-log inspection
   - `GET /ui/admin-sw.js` (Admin/Dispatcher PWA service worker)
   - `GET /ui/driver` (Driver web app with POD + location updates)
@@ -93,6 +97,14 @@ Open:
 - `http://127.0.0.1:8000/health`
 - `http://127.0.0.1:8000/version`
 
+Bootstrap helper for deploy parameters and Cognito groups:
+
+```powershell
+..\tools\bootstrap\bootstrap-dev.ps1 `
+  -CognitoUserPoolId "us-east-1_abc123" `
+  -CognitoAppClientId "app-client-id"
+```
+
 For protected routes in local direct Uvicorn mode without Cognito:
 
 ```powershell
@@ -113,6 +125,15 @@ Then call:
 - `http://127.0.0.1:3000/dev/backend/health` (new Python endpoint)
 - `http://127.0.0.1:3000/dev/backend/version` (new Python endpoint)
 - `http://127.0.0.1:3000/dev/backend/ui` (frontend entrypoint)
+
+For deployed-stack smoke checks:
+
+```powershell
+..\tools\smoke\run-smoke.ps1 `
+  -ApiBaseUrl "https://<api-id>.execute-api.us-east-1.amazonaws.com/dev" `
+  -AdminToken "<ADMIN_TOKEN>" `
+  -OrdersWebhookToken "<ORDERS_WEBHOOK_TOKEN>"
+```
 
 For local POD testing without AWS resources:
 
@@ -169,6 +190,15 @@ When HMAC signing is enabled, also pass:
 ```
 
 The seed helper reads `ORDERS_WEBHOOK_TOKEN` and `ORDERS_WEBHOOK_HMAC_SECRET` from environment variables when flags are omitted.
+
+Generate a tester-facing stack summary from CloudFormation outputs:
+
+```powershell
+..\tools\pilot\export-pilot-summary.ps1 -StackName "discra-api-dev" -Region "us-east-1"
+```
+
+Pilot UAT checklist:
+- `..\docs\pilot-uat-checklist.md`
 
 Optional frontend helper config:
 

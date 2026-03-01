@@ -5,6 +5,7 @@ on:
     paths:
       - 'docs/api-contract.yaml'
       - '.spectral.yaml'
+      - '.github/workflows/validate-openapi.yml'
   workflow_dispatch: {}
 
 jobs:
@@ -12,5 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm -g install @stoplight/spectral-cli
-      - run: spectral lint docs/api-contract.yaml --ruleset .spectral.yaml --fail-severity error
+      - name: Install Spectral CLI
+        run: npm -g install @stoplight/spectral-cli
+      - name: Verify Spectral ruleset file
+        run: test -f .spectral.yaml
+      - name: Run spectral lint docs/api-contract.yaml
+        run: spectral lint docs/api-contract.yaml --ruleset .spectral.yaml --fail-severity error

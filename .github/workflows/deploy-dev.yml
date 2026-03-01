@@ -24,6 +24,7 @@ env:
   AWS_REGION: us-east-1
   STACK_NAME: discra-api-dev
   TEMPLATE_PATH: template.yaml
+  ORDERS_WEBHOOK_ALLOWED_ORG_ID: ${{ vars.ORDERS_WEBHOOK_ALLOWED_ORG_ID || 'org-smoke' }}
 
 jobs:
   deploy:
@@ -139,7 +140,10 @@ jobs:
             --force-upload \
             --parameter-overrides \
               Version="${{ github.sha }}" \
-              AdminToken="${{ secrets.ADMIN_TOKEN }}"
+              AdminToken="${{ secrets.ADMIN_TOKEN }}" \
+              OrdersWebhookToken="${{ secrets.ORDERS_WEBHOOK_TOKEN }}" \
+              OrdersWebhookAllowedOrgId="$ORDERS_WEBHOOK_ALLOWED_ORG_ID" \
+              OrdersWebhookHmacSecret="${{ secrets.ORDERS_WEBHOOK_HMAC_SECRET }}"
 
       - name: Resolve deployed API base URL
         id: api
@@ -165,7 +169,8 @@ jobs:
             -ApiBaseUrl "${{ steps.api.outputs.api_base_url }}" `
             -AdminToken "${{ secrets.ADMIN_TOKEN }}" `
             -OrdersWebhookToken "${{ secrets.ORDERS_WEBHOOK_TOKEN }}" `
-            -OrdersWebhookHmacSecret "${{ secrets.ORDERS_WEBHOOK_HMAC_SECRET }}"
+            -OrdersWebhookHmacSecret "${{ secrets.ORDERS_WEBHOOK_HMAC_SECRET }}" `
+            -OrgId "${{ env.ORDERS_WEBHOOK_ALLOWED_ORG_ID }}"
 
 
 

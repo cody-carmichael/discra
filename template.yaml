@@ -428,6 +428,7 @@ Resources:
               - !GetAtt OrganizationsTable.Arn
               - !GetAtt UsersTable.Arn
               - !GetAtt OrdersTable.Arn
+              - !Sub "${OrdersTable.Arn}/index/*"
               - !GetAtt PodArtifactsTable.Arn
               - !GetAtt DriverLocationsTable.Arn
               - !GetAtt SeatSubscriptionsTable.Arn

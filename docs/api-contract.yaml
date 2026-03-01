@@ -41,7 +41,7 @@ paths:
                   value:
                     success: true
                     data: { status: "ok" }
-                    error: null
+                    error: { code: "NONE", message: "No error" }
                     timestamp: "2025-10-16T20:05:00Z"
 
   /version:
@@ -59,7 +59,7 @@ paths:
                   value:
                     success: true
                     data: { version: "0.0.1-tracer" }
-                    error: null
+                    error: { code: "NONE", message: "No error" }
                     timestamp: "2025-10-16T20:05:00Z"
 
   /admin/ping:
@@ -439,7 +439,9 @@ components:
           additionalProperties: true
           nullable: true
         error:
-          $ref: '#/components/schemas/ErrorObject'
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/ErrorObject'
           nullable: true
         timestamp:
           type: string

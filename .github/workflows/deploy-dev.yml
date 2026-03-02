@@ -28,6 +28,7 @@ env:
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -128,7 +129,33 @@ jobs:
           esac
 
       - name: Deploy (SAM)
+        shell: bash
         run: |
+          set -euo pipefail
+
+          ADMIN_TOKEN="${{ secrets.ADMIN_TOKEN }}"
+          ORDERS_WEBHOOK_TOKEN="${{ secrets.ORDERS_WEBHOOK_TOKEN }}"
+          ORDERS_WEBHOOK_HMAC_SECRET="${{ secrets.ORDERS_WEBHOOK_HMAC_SECRET }}"
+
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "ADMIN_TOKEN GitHub secret is required for deploy."
+            exit 1
+          fi
+
+          parameter_overrides=(
+            "Version=$GITHUB_SHA"
+            "AdminToken=$ADMIN_TOKEN"
+            "OrdersWebhookAllowedOrgId=$ORDERS_WEBHOOK_ALLOWED_ORG_ID"
+          )
+
+          if [ -n "$ORDERS_WEBHOOK_TOKEN" ]; then
+            parameter_overrides+=("OrdersWebhookToken=$ORDERS_WEBHOOK_TOKEN")
+          fi
+
+          if [ -n "$ORDERS_WEBHOOK_HMAC_SECRET" ]; then
+            parameter_overrides+=("OrdersWebhookHmacSecret=$ORDERS_WEBHOOK_HMAC_SECRET")
+          fi
+
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name "$STACK_NAME" \
@@ -138,12 +165,7 @@ jobs:
             --no-fail-on-empty-changeset \
             --resolve-s3 \
             --force-upload \
-            --parameter-overrides \
-              Version="${{ github.sha }}" \
-              AdminToken="${{ secrets.ADMIN_TOKEN }}" \
-              OrdersWebhookToken="${{ secrets.ORDERS_WEBHOOK_TOKEN }}" \
-              OrdersWebhookAllowedOrgId="$ORDERS_WEBHOOK_ALLOWED_ORG_ID" \
-              OrdersWebhookHmacSecret="${{ secrets.ORDERS_WEBHOOK_HMAC_SECRET }}"
+            --parameter-overrides "${parameter_overrides[@]}"
 
       - name: Resolve deployed API base URL
         id: api

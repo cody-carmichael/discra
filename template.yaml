@@ -155,11 +155,7 @@ Resources:
           AttributeType: S
         - AttributeName: id
           AttributeType: S
-        - AttributeName: status
-          AttributeType: S
         - AttributeName: assigned_driver_id
-          AttributeType: S
-        - AttributeName: source_external_order_id
           AttributeType: S
       KeySchema:
         - AttributeName: org_id
@@ -167,27 +163,11 @@ Resources:
         - AttributeName: id
           KeyType: RANGE
       GlobalSecondaryIndexes:
-        - IndexName: orders_by_status
-          KeySchema:
-            - AttributeName: org_id
-              KeyType: HASH
-            - AttributeName: status
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
         - IndexName: orders_by_assigned_driver
           KeySchema:
             - AttributeName: org_id
               KeyType: HASH
             - AttributeName: assigned_driver_id
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-        - IndexName: orders_by_external_lookup
-          KeySchema:
-            - AttributeName: org_id
-              KeyType: HASH
-            - AttributeName: source_external_order_id
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
@@ -513,14 +493,36 @@ Resources:
             ApiId: !Ref DiscraApi
             Path: /backend/webhooks/orders
             Method: POST
-        BackendProtectedProxy:
+        BackendProtectedProxyGet:
           Type: HttpApi
           Properties:
             ApiId: !Ref DiscraApi
             Path: /backend/{proxy+}
-            Method: ANY
-            Auth:
-              Authorizer: CognitoJwtAuthorizer
+            Method: GET
+        BackendProtectedProxyPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/{proxy+}
+            Method: POST
+        BackendProtectedProxyPut:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/{proxy+}
+            Method: PUT
+        BackendProtectedProxyPatch:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/{proxy+}
+            Method: PATCH
+        BackendProtectedProxyDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/{proxy+}
+            Method: DELETE
       Tags: { App: Discra, Env: dev }
 
 Outputs:

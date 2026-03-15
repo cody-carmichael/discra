@@ -72,6 +72,23 @@ type PodPresignUpload = {
   fields: Record<string, string>;
 };
 
+type OnboardingRegistrationRecord = {
+  registration_id: string;
+  tenant_name: string;
+  contact_name?: string | null;
+  requester_email?: string | null;
+  status: "Pending" | "Approved" | "Rejected";
+  org_id?: string | null;
+  submitted_at: string;
+  decided_at?: string | null;
+  decision_reason?: string | null;
+};
+
+type OnboardingRegistrationMeResponse = {
+  exists: boolean;
+  registration?: OnboardingRegistrationRecord | null;
+};
+
 type QueuedOperation =
   | {
       id: string;
@@ -379,6 +396,11 @@ export default function App() {
   const [workspace, setWorkspace] = useState<Workspace>("admin");
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Configure API base and JWT to begin.");
+  const [onboardingEnabled, setOnboardingEnabled] = useState(true);
+  const [onboardingTenantName, setOnboardingTenantName] = useState("");
+  const [onboardingContactName, setOnboardingContactName] = useState("");
+  const [onboardingNotes, setOnboardingNotes] = useState("");
+  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingRegistrationRecord | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
@@ -454,6 +476,39 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const base = normalizeApiBase(apiBase);
+    if (!base) {
+      return;
+    }
+    let cancelled = false;
+    fetch(endpointUrl(base, "/ui/config"))
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Unable to load UI config (${response.status})`);
+        }
+        return (await response.json()) as Record<string, unknown>;
+      })
+      .then((config) => {
+        if (cancelled || !config) {
+          return;
+        }
+        if (typeof config.cognito_domain === "string" && config.cognito_domain && !normalizeDomain(cognitoDomain)) {
+          setCognitoDomain(normalizeDomain(config.cognito_domain));
+        }
+        if (typeof config.cognito_client_id === "string" && config.cognito_client_id && !cognitoClientId.trim()) {
+          setCognitoClientId(config.cognito_client_id.trim());
+        }
+        if (typeof config.onboarding_enabled === "boolean") {
+          setOnboardingEnabled(config.onboarding_enabled);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase]);
+
+  useEffect(() => {
     AsyncStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -523,11 +578,30 @@ export default function App() {
     }
     return "";
   }, [apiBase, token, workspace, workspaceAllowed]);
+  const onboardingStatusText = useMemo(() => {
+    if (!onboardingStatus) {
+      return "No registration submitted yet.";
+    }
+    if (onboardingStatus.status === "Approved") {
+      return "Approved. Re-login via Hosted UI to refresh org claims, then continue.";
+    }
+    if (onboardingStatus.status === "Rejected") {
+      return "Rejected. Update details and resubmit registration.";
+    }
+    return "Pending App Dev review.";
+  }, [onboardingStatus]);
   useEffect(() => {
     if (sessionValidationMessage) {
       setSessionSettingsOpen(true);
     }
   }, [sessionValidationMessage]);
+  useEffect(() => {
+    if (!normalizeApiBase(apiBase) || !token.trim()) {
+      setOnboardingStatus(null);
+      return;
+    }
+    refreshOnboardingStatus(true).catch(() => undefined);
+  }, [apiBase, token]);
   const selectedDriver = useMemo(
     () => drivers.find((driver) => driver.driver_id === selectedDriverId) || null,
     [drivers, selectedDriverId]
@@ -852,6 +926,86 @@ export default function App() {
     }
     setToken(nextToken);
     setMessage("Hosted UI login complete.");
+  }
+
+  async function refreshOnboardingStatus(silent: boolean = false) {
+    const apiBaseValue = normalizeApiBase(apiBase);
+    if (!apiBaseValue) {
+      if (!silent) {
+        setMessage("API base URL is required.");
+      }
+      return;
+    }
+    const authToken = token.trim();
+    if (!authToken) {
+      setOnboardingStatus(null);
+      if (!silent) {
+        setMessage("Login first to check onboarding status.");
+      }
+      return;
+    }
+
+    try {
+      const response = await apiRequest<OnboardingRegistrationMeResponse>(apiBaseValue, "/onboarding/registrations/me", {
+        token: authToken,
+      });
+      const registration = response && response.exists ? response.registration || null : null;
+      setOnboardingStatus(registration);
+      if (registration && registration.tenant_name && !onboardingTenantName.trim()) {
+        setOnboardingTenantName(registration.tenant_name);
+      }
+      if (registration && registration.contact_name && !onboardingContactName.trim()) {
+        setOnboardingContactName(registration.contact_name);
+      }
+      if (!silent) {
+        if (registration) {
+          setMessage(`Onboarding status: ${registration.status}.`);
+        } else {
+          setMessage("No onboarding registration found yet.");
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to load onboarding status.";
+      if (!silent) {
+        setMessage(message);
+      }
+    }
+  }
+
+  async function submitOnboardingRegistration() {
+    const apiBaseValue = normalizeApiBase(apiBase);
+    if (!apiBaseValue) {
+      setMessage("API base URL is required.");
+      return;
+    }
+    const authToken = token.trim();
+    if (!authToken) {
+      setMessage("Hosted UI login is required before submitting onboarding.");
+      return;
+    }
+    const tenantName = onboardingTenantName.trim();
+    if (!tenantName) {
+      setMessage("Tenant name is required.");
+      return;
+    }
+    await withLoading(async () => {
+      const response = await apiRequest<OnboardingRegistrationMeResponse>(apiBaseValue, "/onboarding/registrations", {
+        method: "POST",
+        token: authToken,
+        json: {
+          tenant_name: tenantName,
+          contact_name: onboardingContactName.trim() || null,
+          notes: onboardingNotes.trim() || null,
+        },
+      });
+      const registration = response && response.registration ? response.registration : null;
+      setOnboardingStatus(registration);
+      if (registration) {
+        setMessage(`Registration submitted. Current status: ${registration.status}.`);
+      } else {
+        setMessage("Registration submitted.");
+      }
+    });
   }
 
   async function capturePodPhoto(orderId: string) {
@@ -1421,6 +1575,68 @@ export default function App() {
               <Text style={styles.metaText}>Use `/dev/backend` API base from deployed SAM endpoint.</Text>
             </>
           ) : null}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Tenant Registration</Text>
+          {onboardingEnabled ? (
+            <>
+              <Text style={styles.metaText}>
+                New Admin users can submit registration here. App Dev approval is required before workspace access.
+              </Text>
+              <Text style={styles.label}>Tenant Name</Text>
+              <TextInput
+                value={onboardingTenantName}
+                onChangeText={setOnboardingTenantName}
+                style={styles.input}
+                placeholder="Acme Logistics"
+                placeholderTextColor="#758591"
+              />
+              <Text style={styles.label}>Contact Name (optional)</Text>
+              <TextInput
+                value={onboardingContactName}
+                onChangeText={setOnboardingContactName}
+                style={styles.input}
+                placeholder="Jane Doe"
+                placeholderTextColor="#758591"
+              />
+              <Text style={styles.label}>Notes (optional)</Text>
+              <TextInput
+                value={onboardingNotes}
+                onChangeText={setOnboardingNotes}
+                style={styles.input}
+                placeholder="Anything approvers should know"
+                placeholderTextColor="#758591"
+                multiline
+              />
+              <View style={styles.row}>
+                <Pressable
+                  style={[styles.button, styles.buttonPrimary]}
+                  onPress={() => submitOnboardingRegistration().catch(onError)}
+                >
+                  <Text style={styles.buttonText}>Submit Registration</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.button, styles.buttonGhost]}
+                  onPress={() => refreshOnboardingStatus(false).catch(onError)}
+                >
+                  <Text style={styles.buttonGhostText}>Refresh Status</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.metaText}>
+                Status: {onboardingStatus ? onboardingStatus.status : "Not Submitted"} - {onboardingStatusText}
+              </Text>
+              {onboardingStatus?.status === "Approved" ? (
+                <View style={styles.row}>
+                  <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => startHostedLogin().catch(onError)}>
+                    <Text style={styles.buttonText}>Continue To Login</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.metaText}>Onboarding flow is disabled in this environment.</Text>
+          )}
         </View>
 
         {workspace === "admin" ? (

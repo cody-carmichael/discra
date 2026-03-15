@@ -88,6 +88,7 @@
   let devAuthEnabled = false;
   let devAuthProfiles = [];
   let devSessionClaims = null;
+  const autoDevBootstrapKey = storageKey + "_auto_dev_bootstrapped";
   let selectedOrderIds = new Set();
   let orderFilters = {
     status: "",
@@ -624,6 +625,40 @@
     el.devAuthActions.innerHTML =
       buttons +
       '<button class="btn btn-ghost" type="button" data-dev-auth-logout="1">Exit Dev Session</button>';
+  }
+
+  function _preferredAutoDevProfileIndex() {
+    if (!Array.isArray(devAuthProfiles) || !devAuthProfiles.length) {
+      return -1;
+    }
+    const adminIndex = devAuthProfiles.findIndex(function (profile) {
+      return profile && profile.role === "Admin";
+    });
+    if (adminIndex >= 0) {
+      return adminIndex;
+    }
+    return devAuthProfiles.findIndex(function (profile) {
+      return profile && adminAllowedRoles.indexOf(profile.role) >= 0;
+    });
+  }
+
+  async function maybeAutoBootstrapDevSession() {
+    if (!devAuthEnabled || token || devSessionClaims) {
+      return false;
+    }
+    if (window.sessionStorage && window.sessionStorage.getItem(autoDevBootstrapKey) === "1") {
+      return false;
+    }
+    const profileIndex = _preferredAutoDevProfileIndex();
+    if (profileIndex < 0) {
+      return false;
+    }
+    await loginDevAuthProfile(profileIndex);
+    if (window.sessionStorage) {
+      window.sessionStorage.setItem(autoDevBootstrapKey, "1");
+    }
+    C.showMessage(el.authMessage, "Auto-started dev session for first-load testing.", "success");
+    return true;
   }
 
   async function restoreDevAuthSession() {
@@ -1905,6 +1940,7 @@
     await loadUiConfig();
     await restoreDevAuthSession();
     await finishHostedLoginCallback();
+    await maybeAutoBootstrapDevSession();
     _writeOrderFilters();
     _writeAuditFilters();
     _renderSelectionCount();

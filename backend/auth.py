@@ -1,5 +1,9 @@
+﻿import base64
+import hashlib
+import hmac
 import json
 import os
+import time
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
@@ -12,12 +16,175 @@ ROLE_ADMIN = "Admin"
 ROLE_DISPATCHER = "Dispatcher"
 ROLE_DRIVER = "Driver"
 ALLOWED_ROLES = {ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER}
+DEV_AUTH_COOKIE_NAME = "discra_dev_session"
 
 
 def _as_bool(value: Optional[str], default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _base64url_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+
+
+def _base64url_decode(encoded: str) -> bytes:
+    padded = encoded + "=" * ((4 - (len(encoded) % 4)) % 4)
+    return base64.urlsafe_b64decode(padded.encode("utf-8"))
+
+
+def _canonical_role(role: Optional[str]) -> Optional[str]:
+    if role is None:
+        return None
+    value = role.strip()
+    for allowed in ALLOWED_ROLES:
+        if allowed.lower() == value.lower():
+            return allowed
+    return None
+
+
+def is_dev_auth_enabled() -> bool:
+    return _as_bool(os.environ.get("ENABLE_UI_DEV_AUTH"), default=False)
+
+
+def dev_auth_cookie_name() -> str:
+    return DEV_AUTH_COOKIE_NAME
+
+
+def dev_auth_default_org_id() -> str:
+    value = (os.environ.get("UI_DEV_AUTH_ORG_ID") or "").strip()
+    return value or "org-pilot-1"
+
+
+def dev_auth_ttl_seconds() -> int:
+    raw_value = (os.environ.get("UI_DEV_AUTH_TTL_SECONDS") or "").strip()
+    if not raw_value:
+        return 43200
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return 43200
+    return max(300, min(parsed, 604800))
+
+
+def normalize_dev_auth_role(role: Optional[str]) -> str:
+    canonical = _canonical_role(role)
+    if canonical is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid dev-auth role '{role}'",
+        )
+    return canonical
+
+
+def _dev_auth_secret() -> str:
+    return (os.environ.get("DEV_AUTH_SECRET") or "").strip()
+
+
+def _require_dev_auth_secret() -> str:
+    secret = _dev_auth_secret()
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Dev auth is enabled but DEV_AUTH_SECRET is not configured",
+        )
+    return secret
+
+
+def _new_dev_auth_claims(
+    *,
+    user_id: str,
+    role: str,
+    org_id: str,
+    email: Optional[str] = None,
+    ttl_seconds: Optional[int] = None,
+) -> Dict[str, Any]:
+    canonical_role = normalize_dev_auth_role(role)
+    safe_user_id = (user_id or "").strip()
+    if not safe_user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="user_id is required")
+
+    safe_org_id = (org_id or "").strip() or dev_auth_default_org_id()
+    now_epoch = int(time.time())
+    effective_ttl = ttl_seconds if ttl_seconds is not None else dev_auth_ttl_seconds()
+    safe_ttl = max(60, min(effective_ttl, 604800))
+
+    claims: Dict[str, Any] = {
+        "sub": safe_user_id,
+        "username": safe_user_id,
+        "org_id": safe_org_id,
+        "custom:org_id": safe_org_id,
+        "groups": [canonical_role],
+        "cognito:groups": [canonical_role],
+        "iat": now_epoch,
+        "exp": now_epoch + safe_ttl,
+    }
+    safe_email = (email or "").strip()
+    if safe_email:
+        claims["email"] = safe_email
+    return claims
+
+
+def build_dev_auth_session_value(
+    *,
+    user_id: str,
+    role: str,
+    org_id: str,
+    email: Optional[str] = None,
+    ttl_seconds: Optional[int] = None,
+) -> str:
+    claims = _new_dev_auth_claims(
+        user_id=user_id,
+        role=role,
+        org_id=org_id,
+        email=email,
+        ttl_seconds=ttl_seconds,
+    )
+    claims_text = json.dumps(claims, separators=(",", ":"))
+    encoded = _base64url_encode(claims_text.encode("utf-8"))
+    signature = hmac.new(
+        _require_dev_auth_secret().encode("utf-8"),
+        encoded.encode("utf-8"),
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def _decode_dev_auth_session_value(raw_value: str) -> Optional[Dict[str, Any]]:
+    value = (raw_value or "").strip()
+    if not value or "." not in value:
+        return None
+    encoded, provided_signature = value.rsplit(".", 1)
+    if not encoded or not provided_signature:
+        return None
+
+    secret = _dev_auth_secret()
+    if not secret:
+        return None
+    expected_signature = hmac.new(
+        secret.encode("utf-8"),
+        encoded.encode("utf-8"),
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(provided_signature, expected_signature):
+        return None
+
+    try:
+        payload = json.loads(_base64url_decode(encoded).decode("utf-8"))
+    except Exception:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    try:
+        exp_epoch = int(payload.get("exp"))
+    except (TypeError, ValueError):
+        return None
+    if exp_epoch < int(time.time()):
+        return None
+    return payload
 
 
 @lru_cache(maxsize=8)
@@ -97,6 +264,41 @@ def _extract_claims_from_request_context(request: Request) -> Optional[Dict[str,
     return None
 
 
+def _extract_dev_auth_claims_from_headers(request: Request) -> Optional[Dict[str, Any]]:
+    user_id = (request.headers.get("x-dev-user-id") or "").strip()
+    role = (request.headers.get("x-dev-role") or "").strip()
+    if not user_id and not role:
+        return None
+    if not user_id or not role:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid dev-auth headers",
+        )
+
+    org_id = (request.headers.get("x-dev-org-id") or "").strip() or dev_auth_default_org_id()
+    email = (request.headers.get("x-dev-email") or "").strip() or None
+    return _new_dev_auth_claims(
+        user_id=user_id,
+        role=role,
+        org_id=org_id,
+        email=email,
+        ttl_seconds=3600,
+    )
+
+
+def _extract_dev_auth_claims(request: Request) -> Optional[Dict[str, Any]]:
+    if not is_dev_auth_enabled():
+        return None
+
+    cookie_value = request.cookies.get(dev_auth_cookie_name())
+    if cookie_value:
+        decoded = _decode_dev_auth_session_value(cookie_value)
+        if decoded is not None:
+            return decoded
+
+    return _extract_dev_auth_claims_from_headers(request)
+
+
 def _normalize_groups(raw_groups: Any) -> List[str]:
     if raw_groups is None:
         return []
@@ -125,12 +327,8 @@ def _extract_org_id(claims: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _claims_to_user(claims: Dict[str, Any]) -> Dict[str, Any]:
+def _claims_to_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
     groups = _normalize_groups(claims.get("cognito:groups") or claims.get("groups"))
-    org_id = _extract_org_id(claims)
-    if not org_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing org_id claim")
-
     sub = claims.get("sub") or claims.get("username")
     if not sub:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing sub claim")
@@ -139,20 +337,48 @@ def _claims_to_user(claims: Dict[str, Any]) -> Dict[str, Any]:
         "sub": sub,
         "username": claims.get("cognito:username") or claims.get("username"),
         "email": claims.get("email"),
-        "org_id": org_id,
+        "org_id": _extract_org_id(claims),
         "groups": groups,
         "claims": claims,
     }
 
 
+def _claims_to_user(claims: Dict[str, Any]) -> Dict[str, Any]:
+    identity = _claims_to_identity(claims)
+    if not identity.get("org_id"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing org_id claim")
+    return identity
+
+
+def get_dev_auth_user(request: Request) -> Optional[Dict[str, Any]]:
+    claims = _extract_dev_auth_claims(request)
+    if claims is None:
+        return None
+    return _claims_to_user(claims)
+
+
 async def get_current_user(request: Request) -> Dict[str, Any]:
     claims = _extract_claims_from_request_context(request)
+    if claims is None:
+        claims = _extract_dev_auth_claims(request)
     if claims is None:
         token = _get_bearer_token(request)
         if not token:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
         claims = _decode_jwt(token)
     return _claims_to_user(claims)
+
+
+async def get_authenticated_identity(request: Request) -> Dict[str, Any]:
+    claims = _extract_claims_from_request_context(request)
+    if claims is None:
+        claims = _extract_dev_auth_claims(request)
+    if claims is None:
+        token = _get_bearer_token(request)
+        if not token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
+        claims = _decode_jwt(token)
+    return _claims_to_identity(claims)
 
 
 def _normalized_role_set(roles: List[str]) -> set[str]:

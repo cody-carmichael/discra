@@ -21,6 +21,9 @@ param(
     [string]$OrdersWebhookToken = "",
 
     [Parameter(Mandatory = $false)]
+    [string]$OrdersWebhookAllowedOrgId = "",
+
+    [Parameter(Mandatory = $false)]
     [string]$OrdersWebhookHmacSecret = "",
 
     [Parameter(Mandatory = $false)]
@@ -49,6 +52,60 @@ param(
 
     [Parameter(Mandatory = $false)]
     [string]$FrontendMapStyleUrl = "https://demotiles.maplibre.org/style.json",
+
+    [Parameter(Mandatory = $false)]
+    [string]$EnableUiDevAuth = "true",
+
+    [Parameter(Mandatory = $false)]
+    [string]$DevAuthSecret = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$UiDevAuthOrgId = "org-pilot-1",
+
+    [Parameter(Mandatory = $false)]
+    [string]$UiDevAuthTtlSeconds = "43200",
+
+    [Parameter(Mandatory = $false)]
+    [string]$UiDevAuthAdminUserId = "test-admin",
+
+    [Parameter(Mandatory = $false)]
+    [string]$UiDevAuthAdminEmail = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$UiDevAuthDispatcherUserId = "test-dispatcher",
+
+    [Parameter(Mandatory = $false)]
+    [string]$UiDevAuthDispatcherEmail = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$UiDevAuthDriverUserId = "test-driver",
+
+    [Parameter(Mandatory = $false)]
+    [string]$UiDevAuthDriverEmail = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$EnableOnboardingFlow = "true",
+
+    [Parameter(Mandatory = $false)]
+    [string]$OnboardingApproverEmailAllowlist = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$OnboardingLinkSigningSecret = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$OnboardingLinkTtlSeconds = "172800",
+
+    [Parameter(Mandatory = $false)]
+    [string]$OnboardingCognitoOrgAttributeKey = "custom:org_id",
+
+    [Parameter(Mandatory = $false)]
+    [string]$OnboardingSesFromEmail = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$OnboardingAppReviewUrlBase = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$OnboardingAppRegisterUrlBase = "",
 
     [Parameter(Mandatory = $false)]
     [string]$OutFile = "tools/bootstrap/.generated/sam-parameter-overrides.txt",
@@ -207,6 +264,8 @@ if (-not $Version) {
 $resolvedAdminToken = Resolve-ConfigValue -ExplicitValue $AdminToken -ExistingValues $existingValues -Key "AdminToken" -GenerateIfMissing
 $resolvedOrdersWebhookToken = Resolve-ConfigValue -ExplicitValue $OrdersWebhookToken -ExistingValues $existingValues -Key "OrdersWebhookToken" -GenerateIfMissing
 $resolvedOrdersWebhookHmacSecret = Resolve-ConfigValue -ExplicitValue $OrdersWebhookHmacSecret -ExistingValues $existingValues -Key "OrdersWebhookHmacSecret" -GenerateIfMissing
+$resolvedDevAuthSecret = Resolve-ConfigValue -ExplicitValue $DevAuthSecret -ExistingValues $existingValues -Key "DevAuthSecret" -GenerateIfMissing
+$resolvedOnboardingLinkSigningSecret = Resolve-ConfigValue -ExplicitValue $OnboardingLinkSigningSecret -ExistingValues $existingValues -Key "OnboardingLinkSigningSecret" -GenerateIfMissing
 
 if (-not $SkipCognitoGroupBootstrap) {
     Write-Host "Ensuring Cognito groups exist in pool '$CognitoUserPoolId' ($Region)..."
@@ -227,12 +286,30 @@ $deployParameters = [ordered]@{
     StripeDispatcherPriceId = $StripeDispatcherPriceId
     StripeDriverPriceId = $StripeDriverPriceId
     OrdersWebhookToken = $resolvedOrdersWebhookToken
+    OrdersWebhookAllowedOrgId = $OrdersWebhookAllowedOrgId
     OrdersWebhookHmacSecret = $resolvedOrdersWebhookHmacSecret
     OrdersWebhookMaxSkewSeconds = $OrdersWebhookMaxSkewSeconds
     CognitoHostedUiDomain = $CognitoHostedUiDomain
     FrontendMapStyleUrl = $FrontendMapStyleUrl
+    EnableUiDevAuth = $EnableUiDevAuth
+    DevAuthSecret = $resolvedDevAuthSecret
+    UiDevAuthOrgId = $UiDevAuthOrgId
+    UiDevAuthTtlSeconds = $UiDevAuthTtlSeconds
+    UiDevAuthAdminUserId = $UiDevAuthAdminUserId
+    UiDevAuthAdminEmail = $UiDevAuthAdminEmail
+    UiDevAuthDispatcherUserId = $UiDevAuthDispatcherUserId
+    UiDevAuthDispatcherEmail = $UiDevAuthDispatcherEmail
+    UiDevAuthDriverUserId = $UiDevAuthDriverUserId
+    UiDevAuthDriverEmail = $UiDevAuthDriverEmail
+    EnableOnboardingFlow = $EnableOnboardingFlow
+    OnboardingApproverEmailAllowlist = $OnboardingApproverEmailAllowlist
+    OnboardingLinkSigningSecret = $resolvedOnboardingLinkSigningSecret
+    OnboardingLinkTtlSeconds = $OnboardingLinkTtlSeconds
+    OnboardingCognitoOrgAttributeKey = $OnboardingCognitoOrgAttributeKey
+    OnboardingSesFromEmail = $OnboardingSesFromEmail
+    OnboardingAppReviewUrlBase = $OnboardingAppReviewUrlBase
+    OnboardingAppRegisterUrlBase = $OnboardingAppRegisterUrlBase
 }
-
 $outDirectory = Split-Path -Path $OutFile -Parent
 if ($outDirectory) {
     New-Item -ItemType Directory -Path $outDirectory -Force | Out-Null
@@ -255,6 +332,8 @@ Write-Host "Secret summary:"
 Write-Host "  AdminToken: $(Mask-Secret $resolvedAdminToken)"
 Write-Host "  OrdersWebhookToken: $(Mask-Secret $resolvedOrdersWebhookToken)"
 Write-Host "  OrdersWebhookHmacSecret: $(Mask-Secret $resolvedOrdersWebhookHmacSecret)"
+Write-Host "  DevAuthSecret: $(Mask-Secret $resolvedDevAuthSecret)"
+Write-Host "  OnboardingLinkSigningSecret: $(Mask-Secret $resolvedOnboardingLinkSigningSecret)"
 Write-Host ""
 Write-Host "Next deploy command:"
 Write-Host "  `$overrides = Get-Content `"$OutFile`""

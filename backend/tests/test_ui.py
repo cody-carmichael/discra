@@ -14,13 +14,19 @@ def test_ui_pages_are_available():
     home = client.get("/ui")
     admin = client.get("/ui/admin")
     driver = client.get("/ui/driver")
+    register = client.get("/ui/register")
+    review = client.get("/ui/review")
 
     assert home.status_code == 200
     assert admin.status_code == 200
     assert driver.status_code == 200
+    assert register.status_code == 200
+    assert review.status_code == 200
     assert "Discra Pilot UI" in home.text
-    assert "Admin and Dispatcher Console" in admin.text
+    assert "Admin And Dispatcher Console" in admin.text
     assert "Driver Workflow" in driver.text
+    assert "Register Your Tenant" in register.text
+    assert "App Dev Review" in review.text
     assert "logout-hosted-ui" in admin.text
     assert "driver-logout-hosted-ui" in driver.text
 
@@ -52,6 +58,7 @@ def test_ui_config_reflects_env(monkeypatch):
     monkeypatch.setenv("COGNITO_HOSTED_UI_DOMAIN", "demo-auth.example.com")
     monkeypatch.setenv("FRONTEND_COGNITO_CLIENT_ID", "client-123")
     monkeypatch.setenv("FRONTEND_MAP_STYLE_URL", "https://maps.example.com/style.json")
+    monkeypatch.setenv("ENABLE_ONBOARDING_FLOW", "true")
 
     response = client.get("/ui/config")
     assert response.status_code == 200
@@ -59,3 +66,6 @@ def test_ui_config_reflects_env(monkeypatch):
     assert body["cognito_domain"] == "demo-auth.example.com"
     assert body["cognito_client_id"] == "client-123"
     assert body["map_style_url"] == "https://maps.example.com/style.json"
+    assert body["onboarding_enabled"] is True
+    assert body["register_url_path"] == "/ui/register"
+    assert body["review_url_path"] == "/ui/review"

@@ -129,6 +129,7 @@ class UserRecord(BaseModel):
 
 
 class SeatRole(str, Enum):
+    ADMIN = "Admin"
     DISPATCHER = "Dispatcher"
     DRIVER = "Driver"
 
@@ -396,3 +397,64 @@ class DispatchSummaryResponse(BaseModel):
     by_status: Dict[str, int] = Field(default_factory=dict)
     active_drivers: int = Field(..., ge=0)
     active_driver_ids: List[str] = Field(default_factory=list)
+
+
+class OnboardingRegistrationStatus(str, Enum):
+    PENDING = "Pending"
+    APPROVED = "Approved"
+    REJECTED = "Rejected"
+
+
+class OnboardingReviewDecision(str, Enum):
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
+class OnboardingRegistrationUpsertRequest(BaseModel):
+    tenant_name: str = Field(..., min_length=2, max_length=140)
+    contact_name: Optional[str] = Field(default=None, max_length=120)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class OnboardingRegistrationRecord(BaseModel):
+    registration_id: str
+    identity_sub: str
+    identity_username: Optional[str] = None
+    requester_email: Optional[str] = None
+    tenant_name: str
+    contact_name: Optional[str] = None
+    notes: Optional[str] = None
+    requested_role: str = "Admin"
+    status: OnboardingRegistrationStatus
+    org_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    submitted_at: datetime
+    decided_at: Optional[datetime] = None
+    decided_by_email: Optional[str] = None
+    decision_reason: Optional[str] = None
+    review_token_issued_at: Optional[datetime] = None
+    review_token_expires_at: Optional[datetime] = None
+
+
+class OnboardingRegistrationMeResponse(BaseModel):
+    exists: bool
+    registration: Optional[OnboardingRegistrationRecord] = None
+
+
+class OnboardingReviewResolveResponse(BaseModel):
+    registration: OnboardingRegistrationRecord
+    token_expires_at: datetime
+    decision_allowed: bool
+
+
+class OnboardingReviewDecisionRequest(BaseModel):
+    token: str = Field(..., min_length=10, max_length=4096)
+    decision: OnboardingReviewDecision
+    reason: Optional[str] = Field(default=None, max_length=1000)
+
+
+class OnboardingReviewDecisionResponse(BaseModel):
+    registration: OnboardingRegistrationRecord
+    idempotent: bool = False
+    message: str

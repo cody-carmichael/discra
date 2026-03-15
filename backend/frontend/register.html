@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discra Registration</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body class="theme-admin">
+  <div class="app-shell app-shell-compact">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Discra Onboarding</p>
+        <h1>Register Your Tenant</h1>
+        <p class="subtitle">Sign in, submit your tenant request, and track approval status.</p>
+      </div>
+      <nav class="top-actions">
+        <span id="register-auth-state" class="status-pill status-idle">No Token</span>
+        <a class="btn btn-ghost" href="admin">Admin View</a>
+      </nav>
+    </header>
+
+    <main class="driver-layout">
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Hosted UI Session</h2>
+        </div>
+        <p class="panel-help">Use Cognito Hosted UI to sign in with your new Admin account before submitting registration.</p>
+        <label class="field">
+          <span>Cognito Hosted UI Domain</span>
+          <input id="register-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
+        </label>
+        <label class="field">
+          <span>Client ID</span>
+          <input id="register-cognito-client-id" placeholder="app client id">
+        </label>
+        <div class="row">
+          <button id="register-login-hosted-ui" class="btn btn-accent" type="button">Login Hosted UI</button>
+          <button id="register-logout-hosted-ui" class="btn btn-ghost" type="button">Logout</button>
+        </div>
+        <label class="field">
+          <span>JWT Token (optional override)</span>
+          <textarea id="register-jwt-token" rows="4" placeholder="Paste id_token if needed"></textarea>
+        </label>
+        <div class="row">
+          <button id="register-save-token" class="btn btn-primary" type="button">Save Token</button>
+          <button id="register-clear-token" class="btn btn-ghost" type="button">Clear</button>
+        </div>
+        <pre id="register-claims-view" class="claims-view">No token decoded yet.</pre>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Tenant Registration</h2>
+          <button id="register-refresh-status" class="btn btn-ghost" type="button">Refresh Status</button>
+        </div>
+        <p class="panel-help">Provide tenant details for App Dev review. Approval grants Admin access and org claims.</p>
+        <form id="register-form" class="form-grid">
+          <label class="field field-span-2">
+            <span>Tenant Name</span>
+            <input id="register-tenant-name" required placeholder="Acme Logistics">
+          </label>
+          <label class="field">
+            <span>Contact Name (optional)</span>
+            <input id="register-contact-name" placeholder="Jane Doe">
+          </label>
+          <label class="field">
+            <span>Email (from token)</span>
+            <input id="register-email-view" disabled>
+          </label>
+          <label class="field field-span-2">
+            <span>Notes (optional)</span>
+            <textarea id="register-notes" rows="3" placeholder="Anything approvers should know"></textarea>
+          </label>
+          <button class="btn btn-primary field-span-2" type="submit">Submit Registration</button>
+        </form>
+        <div id="register-status-surface" class="data-surface">No registration found for this user yet.</div>
+      </section>
+
+      <p id="register-message" class="message"></p>
+    </main>
+  </div>
+
+  <script src="assets/common.js"></script>
+  <script src="assets/register.js"></script>
+</body>
+</html>

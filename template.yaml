@@ -71,6 +71,80 @@ Parameters:
     Type: String
     Default: https://demotiles.maplibre.org/style.json
     Description: MapLibre style JSON URL used by Admin/Dispatcher map view
+  EnableUiDevAuth:
+    Type: String
+    Default: "true"
+    Description: Enable cookie-based UI dev auth profiles for no-token manual testing
+  DevAuthSecret:
+    Type: String
+    Default: discra-dev-auth-secret
+    NoEcho: true
+    Description: Signing secret for UI dev-auth session cookies (dev only)
+  UiDevAuthOrgId:
+    Type: String
+    Default: org-pilot-1
+    Description: Default org id bound to UI dev-auth profiles
+  UiDevAuthTtlSeconds:
+    Type: String
+    Default: "43200"
+    Description: Session TTL (seconds) for UI dev-auth cookies
+  UiDevAuthAdminUserId:
+    Type: String
+    Default: test-admin
+    Description: User id for default Admin dev-auth profile
+  UiDevAuthAdminEmail:
+    Type: String
+    Default: ""
+    Description: Optional email for default Admin dev-auth profile
+  UiDevAuthDispatcherUserId:
+    Type: String
+    Default: test-dispatcher
+    Description: User id for default Dispatcher dev-auth profile
+  UiDevAuthDispatcherEmail:
+    Type: String
+    Default: ""
+    Description: Optional email for default Dispatcher dev-auth profile
+  UiDevAuthDriverUserId:
+    Type: String
+    Default: test-driver
+    Description: User id for default Driver dev-auth profile
+  UiDevAuthDriverEmail:
+    Type: String
+    Default: ""
+    Description: Optional email for default Driver dev-auth profile
+  EnableOnboardingFlow:
+    Type: String
+    Default: "true"
+    Description: Enable tenant admin onboarding registration and review APIs/UI
+  OnboardingApproverEmailAllowlist:
+    Type: String
+    Default: ""
+    Description: Comma-separated email allowlist for App Dev approvers
+  OnboardingLinkSigningSecret:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: HMAC signing secret for onboarding review links
+  OnboardingLinkTtlSeconds:
+    Type: String
+    Default: "172800"
+    Description: Signed review link expiry in seconds
+  OnboardingCognitoOrgAttributeKey:
+    Type: String
+    Default: custom:org_id
+    Description: Cognito user attribute key that stores approved org id
+  OnboardingSesFromEmail:
+    Type: String
+    Default: ""
+    Description: SES verified sender/from email for onboarding notifications
+  OnboardingAppReviewUrlBase:
+    Type: String
+    Default: ""
+    Description: Absolute review page URL base used in review emails (for example https://app.example.com/dev/backend/ui/review)
+  OnboardingAppRegisterUrlBase:
+    Type: String
+    Default: ""
+    Description: Absolute registration page URL base used in approval/rejection emails
 
 Globals:
   Function:
@@ -281,6 +355,36 @@ Resources:
         - Key: Env
           Value: dev
 
+  OnboardingRegistrationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-onboarding-registrations-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: registration_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: updated_at_epoch
+          AttributeType: N
+      KeySchema:
+        - AttributeName: registration_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: registrations_by_status
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: updated_at_epoch
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
   PodArtifactsBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -368,6 +472,7 @@ Resources:
           VERSION: !Ref Version
           COGNITO_ISSUER: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}"
           COGNITO_AUDIENCE: !Ref CognitoAppClientId
+          COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
           JWT_VERIFY_SIGNATURE: "true"
           ORGANIZATIONS_TABLE: !Ref OrganizationsTable
           USERS_TABLE: !Ref UsersTable
@@ -395,6 +500,26 @@ Resources:
           COGNITO_HOSTED_UI_DOMAIN: !Ref CognitoHostedUiDomain
           FRONTEND_COGNITO_CLIENT_ID: !Ref CognitoAppClientId
           FRONTEND_MAP_STYLE_URL: !Ref FrontendMapStyleUrl
+          ENABLE_UI_DEV_AUTH: !Ref EnableUiDevAuth
+          DEV_AUTH_SECRET: !Ref DevAuthSecret
+          UI_DEV_AUTH_ORG_ID: !Ref UiDevAuthOrgId
+          UI_DEV_AUTH_TTL_SECONDS: !Ref UiDevAuthTtlSeconds
+          UI_DEV_AUTH_ADMIN_USER_ID: !Ref UiDevAuthAdminUserId
+          UI_DEV_AUTH_ADMIN_EMAIL: !Ref UiDevAuthAdminEmail
+          UI_DEV_AUTH_DISPATCHER_USER_ID: !Ref UiDevAuthDispatcherUserId
+          UI_DEV_AUTH_DISPATCHER_EMAIL: !Ref UiDevAuthDispatcherEmail
+          UI_DEV_AUTH_DRIVER_USER_ID: !Ref UiDevAuthDriverUserId
+          UI_DEV_AUTH_DRIVER_EMAIL: !Ref UiDevAuthDriverEmail
+          ENABLE_ONBOARDING_FLOW: !Ref EnableOnboardingFlow
+          ONBOARDING_REGISTRATIONS_TABLE: !Ref OnboardingRegistrationsTable
+          ONBOARDING_REGISTRATIONS_STATUS_INDEX: registrations_by_status
+          ONBOARDING_APPROVER_EMAIL_ALLOWLIST: !Ref OnboardingApproverEmailAllowlist
+          ONBOARDING_LINK_SIGNING_SECRET: !Ref OnboardingLinkSigningSecret
+          ONBOARDING_LINK_TTL_SECONDS: !Ref OnboardingLinkTtlSeconds
+          ONBOARDING_COGNITO_ORG_ATTRIBUTE_KEY: !Ref OnboardingCognitoOrgAttributeKey
+          ONBOARDING_SES_FROM_EMAIL: !Ref OnboardingSesFromEmail
+          ONBOARDING_APP_REVIEW_URL_BASE: !Ref OnboardingAppReviewUrlBase
+          ONBOARDING_APP_REGISTER_URL_BASE: !Ref OnboardingAppRegisterUrlBase
       Policies:
         - Statement:
             Effect: Allow
@@ -414,6 +539,8 @@ Resources:
               - !GetAtt SeatSubscriptionsTable.Arn
               - !GetAtt SeatInvitationsTable.Arn
               - !GetAtt AuditLogsTable.Arn
+              - !GetAtt OnboardingRegistrationsTable.Arn
+              - !Sub "${OnboardingRegistrationsTable.Arn}/index/*"
         - Statement:
             Effect: Allow
             Action:
@@ -425,6 +552,18 @@ Resources:
             Action:
               - geo:CalculateRouteMatrix
               - geo:SearchPlaceIndexForText
+            Resource: "*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - cognito-idp:AdminAddUserToGroup
+              - cognito-idp:AdminUpdateUserAttributes
+            Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}"
+        - Statement:
+            Effect: Allow
+            Action:
+              - ses:SendEmail
+              - ses:SendRawEmail
             Resource: "*"
       Events:
         BackendHealthGet:
@@ -462,6 +601,18 @@ Resources:
           Properties:
             ApiId: !Ref DiscraApi
             Path: /backend/ui/driver
+            Method: GET
+        BackendUiRegisterGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/ui/register
+            Method: GET
+        BackendUiReviewGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /backend/ui/review
             Method: GET
         BackendUiDriverServiceWorkerGet:
           Type: HttpApi
@@ -576,6 +727,18 @@ Outputs:
       - "${Endpoint}/dev/backend/ui/driver"
       - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
 
+  RegisterUiUrl:
+    Description: Full URL for tenant registration web page
+    Value: !Sub
+      - "${Endpoint}/dev/backend/ui/register"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
+  ReviewUiUrl:
+    Description: Full URL for App Dev review web page
+    Value: !Sub
+      - "${Endpoint}/dev/backend/ui/review"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+
   OrdersWebhookUrl:
     Description: Full URL for POST /backend/webhooks/orders
     Value: !Sub
@@ -618,5 +781,6 @@ Outputs:
     Description: DynamoDB table for sensitive-action audit events
     Value: !Ref AuditLogsTable
 
-
-
+  OnboardingRegistrationsTableName:
+    Description: DynamoDB table for onboarding registration requests and review status
+    Value: !Ref OnboardingRegistrationsTable

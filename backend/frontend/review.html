@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discra Review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body class="theme-admin">
+  <div class="app-shell app-shell-compact">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Discra Onboarding</p>
+        <h1>App Dev Review</h1>
+        <p class="subtitle">Approve or reject tenant Admin requests with signed review links.</p>
+      </div>
+      <nav class="top-actions">
+        <span id="review-auth-state" class="status-pill status-idle">No Token</span>
+        <a class="btn btn-ghost" href="register">Registration View</a>
+      </nav>
+    </header>
+
+    <main class="driver-layout">
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Review Link</h2>
+          <button id="review-load" class="btn btn-ghost" type="button">Resolve Token</button>
+        </div>
+        <label class="field">
+          <span>Signed Review Token</span>
+          <textarea id="review-token" rows="3" placeholder="token=..."></textarea>
+        </label>
+        <div id="review-summary-surface" class="data-surface">Paste a token to load registration details.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Approver Session</h2>
+        </div>
+        <p class="panel-help">Sign in as an allowlisted App Dev user before applying a decision.</p>
+        <label class="field">
+          <span>Cognito Hosted UI Domain</span>
+          <input id="review-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
+        </label>
+        <label class="field">
+          <span>Client ID</span>
+          <input id="review-cognito-client-id" placeholder="app client id">
+        </label>
+        <div class="row">
+          <button id="review-login-hosted-ui" class="btn btn-accent" type="button">Login Hosted UI</button>
+          <button id="review-logout-hosted-ui" class="btn btn-ghost" type="button">Logout</button>
+        </div>
+        <label class="field">
+          <span>JWT Token (optional override)</span>
+          <textarea id="review-jwt-token" rows="4" placeholder="Paste id_token if needed"></textarea>
+        </label>
+        <div class="row">
+          <button id="review-save-token" class="btn btn-primary" type="button">Save Token</button>
+          <button id="review-clear-token" class="btn btn-ghost" type="button">Clear</button>
+        </div>
+        <pre id="review-claims-view" class="claims-view">No token decoded yet.</pre>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>Apply Decision</h2>
+        </div>
+        <label class="field">
+          <span>Reason (optional, recommended on rejection)</span>
+          <textarea id="review-reason" rows="3" placeholder="Reason shown in audit and requester email"></textarea>
+        </label>
+        <div class="row">
+          <button id="review-approve" class="btn btn-primary" type="button">Approve</button>
+          <button id="review-reject" class="btn btn-ghost" type="button">Reject</button>
+        </div>
+      </section>
+
+      <p id="review-message" class="message"></p>
+    </main>
+  </div>
+
+  <script src="assets/common.js"></script>
+  <script src="assets/review.js"></script>
+</body>
+</html>

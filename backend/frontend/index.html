@@ -3,13 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Discra | Last-Mile Dispatch Control</title>
+  <title>Discra | The Calm Control Tower For Delivery Teams</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="ui/assets/styles.css">
 </head>
 <body class="landing-theme">
+  <div class="landing-scene" aria-hidden="true">
+    <div class="landing-orb landing-orb-a" data-parallax-speed="0.14"></div>
+    <div class="landing-orb landing-orb-b" data-parallax-speed="-0.08"></div>
+    <div class="landing-grid-lines" data-parallax-speed="0.05"></div>
+  </div>
+
   <main class="landing-shell">
     <header class="landing-topbar">
       <div class="landing-brand-lockup">
@@ -22,52 +28,101 @@
       </div>
     </header>
 
-    <section class="landing-hero">
-      <p class="landing-kicker">Delivery Operations Platform</p>
-      <h1>Dispatch Faster. Track Live. Deliver With Proof.</h1>
-      <p class="landing-lead">Discra gives your team one clean command center for orders, drivers, routing, and POD while keeping onboarding safe with App Dev approval.</p>
-      <div class="landing-cta-row">
-        <a class="btn btn-primary landing-btn-strong" href="ui/register">Request Registration</a>
-        <a class="btn btn-accent landing-btn-strong" href="ui/admin">Log In</a>
+    <section class="landing-hero" data-reveal>
+      <div class="landing-hero-copy">
+        <p class="landing-kicker">Delivery Operations Platform</p>
+        <h1>Transform Last-Mile Delivery Into A Growth Engine.</h1>
+        <p class="landing-lead">Discra combines dispatch clarity, live driver intelligence, and proof-of-delivery confidence into one elegant command center for modern logistics teams.</p>
+        <div class="landing-cta-row">
+          <a class="btn btn-primary landing-btn-strong" href="ui/register">Request Access</a>
+          <a class="btn btn-accent landing-btn-strong" href="ui/admin">Log In</a>
+        </div>
+        <div class="landing-proof-row">
+          <span>Live route intelligence</span>
+          <span>Real-time field visibility</span>
+          <span>Secure proof of delivery</span>
+        </div>
       </div>
-      <div class="landing-proof-row">
-        <span>Live driver map</span>
-        <span>Route optimization</span>
-        <span>POD photo + signature</span>
+
+      <div class="landing-hero-visual" data-parallax-speed="0.1">
+        <img class="landing-hero-image" src="https://images.pexels.com/photos/1267338/pexels-photo-1267338.jpeg?auto=compress&cs=tinysrgb&w=1600" alt="City logistics network at night">
+        <article class="landing-floating-card landing-floating-card-a">
+          <strong>+31%</strong>
+          <span>Faster Dispatch Decisions</span>
+        </article>
+        <article class="landing-floating-card landing-floating-card-b">
+          <strong>2.4x</strong>
+          <span>More Stops Completed</span>
+        </article>
+        <article class="landing-floating-card landing-floating-card-c">
+          <strong>99.2%</strong>
+          <span>POD Capture Consistency</span>
+        </article>
       </div>
     </section>
 
-    <section class="landing-grid">
+    <section class="landing-grid" data-reveal>
       <article class="landing-card">
-        <h2>Why Teams Choose Discra</h2>
+        <img src="https://images.pexels.com/photos/1117210/pexels-photo-1117210.jpeg?auto=compress&cs=tinysrgb&w=1400" alt="Dispatch planning view on laptop">
+        <h2>Built For High-Tempo Dispatch Teams</h2>
         <ul class="landing-list">
-          <li>Calm operational cockpit for dispatchers.</li>
-          <li>Role-based access for Admin, Dispatcher, and Driver.</li>
-          <li>Built-in onboarding request and approval workflow.</li>
-          <li>Real-time field updates with mobile-ready driver flow.</li>
+          <li>Clean operational cockpit with clear action hierarchy.</li>
+          <li>Live assignment state across orders, drivers, and routes.</li>
+          <li>Low-friction status changes that keep teams in flow.</li>
         </ul>
       </article>
 
       <article class="landing-card">
-        <h2>How Access Works</h2>
-        <ol class="landing-steps">
-          <li>Request tenant registration with Hosted UI sign-up.</li>
-          <li>App Dev reviews and approves via signed link.</li>
-          <li>Re-login and start dispatching immediately.</li>
-        </ol>
+        <img src="https://images.pexels.com/photos/6169056/pexels-photo-6169056.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="Driver holding mobile device for delivery updates">
+        <h2>From Dispatch To Driver In One System</h2>
+        <ul class="landing-list">
+          <li>Mobile-first driver experience for field execution.</li>
+          <li>Photo and signature POD capture baked in.</li>
+          <li>Fast handoff between planning, execution, and proof.</li>
+        </ul>
       </article>
     </section>
 
-    <section class="landing-login-panel">
+    <section class="landing-parallax-band" data-reveal>
+      <div class="landing-parallax-bg" data-parallax-speed="0.16"></div>
+      <div class="landing-parallax-overlay">
+        <p>Operate with confidence</p>
+        <h2>See What Is Happening Right Now, Not 30 Minutes Ago.</h2>
+      </div>
+    </section>
+
+    <section class="landing-process" data-reveal>
+      <h2>How Access Works</h2>
+      <div class="landing-process-grid">
+        <article class="landing-process-card">
+          <span>01</span>
+          <h3>Sign Up</h3>
+          <p>Request tenant access using hosted registration with your organization details.</p>
+        </article>
+        <article class="landing-process-card">
+          <span>02</span>
+          <h3>Approval</h3>
+          <p>App Dev reviews your request and approves your tenant through secure signed links.</p>
+        </article>
+        <article class="landing-process-card">
+          <span>03</span>
+          <h3>Launch</h3>
+          <p>Log in and immediately start dispatching with role-aware access and live operations.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="landing-login-panel" data-reveal>
       <div>
-        <h2>Already Have Access?</h2>
-        <p>Log in from this device to continue operating your dispatch workflows.</p>
+        <h2>Ready To Run Smarter Delivery Operations?</h2>
+        <p>New here? request access. Already approved? log in and continue from any device.</p>
       </div>
       <div class="landing-login-actions">
-        <a class="btn btn-primary" href="ui/admin">Log In</a>
-        <a class="btn btn-ghost" href="ui/register">Request Access</a>
+        <a class="btn btn-primary" href="ui/register">Request Access</a>
+        <a class="btn btn-accent" href="ui/admin">Log In</a>
       </div>
     </section>
   </main>
+  <script src="ui/assets/landing.js"></script>
 </body>
 </html>

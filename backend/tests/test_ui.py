@@ -22,8 +22,8 @@ def test_ui_pages_are_available():
     assert driver.status_code == 200
     assert register.status_code == 200
     assert review.status_code == 200
-    assert "Dispatch Faster. Track Live. Deliver With Proof." in home.text
-    assert "Request Registration" in home.text
+    assert "Transform Last-Mile Delivery Into A Growth Engine." in home.text
+    assert "Request Access" in home.text
     assert "Log In" in home.text
     assert "Admin And Dispatcher Console" in admin.text
     assert "Driver Workflow" in driver.text
@@ -35,6 +35,7 @@ def test_ui_pages_are_available():
 
 def test_ui_assets_and_service_worker_are_served():
     common_js = client.get("/ui/assets/common.js")
+    landing_js = client.get("/ui/assets/landing.js")
     styles_css = client.get("/ui/assets/styles.css")
     admin_manifest = client.get("/ui/assets/admin-manifest.json")
     driver_manifest = client.get("/ui/assets/driver-manifest.json")
@@ -42,6 +43,7 @@ def test_ui_assets_and_service_worker_are_served():
     service_worker = client.get("/ui/driver-sw.js")
 
     assert common_js.status_code == 200
+    assert landing_js.status_code == 200
     assert styles_css.status_code == 200
     assert admin_manifest.status_code == 200
     assert driver_manifest.status_code == 200
@@ -50,6 +52,7 @@ def test_ui_assets_and_service_worker_are_served():
     assert "DiscraCommon" in common_js.text
     assert "startHostedLogin" in common_js.text
     assert "consumeHostedLoginCallback" in common_js.text
+    assert "requestAnimationFrame" in landing_js.text
     assert "DiscraAdmin" in admin_manifest.text
     assert "DiscraDriver" in driver_manifest.text
     assert "discra-admin-v1" in admin_service_worker.text

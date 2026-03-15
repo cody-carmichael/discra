@@ -3,22 +3,70 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Discra UI</title>
+  <title>Discra | Last-Mile Dispatch Control</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="ui/assets/styles.css">
 </head>
-<body class="theme-admin">
-  <main class="center-stage">
-    <section class="hero-card">
-      <p class="eyebrow">Discra Pilot UI</p>
-      <h1>Choose Your Workspace</h1>
-      <p class="lead">Use Admin/Dispatcher to dispatch work. Use Driver on mobile for route and POD flow.</p>
-      <div class="hero-actions">
-        <a class="btn btn-primary" href="ui/admin">Open Admin/Dispatcher</a>
-        <a class="btn btn-accent" href="ui/driver">Open Driver App</a>
-        <a class="btn btn-ghost" href="ui/register">Open Registration</a>
+<body class="landing-theme">
+  <main class="landing-shell">
+    <header class="landing-topbar">
+      <div class="landing-brand-lockup">
+        <span class="landing-brand-dot"></span>
+        <span class="landing-brand-text">Discra</span>
+      </div>
+      <div class="landing-top-actions">
+        <a class="btn btn-ghost" href="ui/register">Request Access</a>
+        <a class="btn btn-primary" href="ui/admin">Log In</a>
+      </div>
+    </header>
+
+    <section class="landing-hero">
+      <p class="landing-kicker">Delivery Operations Platform</p>
+      <h1>Dispatch Faster. Track Live. Deliver With Proof.</h1>
+      <p class="landing-lead">Discra gives your team one clean command center for orders, drivers, routing, and POD while keeping onboarding safe with App Dev approval.</p>
+      <div class="landing-cta-row">
+        <a class="btn btn-primary landing-btn-strong" href="ui/register">Request Registration</a>
+        <a class="btn btn-accent landing-btn-strong" href="ui/admin">Log In To Admin</a>
+        <a class="btn btn-ghost landing-btn-strong" href="ui/driver">Driver Login</a>
+      </div>
+      <div class="landing-proof-row">
+        <span>Live driver map</span>
+        <span>Route optimization</span>
+        <span>POD photo + signature</span>
+      </div>
+    </section>
+
+    <section class="landing-grid">
+      <article class="landing-card">
+        <h2>Why Teams Choose Discra</h2>
+        <ul class="landing-list">
+          <li>Calm operational cockpit for dispatchers.</li>
+          <li>Role-based access for Admin, Dispatcher, and Driver.</li>
+          <li>Built-in onboarding request and approval workflow.</li>
+          <li>Real-time field updates with mobile-ready driver flow.</li>
+        </ul>
+      </article>
+
+      <article class="landing-card">
+        <h2>How Access Works</h2>
+        <ol class="landing-steps">
+          <li>Request tenant registration with Hosted UI sign-up.</li>
+          <li>App Dev reviews and approves via signed link.</li>
+          <li>Re-login and start dispatching immediately.</li>
+        </ol>
+      </article>
+    </section>
+
+    <section class="landing-login-panel">
+      <div>
+        <h2>Already Have Access?</h2>
+        <p>Log in from this device and jump straight into your role workspace.</p>
+      </div>
+      <div class="landing-login-actions">
+        <a class="btn btn-primary" href="ui/admin">Admin / Dispatcher Login</a>
+        <a class="btn btn-ghost" href="ui/driver">Driver Login</a>
       </div>
     </section>
   </main>

@@ -22,7 +22,9 @@ def test_ui_pages_are_available():
     assert driver.status_code == 200
     assert register.status_code == 200
     assert review.status_code == 200
-    assert "Discra Pilot UI" in home.text
+    assert "Dispatch Faster. Track Live. Deliver With Proof." in home.text
+    assert "Request Registration" in home.text
+    assert "Log In To Admin" in home.text
     assert "Admin And Dispatcher Console" in admin.text
     assert "Driver Workflow" in driver.text
     assert "Register Your Tenant" in register.text

@@ -772,6 +772,213 @@ canvas.signature-pad {
   gap: 0.6rem;
 }
 
+.landing-theme {
+  background:
+    radial-gradient(circle at 14% 8%, rgba(14, 122, 166, 0.2), transparent 42%),
+    radial-gradient(circle at 84% 12%, rgba(28, 143, 105, 0.18), transparent 44%),
+    linear-gradient(170deg, #f9fcff 0%, #eef4f8 48%, #e6eef4 100%);
+}
+
+.landing-shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: 1.35rem 1.05rem 2rem;
+  display: grid;
+  gap: 1rem;
+  position: relative;
+}
+
+.landing-shell::before,
+.landing-shell::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(38px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.landing-shell::before {
+  width: 180px;
+  height: 180px;
+  top: 42px;
+  left: -24px;
+  background: rgba(14, 122, 166, 0.15);
+}
+
+.landing-shell::after {
+  width: 230px;
+  height: 230px;
+  right: -36px;
+  top: 230px;
+  background: rgba(28, 143, 105, 0.14);
+}
+
+.landing-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.landing-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.landing-brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.landing-brand-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: linear-gradient(130deg, var(--primary), var(--accent));
+  box-shadow: 0 0 0 3px rgba(14, 122, 166, 0.15);
+}
+
+.landing-brand-text {
+  font-family: "Sora", var(--sans);
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.landing-top-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.landing-hero {
+  border: 1px solid rgba(14, 122, 166, 0.22);
+  border-radius: 22px;
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.97), rgba(241, 249, 253, 0.93)),
+    linear-gradient(0deg, rgba(14, 122, 166, 0.07), rgba(14, 122, 166, 0.07));
+  box-shadow: 0 16px 36px rgba(15, 43, 66, 0.1);
+  padding: 1.5rem;
+}
+
+.landing-kicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.74rem;
+  color: var(--primary-strong);
+  font-weight: 800;
+}
+
+.landing-hero h1 {
+  margin: 0.44rem 0 0.7rem;
+  font-family: "Sora", var(--sans);
+  font-size: clamp(1.65rem, 4.4vw, 2.85rem);
+  line-height: 1.07;
+  letter-spacing: -0.02em;
+}
+
+.landing-lead {
+  margin: 0;
+  color: #395061;
+  max-width: 760px;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.landing-cta-row {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.landing-btn-strong {
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+}
+
+.landing-proof-row {
+  margin-top: 0.95rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.landing-proof-row span {
+  border: 1px solid rgba(14, 122, 166, 0.18);
+  border-radius: 999px;
+  padding: 0.28rem 0.6rem;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #2d495d;
+}
+
+.landing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 0.9rem;
+}
+
+.landing-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow);
+  padding: 1rem;
+}
+
+.landing-card h2 {
+  margin: 0 0 0.64rem;
+  font-family: "Sora", var(--sans);
+  font-size: 1rem;
+}
+
+.landing-list,
+.landing-steps {
+  margin: 0;
+  padding-left: 1.02rem;
+  display: grid;
+  gap: 0.44rem;
+  color: #3a5567;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.landing-login-panel {
+  border: 1px solid rgba(28, 143, 105, 0.28);
+  border-radius: 16px;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.95), rgba(238, 250, 244, 0.92));
+  box-shadow: var(--shadow);
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.landing-login-panel h2 {
+  margin: 0;
+  font-family: "Sora", var(--sans);
+  font-size: 1rem;
+}
+
+.landing-login-panel p {
+  margin: 0.34rem 0 0;
+  color: #446071;
+  font-size: 0.9rem;
+}
+
+.landing-login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
 @media (max-width: 1160px) {
   .workspace-shell {
     grid-template-columns: 1fr;
@@ -835,6 +1042,28 @@ canvas.signature-pad {
 
   .hero-actions {
     flex-direction: column;
+  }
+
+  .landing-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .landing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-login-panel {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .landing-login-actions {
+    width: 100%;
+  }
+
+  .landing-login-actions .btn {
+    flex: 1 1 100%;
   }
 }
 

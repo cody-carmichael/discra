@@ -66,14 +66,28 @@
     cognitoClientId: document.getElementById("cognito-client-id"),
     loginHostedUi: document.getElementById("login-hosted-ui"),
     logoutHostedUi: document.getElementById("logout-hosted-ui"),
+    devAuthPanel: document.getElementById("dev-auth-panel"),
+    devAuthActions: document.getElementById("dev-auth-actions"),
+    workspaceTabs: Array.from(document.querySelectorAll("[data-workspace-target]")),
+    workspacePanels: Array.from(document.querySelectorAll("[data-workspace-panel]")),
+    statsLastSync: document.getElementById("stats-last-sync"),
+    statsSelection: document.getElementById("stats-selection"),
+    statsTotalOrders: document.getElementById("stats-total-orders"),
+    statsAssignedOrders: document.getElementById("stats-assigned-orders"),
+    statsUnassignedOrders: document.getElementById("stats-unassigned-orders"),
+    statsActiveDrivers: document.getElementById("stats-active-drivers"),
   };
 
   let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
   let map = null;
   let mapMarkers = [];
+  let driverRefreshTimer = null;
   let lastOrders = [];
   let isAuthorizedRole = false;
   let isAdminRole = false;
+  let devAuthEnabled = false;
+  let devAuthProfiles = [];
+  let devSessionClaims = null;
   let selectedOrderIds = new Set();
   let orderFilters = {
     status: "",
@@ -86,6 +100,7 @@
     actorId: "",
     limit: 50,
   };
+  let activeWorkspace = "operations";
 
   function claimsRoles(claims) {
     if (!claims) {
@@ -110,6 +125,124 @@
 
   function hasAdminRole(claims) {
     return claimsRoles(claims).indexOf("Admin") >= 0;
+  }
+  function _claimsFromDevUser(user) {
+    if (!user || typeof user !== "object") {
+      return null;
+    }
+    const groups = Array.isArray(user.groups) ? user.groups : [];
+    return {
+      sub: user.sub || user.username || "",
+      username: user.username || user.sub || "",
+      email: user.email || null,
+      org_id: user.org_id || "",
+      "custom:org_id": user.org_id || "",
+      groups: groups,
+      "cognito:groups": groups,
+      _dev_session: true,
+    };
+  }
+
+  function _activeClaims() {
+    return devSessionClaims || C.decodeJwt(token);
+  }
+
+  function formatDistanceMiles(meters) {
+    if (!Number.isFinite(meters) || meters < 0) {
+      return "-";
+    }
+    return (meters / 1609.344).toFixed(1) + " mi";
+  }
+
+  function formatDurationMinutes(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      return "-";
+    }
+    const minutes = Math.max(1, Math.round(seconds / 60));
+    if (minutes < 60) {
+      return minutes + " min";
+    }
+    const hours = Math.floor(minutes / 60);
+    const remaining = minutes % 60;
+    return remaining ? hours + "h " + remaining + "m" : hours + "h";
+  }
+
+  function statusClass(status) {
+    const value = String(status || "").toLowerCase();
+    if (value === "delivered") {
+      return "status-delivered";
+    }
+    if (value === "failed") {
+      return "status-failed";
+    }
+    return "";
+  }
+
+  function setLastSyncStamp() {
+    if (!el.statsLastSync) {
+      return;
+    }
+    el.statsLastSync.textContent = new Date().toLocaleTimeString();
+  }
+
+  function renderWorkspace(target) {
+    activeWorkspace = target || "operations";
+    el.workspaceTabs.forEach(function (tab) {
+      const isActive = tab.getAttribute("data-workspace-target") === activeWorkspace;
+      tab.classList.toggle("is-active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    el.workspacePanels.forEach(function (panel) {
+      const isActive = panel.getAttribute("data-workspace-panel") === activeWorkspace;
+      panel.classList.toggle("is-active", isActive);
+      if (isActive) {
+        panel.removeAttribute("hidden");
+      } else {
+        panel.setAttribute("hidden", "hidden");
+      }
+    });
+  }
+
+  function initWorkspaceTabs() {
+    if (!el.workspaceTabs.length || !el.workspacePanels.length) {
+      return;
+    }
+    const hashPanel = (window.location.hash || "").replace("#", "").trim();
+    const knownPanels = new Set(["operations", "planning", "insights", "admin"]);
+    renderWorkspace(knownPanels.has(hashPanel) ? hashPanel : "operations");
+    el.workspaceTabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        const target = tab.getAttribute("data-workspace-target") || "operations";
+        renderWorkspace(target);
+        history.replaceState(null, "", "#" + target);
+      });
+    });
+  }
+
+  function updateOrderStats(orders) {
+    const list = orders || [];
+    const total = list.length;
+    const assigned = list.filter(function (order) {
+      return !!order.assigned_to;
+    }).length;
+    const unassigned = Math.max(total - assigned, 0);
+    if (el.statsTotalOrders) {
+      el.statsTotalOrders.textContent = String(total);
+    }
+    if (el.statsAssignedOrders) {
+      el.statsAssignedOrders.textContent = String(assigned);
+    }
+    if (el.statsUnassignedOrders) {
+      el.statsUnassignedOrders.textContent = String(unassigned);
+    }
+  }
+
+  function updateActiveDriverStat(count) {
+    if (!el.statsActiveDrivers) {
+      return;
+    }
+    const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+    el.statsActiveDrivers.textContent = String(safeCount);
   }
 
   function setInteractiveState(enabled) {
@@ -276,6 +409,9 @@
   function _renderSelectionCount() {
     const count = selectedOrderIds.size;
     el.selectionCount.textContent = count + " selected";
+    if (el.statsSelection) {
+      el.statsSelection.textContent = String(count);
+    }
     if (!count) {
       el.selectionCount.classList.add("status-idle");
       el.selectionCount.classList.remove("status-live");
@@ -313,46 +449,70 @@
     });
   }
 
+  function startDriverAutoRefresh() {
+    if (driverRefreshTimer || !isAuthorizedRole) {
+      return;
+    }
+    driverRefreshTimer = window.setInterval(function () {
+      refreshDrivers().catch(function () {
+        // Do not interrupt dispatch work if background refresh fails.
+      });
+    }, 30000);
+  }
+
+  function stopDriverAutoRefresh() {
+    if (!driverRefreshTimer) {
+      return;
+    }
+    window.clearInterval(driverRefreshTimer);
+    driverRefreshTimer = null;
+  }
+
   function evaluateAuthorization(claims) {
     if (!claims) {
       isAuthorizedRole = false;
       isAdminRole = false;
+      stopDriverAutoRefresh();
       _clearSelection();
       renderDriverOptions([]);
+      updateOrderStats([]);
+      updateActiveDriverStat(0);
       setInteractiveState(false);
       setBillingInteractiveState(false);
-      el.billingStatus.textContent = "No billing provider status loaded.";
-      el.billingSummary.textContent = "No billing summary loaded.";
+      el.billingStatus.innerHTML = "No billing provider status loaded.";
+      el.billingSummary.innerHTML = "No billing summary loaded.";
       el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
-      el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
-      el.auditLogsView.textContent = "No audit logs loaded.";
+      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+      el.auditLogsView.innerHTML = "No audit logs loaded.";
+      el.routeResult.innerHTML = "No route computed yet.";
       return;
     }
     isAuthorizedRole = hasAllowedRole(claims);
     isAdminRole = hasAdminRole(claims);
     if (!isAuthorizedRole) {
+      stopDriverAutoRefresh();
       _clearSelection();
     }
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
-      el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
+      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
       renderDriverOptions([]);
       C.showMessage(el.authMessage, "This console requires Admin or Dispatcher role.", "error");
       return;
     }
+    startDriverAutoRefresh();
     if (!isAdminRole) {
       C.showMessage(el.billingMessage, "Billing controls require Admin role.", "error");
     }
   }
-
   function requireAuthorized(messageElement) {
-    if (!token) {
-      C.showMessage(messageElement, "Set a JWT token first.", "error");
+    if (!token && !devSessionClaims) {
+      C.showMessage(messageElement, "Set a JWT token or start a dev test session first.", "error");
       return false;
     }
     if (!isAuthorizedRole) {
-      C.showMessage(messageElement, "Current token does not have Admin/Dispatcher role.", "error");
+      C.showMessage(messageElement, "Current session does not have Admin/Dispatcher role.", "error");
       return false;
     }
     return true;
@@ -371,12 +531,15 @@
 
   function setToken(nextToken) {
     token = C.setStoredToken(storageKey, nextToken);
+    if (token) {
+      devSessionClaims = null;
+    }
     el.token.value = token;
     renderClaims();
   }
 
   function renderClaims() {
-    const claims = C.decodeJwt(token);
+    const claims = _activeClaims();
     if (!claims) {
       el.authState.textContent = "No Token";
       el.authState.classList.add("status-idle");
@@ -386,7 +549,10 @@
       return;
     }
     const roles = C.tokenRoleSummary(claims);
-    el.authState.textContent = roles ? "Roles: " + roles : "Token Loaded";
+    const usingDevSession = !!claims._dev_session && !token;
+    el.authState.textContent = usingDevSession
+      ? (roles ? "Dev Session: " + roles : "Dev Session")
+      : (roles ? "Roles: " + roles : "Token Loaded");
     el.authState.classList.remove("status-idle");
     el.authState.classList.add("status-live");
     el.claims.textContent = JSON.stringify(claims, null, 2);
@@ -402,13 +568,135 @@
       if (config && config.cognito_client_id) {
         el.cognitoClientId.value = config.cognito_client_id;
       }
+      devAuthEnabled = !!(config && config.dev_auth_enabled);
+      devAuthProfiles = Array.isArray(config && config.dev_auth_profiles) ? config.dev_auth_profiles : [];
+      renderDevAuthActions();
       el.mapStyleUrl.value = (config && config.map_style_url) || defaultMapStyle;
       ensureMap();
     } catch (error) {
+      devAuthEnabled = false;
+      devAuthProfiles = [];
+      renderDevAuthActions();
       el.mapStyleUrl.value = defaultMapStyle;
       ensureMap();
       C.showMessage(el.authMessage, error.message, "error");
     }
+  }
+
+  function renderDevAuthActions() {
+    if (!el.devAuthPanel || !el.devAuthActions) {
+      return;
+    }
+    if (!devAuthEnabled) {
+      el.devAuthPanel.hidden = true;
+      el.devAuthActions.innerHTML = "";
+      return;
+    }
+
+    const adminProfiles = devAuthProfiles
+      .map(function (profile, index) {
+        return { profile: profile, index: index };
+      })
+      .filter(function (entry) {
+        return entry.profile && adminAllowedRoles.indexOf(entry.profile.role) >= 0;
+      });
+    if (!adminProfiles.length) {
+      el.devAuthPanel.hidden = true;
+      el.devAuthActions.innerHTML = "";
+      return;
+    }
+
+    const buttons = adminProfiles
+      .map(function (entry) {
+        const profile = entry.profile;
+        const label = C.escapeHtml(profile.label || (profile.role + " " + profile.user_id));
+        return (
+          '<button class="btn btn-accent" type="button" data-dev-auth-index="' +
+          entry.index +
+          '">' +
+          label +
+          "</button>"
+        );
+      })
+      .join("");
+
+    el.devAuthPanel.hidden = false;
+    el.devAuthActions.innerHTML =
+      buttons +
+      '<button class="btn btn-ghost" type="button" data-dev-auth-logout="1">Exit Dev Session</button>';
+  }
+
+  async function restoreDevAuthSession() {
+    if (!devAuthEnabled) {
+      devSessionClaims = null;
+      return;
+    }
+    try {
+      const session = await C.getDevAuthSession(apiBase);
+      if (session && session.active && session.user) {
+        devSessionClaims = _claimsFromDevUser(session.user);
+        token = C.setStoredToken(storageKey, "");
+        el.token.value = token;
+        renderClaims();
+      }
+    } catch (error) {
+      // Leave normal token auth available when dev session lookup fails.
+    }
+  }
+
+  async function loginDevAuthProfile(index) {
+    const profile = devAuthProfiles[index];
+    if (!profile) {
+      return;
+    }
+    const result = await C.loginDevAuthSession(apiBase, {
+      role: profile.role,
+      user_id: profile.user_id,
+      org_id: profile.org_id,
+      email: profile.email || null,
+    });
+    devSessionClaims = _claimsFromDevUser((result && result.user) || profile);
+    token = C.setStoredToken(storageKey, "");
+    el.token.value = token;
+    renderClaims();
+    C.showMessage(el.authMessage, "Dev session ready for " + (profile.label || profile.user_id) + ".", "success");
+  }
+
+  async function logoutDevAuthSession(silent) {
+    if (devAuthEnabled) {
+      try {
+        await C.logoutDevAuthSession(apiBase);
+      } catch (error) {
+        // Keep UI usable even if logout endpoint is unavailable.
+      }
+    }
+    devSessionClaims = null;
+    renderClaims();
+    if (!silent) {
+      C.showMessage(el.authMessage, "Dev session cleared.", "success");
+    }
+  }
+
+  async function onDevAuthActionClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    if (target.getAttribute("data-dev-auth-logout") === "1") {
+      await logoutDevAuthSession();
+      return;
+    }
+
+    const rawIndex = target.getAttribute("data-dev-auth-index");
+    if (rawIndex === null) {
+      return;
+    }
+    const index = Number.parseInt(rawIndex, 10);
+    if (!Number.isFinite(index) || index < 0) {
+      return;
+    }
+    await loginDevAuthProfile(index);
   }
 
   function normalizeCreatePayload(formData) {
@@ -469,14 +757,17 @@
   function renderOrders(orders) {
     lastOrders = orders || [];
     _pruneSelectionToVisibleOrders();
+    updateOrderStats(lastOrders);
     if (!lastOrders.length) {
-      el.ordersBody.innerHTML = "<tr><td colspan=\"8\">No orders available.</td></tr>";
+      el.ordersBody.innerHTML = "<tr><td colspan=\"6\">No orders available.</td></tr>";
       el.ordersMobile.innerHTML = "<p class=\"panel-help\">No orders available.</p>";
       return;
     }
 
     const rows = lastOrders.map(function (order) {
       const isSelected = selectedOrderIds.has(order.id);
+      const assignLabel = order.assigned_to ? "Reassign" : "Assign";
+      const currentStatusClass = statusClass(order.status);
       const statusOptions = C.STATUS_VALUES.map(function (statusValue) {
         const selected = statusValue === order.status ? "selected" : "";
         return "<option " + selected + " value=\"" + statusValue + "\">" + statusValue + "</option>";
@@ -490,33 +781,30 @@
         (isSelected ? "checked" : "") +
         "></td>" +
         "<td>" +
-        orderCell(order) +
-        "</td>" +
-        "<td>" +
         C.escapeHtml(order.customer_name) +
         "<br><small>Ref #" +
         C.escapeHtml(order.reference_number || "-") +
-        "</small></td>" +
-        "<td><small>Pick Up: " +
+        "</small><br>" +
+        orderCell(order) +
+        "</td>" +
+        "<td><small>Pick Up</small><br>" +
         C.escapeHtml(order.pick_up_address || "-") +
-        "</small><br><small>Delivery: " +
+        "<br><small>Delivery</small><br>" +
         C.escapeHtml(order.delivery || "-") +
-        "</small><br><small>Dim: " +
+        "<br><small>Dim: " +
         C.escapeHtml(order.dimensions || "-") +
         " | Wt: " +
         C.escapeHtml(order.weight || "-") +
-        "</small><br><small>Window: " +
+        "</small></td>" +
+        "<td><small>" +
         C.escapeHtml(C.formatTimestamp(order.time_window_start)) +
         " -> " +
         C.escapeHtml(C.formatTimestamp(order.time_window_end)) +
         "</small></td>" +
         "<td>" +
-        C.escapeHtml(order.status) +
-        "</td>" +
-        "<td>" +
-        C.escapeHtml(order.assigned_to || "-") +
-        "</td>" +
-        "<td>" +
+        "<small>Current</small><br>" +
+        C.escapeHtml(order.assigned_to || "Unassigned") +
+        "<div class=\"mobile-order-actions\">" +
         "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
         C.escapeHtml(order.id) +
         "\" placeholder=\"driver sub\" value=\"" +
@@ -525,12 +813,20 @@
         "<div class=\"actions-stack\">" +
         "<button class=\"btn btn-primary\" data-action=\"assign\" data-order-id=\"" +
         C.escapeHtml(order.id) +
-        "\">Assign</button>" +
+        "\">" +
+        assignLabel +
+        "</button>" +
         "<button class=\"btn btn-ghost\" data-action=\"unassign\" data-order-id=\"" +
         C.escapeHtml(order.id) +
         "\">Unassign</button>" +
-        "</div></td>" +
+        "</div></div></td>" +
         "<td>" +
+        "<span class=\"table-status " +
+        currentStatusClass +
+        "\">" +
+        C.escapeHtml(order.status) +
+        "</span>" +
+        "<div class=\"mobile-order-actions\">" +
         "<select class=\"compact-input\" data-status-id=\"" +
         C.escapeHtml(order.id) +
         "\">" +
@@ -539,7 +835,7 @@
         "<button class=\"btn btn-accent\" data-action=\"status\" data-order-id=\"" +
         C.escapeHtml(order.id) +
         "\">Update</button>" +
-        "</td>" +
+        "</div></td>" +
         "</tr>"
       );
     });
@@ -547,6 +843,8 @@
 
     const mobileCards = lastOrders.map(function (order) {
       const isSelected = selectedOrderIds.has(order.id);
+      const assignLabel = order.assigned_to ? "Reassign" : "Assign";
+      const currentStatusClass = statusClass(order.status);
       const statusOptions = C.STATUS_VALUES.map(function (statusValue) {
         const selected = statusValue === order.status ? "selected" : "";
         return "<option " + selected + " value=\"" + statusValue + "\">" + statusValue + "</option>";
@@ -577,8 +875,11 @@
         C.escapeHtml(C.formatTimestamp(order.time_window_start)) +
         " -> " +
         C.escapeHtml(C.formatTimestamp(order.time_window_end)) +
-        "<br>Status: " +
+        "<br>Status: <span class=\"table-status " +
+        currentStatusClass +
+        "\">" +
         C.escapeHtml(order.status) +
+        "</span>" +
         "<br>Assigned: " +
         C.escapeHtml(order.assigned_to || "-") +
         "</p>" +
@@ -591,7 +892,9 @@
         "<div class=\"actions-stack\">" +
         "<button class=\"btn btn-primary\" data-action=\"assign\" data-order-id=\"" +
         C.escapeHtml(order.id) +
-        "\">Assign</button>" +
+        "\">" +
+        assignLabel +
+        "</button>" +
         "<button class=\"btn btn-ghost\" data-action=\"unassign\" data-order-id=\"" +
         C.escapeHtml(order.id) +
         "\">Unassign</button>" +
@@ -622,6 +925,7 @@
       const orders = await C.requestJson(apiBase, _ordersPathFromFilters(), { token });
       const filteredOrders = _filterOrdersBySearch(orders || []);
       renderOrders(filteredOrders || []);
+      setLastSyncStamp();
       C.showMessage(
         el.ordersMessage,
         "Loaded " + (filteredOrders || []).length + " orders.",
@@ -858,16 +1162,77 @@
 
   async function refreshDrivers() {
     if (!requireAuthorized(el.driversMessage)) {
+      updateActiveDriverStat(0);
       return;
     }
     try {
       const drivers = await C.requestJson(apiBase, "/drivers?active_minutes=120", { token });
       renderDriverList(drivers || []);
       renderDriverMarkers(drivers || []);
+      updateActiveDriverStat((drivers || []).length);
+      setLastSyncStamp();
       C.showMessage(el.driversMessage, "Loaded " + (drivers || []).length + " active drivers.", "success");
     } catch (error) {
+      updateActiveDriverStat(0);
       C.showMessage(el.driversMessage, error.message, "error");
     }
+  }
+
+  function renderDispatchSummary(summary) {
+    if (!summary || typeof summary !== "object") {
+      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+      return;
+    }
+    const statuses = summary.by_status && typeof summary.by_status === "object"
+      ? Object.entries(summary.by_status)
+      : [];
+    const activeDrivers = Array.isArray(summary.active_driver_ids) ? summary.active_driver_ids : [];
+    const statusMarkup = statuses.length
+      ? statuses
+          .map(function (entry) {
+            return (
+              "<span class=\"chip\">" +
+              C.escapeHtml(entry[0]) +
+              ": " +
+              C.escapeHtml(String(entry[1])) +
+              "</span>"
+            );
+          })
+          .join(" ")
+      : "<span class=\"panel-help\">No status counts available.</span>";
+
+    const driversMarkup = activeDrivers.length
+      ? activeDrivers.map(function (driverId) {
+          return "<span class=\"chip\">" + C.escapeHtml(driverId) + "</span>";
+        }).join(" ")
+      : "<span class=\"panel-help\">No active drivers in this window.</span>";
+
+    el.dispatchSummaryView.innerHTML =
+      "<div class=\"metric-grid\">" +
+      "<div class=\"metric-item\"><span>Total Orders</span><strong>" +
+      C.escapeHtml(String(summary.total_orders || 0)) +
+      "</strong></div>" +
+      "<div class=\"metric-item\"><span>Assigned</span><strong>" +
+      C.escapeHtml(String(summary.assigned_orders || 0)) +
+      "</strong></div>" +
+      "<div class=\"metric-item\"><span>Unassigned</span><strong>" +
+      C.escapeHtml(String(summary.unassigned_orders || 0)) +
+      "</strong></div>" +
+      "<div class=\"metric-item\"><span>Active Drivers</span><strong>" +
+      C.escapeHtml(String(summary.active_drivers || 0)) +
+      "</strong></div>" +
+      "</div>" +
+      "<p class=\"panel-help\">Generated " +
+      C.escapeHtml(C.formatTimestamp(summary.generated_at)) +
+      " for org " +
+      C.escapeHtml(summary.org_id || "-") +
+      ".</p>" +
+      "<div><strong>Status Breakdown</strong><div class=\"row\">" +
+      statusMarkup +
+      "</div></div>" +
+      "<div style=\"margin-top:0.6rem;\"><strong>Active Driver IDs</strong><div class=\"row\">" +
+      driversMarkup +
+      "</div></div>";
   }
 
   async function refreshDispatchSummary(event) {
@@ -875,7 +1240,7 @@
       event.preventDefault();
     }
     if (!requireAuthorized(el.dispatchSummaryMessage)) {
-      el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
+      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
       return;
     }
 
@@ -889,41 +1254,155 @@
         "/reports/dispatch-summary?active_minutes=" + encodeURIComponent(String(activeMinutes)),
         { token }
       );
-      el.dispatchSummaryView.textContent = JSON.stringify(summary, null, 2);
+      renderDispatchSummary(summary);
+      setLastSyncStamp();
       C.showMessage(el.dispatchSummaryMessage, "Dispatch summary loaded.", "success");
     } catch (error) {
       C.showMessage(el.dispatchSummaryMessage, error.message, "error");
     }
   }
 
+  function _renderDetailsPreview(details) {
+    if (!details || typeof details !== "object") {
+      return "No additional details.";
+    }
+    const entries = Object.entries(details).slice(0, 4);
+    if (!entries.length) {
+      return "No additional details.";
+    }
+    return entries
+      .map(function (entry) {
+        return C.escapeHtml(entry[0]) + ": " + C.escapeHtml(typeof entry[1] === "string" ? entry[1] : JSON.stringify(entry[1]));
+      })
+      .join(" | ");
+  }
+
+  function renderAuditLogs(events) {
+    if (!Array.isArray(events) || !events.length) {
+      el.auditLogsView.innerHTML = "No audit logs loaded.";
+      return;
+    }
+    const listMarkup = events.map(function (event) {
+      return (
+        "<li class=\"audit-item\">" +
+        "<div class=\"audit-item-head\">" +
+        "<strong>" +
+        C.escapeHtml(event.action || "-") +
+        "</strong>" +
+        "<small>" +
+        C.escapeHtml(C.formatTimestamp(event.created_at)) +
+        "</small>" +
+        "</div>" +
+        "<p>Actor: " +
+        C.escapeHtml(event.actor_id || "system") +
+        " | Target: " +
+        C.escapeHtml(event.target_type || "-") +
+        " " +
+        C.escapeHtml(event.target_id || "") +
+        "</p>" +
+        "<p>" +
+        _renderDetailsPreview(event.details) +
+        "</p>" +
+        "</li>"
+      );
+    }).join("");
+    el.auditLogsView.innerHTML = "<ul class=\"audit-list\">" + listMarkup + "</ul>";
+  }
+
   async function refreshAuditLogs() {
     if (!requireAuthorized(el.auditMessage)) {
-      el.auditLogsView.textContent = "No audit logs loaded.";
+      el.auditLogsView.innerHTML = "No audit logs loaded.";
       return;
     }
     try {
       const events = await C.requestJson(apiBase, _auditLogsPathFromFilters(), { token });
-      el.auditLogsView.textContent = JSON.stringify(events || [], null, 2);
+      renderAuditLogs(events || []);
+      setLastSyncStamp();
       C.showMessage(el.auditMessage, "Loaded " + (events || []).length + " audit event(s).", "success");
     } catch (error) {
       C.showMessage(el.auditMessage, error.message, "error");
     }
   }
 
+  function _pillFromBoolean(value) {
+    return value
+      ? "<span class=\"pill pill-yes\">Enabled</span>"
+      : "<span class=\"pill pill-no\">Disabled</span>";
+  }
+
   function renderBillingSummary(summary) {
-    if (!summary) {
-      el.billingSummary.textContent = "No billing summary loaded.";
+    if (!summary || typeof summary !== "object") {
+      el.billingSummary.innerHTML = "No billing summary loaded.";
       return;
     }
-    el.billingSummary.textContent = JSON.stringify(summary, null, 2);
+    const dispatcher = summary.dispatcher_seats || {};
+    const driver = summary.driver_seats || {};
+    el.billingSummary.innerHTML =
+      "<div class=\"panel-title-row\"><h3>Seat Summary</h3></div>" +
+      "<div class=\"metric-grid\">" +
+      "<div class=\"metric-item\"><span>Dispatcher Used</span><strong>" +
+      C.escapeHtml(String(dispatcher.used || 0)) +
+      " / " +
+      C.escapeHtml(String(dispatcher.total || 0)) +
+      "</strong></div>" +
+      "<div class=\"metric-item\"><span>Dispatcher Pending</span><strong>" +
+      C.escapeHtml(String(dispatcher.pending || 0)) +
+      "</strong></div>" +
+      "<div class=\"metric-item\"><span>Driver Used</span><strong>" +
+      C.escapeHtml(String(driver.used || 0)) +
+      " / " +
+      C.escapeHtml(String(driver.total || 0)) +
+      "</strong></div>" +
+      "<div class=\"metric-item\"><span>Driver Pending</span><strong>" +
+      C.escapeHtml(String(driver.pending || 0)) +
+      "</strong></div>" +
+      "</div>" +
+      "<div class=\"kv-grid\">" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Plan</span><span class=\"kv-value\">" +
+      C.escapeHtml(summary.plan_name || "-") +
+      "</span></div>" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Status</span><span class=\"kv-value\">" +
+      C.escapeHtml(summary.status || "-") +
+      "</span></div>" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Stripe Customer</span><span class=\"kv-value\">" +
+      C.escapeHtml(summary.stripe_customer_id || "-") +
+      "</span></div>" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Stripe Subscription</span><span class=\"kv-value\">" +
+      C.escapeHtml(summary.stripe_subscription_id || "-") +
+      "</span></div>" +
+      "</div>" +
+      "<p class=\"panel-help\">Updated " +
+      C.escapeHtml(C.formatTimestamp(summary.updated_at)) +
+      ".</p>";
   }
 
   function renderBillingStatus(statusPayload) {
-    if (!statusPayload) {
-      el.billingStatus.textContent = "No billing provider status loaded.";
+    if (!statusPayload || typeof statusPayload !== "object") {
+      el.billingStatus.innerHTML = "No billing provider status loaded.";
       return;
     }
-    el.billingStatus.textContent = JSON.stringify(statusPayload, null, 2);
+    el.billingStatus.innerHTML =
+      "<div class=\"panel-title-row\"><h3>Provider Status</h3></div>" +
+      "<div class=\"kv-grid\">" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Stripe Mode</span><span class=\"kv-value\">" +
+      C.escapeHtml(statusPayload.stripe_mode || "-") +
+      "</span></div>" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Checkout</span><span class=\"kv-value\">" +
+      _pillFromBoolean(!!statusPayload.checkout_enabled) +
+      "</span></div>" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Webhook Verification</span><span class=\"kv-value\">" +
+      _pillFromBoolean(!!statusPayload.webhook_signature_verification_enabled) +
+      "</span></div>" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Secret Key</span><span class=\"kv-value\">" +
+      _pillFromBoolean(!!statusPayload.stripe_secret_key_configured) +
+      "</span></div>" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Dispatcher Price</span><span class=\"kv-value\">" +
+      _pillFromBoolean(!!statusPayload.stripe_dispatcher_price_id_configured) +
+      "</span></div>" +
+      "<div class=\"kv-item\"><span class=\"kv-label\">Driver Price</span><span class=\"kv-value\">" +
+      _pillFromBoolean(!!statusPayload.stripe_driver_price_id_configured) +
+      "</span></div>" +
+      "</div>";
   }
 
   function renderBillingInvitations(invitations) {
@@ -989,6 +1468,7 @@
       ]);
       renderBillingStatus(statusPayload);
       renderBillingSummary(summary);
+      setLastSyncStamp();
       C.showMessage(el.billingMessage, "Loaded billing summary.", "success");
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
@@ -1003,6 +1483,7 @@
     try {
       const invitations = await C.requestJson(apiBase, "/billing/invitations", { token });
       renderBillingInvitations(invitations || []);
+      setLastSyncStamp();
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -1034,6 +1515,7 @@
         json: payload,
       });
       renderBillingSummary(response.summary);
+      setLastSyncStamp();
       C.showMessage(el.billingMessage, "Seat limits updated.", "success");
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
@@ -1074,6 +1556,7 @@
       });
       if (response.mode === "subscription_update" && response.summary) {
         renderBillingSummary(response.summary);
+        setLastSyncStamp();
         C.showMessage(el.billingMessage, "Stripe subscription updated.", "success");
         return;
       }
@@ -1139,9 +1622,7 @@
       });
       C.showMessage(el.billingMessage, "Invitation created: " + invitation.invitation_id, "success");
       el.billingInviteForm.reset();
-      await refreshBillingSummary();
-      await refreshBillingInvitations();
-      await refreshAssignableDrivers();
+      await Promise.all([refreshBillingSummary(), refreshBillingInvitations(), refreshAssignableDrivers()]);
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -1165,9 +1646,7 @@
       });
       C.showMessage(el.billingMessage, "Invitation activated for " + (userRecord.user_id || "user"), "success");
       el.billingActivateForm.reset();
-      await refreshBillingSummary();
-      await refreshBillingInvitations();
-      await refreshAssignableDrivers();
+      await Promise.all([refreshBillingSummary(), refreshBillingInvitations(), refreshAssignableDrivers()]);
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
@@ -1201,12 +1680,61 @@
         });
         C.showMessage(el.billingMessage, "Invitation cancelled: " + invitationId, "success");
       }
-      await refreshBillingSummary();
-      await refreshBillingInvitations();
-      await refreshAssignableDrivers();
+      await Promise.all([refreshBillingSummary(), refreshBillingInvitations(), refreshAssignableDrivers()]);
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
     }
+  }
+
+  function renderRouteResult(result) {
+    if (!result || typeof result !== "object") {
+      el.routeResult.innerHTML = "No route computed yet.";
+      return;
+    }
+    const stops = Array.isArray(result.ordered_stops) ? result.ordered_stops : [];
+    const stopMarkup = stops.length
+      ? stops.map(function (stop) {
+          return (
+            "<li class=\"route-stop-item\">" +
+            "<div class=\"route-stop-head\">" +
+            "<strong>Stop " +
+            C.escapeHtml(String(stop.sequence || 0)) +
+            "</strong>" +
+            "<small>Order " +
+            C.escapeHtml(stop.order_id || "-") +
+            "</small>" +
+            "</div>" +
+            "<p>" +
+            C.escapeHtml(stop.address || (stop.lat + ", " + stop.lng)) +
+            "</p>" +
+            "<p>Leg: " +
+            C.escapeHtml(formatDistanceMiles(stop.distance_from_previous_meters)) +
+            " / " +
+            C.escapeHtml(formatDurationMinutes(stop.duration_from_previous_seconds)) +
+            "</p>" +
+            "</li>"
+          );
+        }).join("")
+      : "<li class=\"route-stop-item\"><p>No stops returned by optimizer.</p></li>";
+
+    el.routeResult.innerHTML =
+      "<div class=\"metric-grid\">" +
+      "<div class=\"metric-item\"><span>Stops</span><strong>" +
+      C.escapeHtml(String(stops.length)) +
+      "</strong></div>" +
+      "<div class=\"metric-item\"><span>Total Distance</span><strong>" +
+      C.escapeHtml(formatDistanceMiles(result.total_distance_meters)) +
+      "</strong></div>" +
+      "<div class=\"metric-item\"><span>Total Duration</span><strong>" +
+      C.escapeHtml(formatDurationMinutes(result.total_duration_seconds)) +
+      "</strong></div>" +
+      "<div class=\"metric-item\"><span>Matrix Source</span><strong>" +
+      C.escapeHtml(result.matrix_source || "-") +
+      "</strong></div>" +
+      "</div>" +
+      "<ul class=\"route-stop-list\">" +
+      stopMarkup +
+      "</ul>";
   }
 
   async function optimizeRoute(event) {
@@ -1244,8 +1772,10 @@
         token,
         json: payload,
       });
-      el.routeResult.textContent = JSON.stringify(result, null, 2);
-      C.showMessage(el.routeMessage, "Route optimized with " + result.ordered_stops.length + " stops.", "success");
+      const stopCount = Array.isArray(result && result.ordered_stops) ? result.ordered_stops.length : 0;
+      renderRouteResult(result);
+      setLastSyncStamp();
+      C.showMessage(el.routeMessage, "Route optimized with " + stopCount + " stops.", "success");
     } catch (error) {
       C.showMessage(el.routeMessage, error.message, "error");
     }
@@ -1317,6 +1847,7 @@
   async function finishHostedLoginCallback() {
     const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
     if (result.status === "success") {
+      await logoutDevAuthSession(true);
       setToken(result.token || "");
       C.showMessage(el.authMessage, "Hosted UI login complete.", "success");
       return;
@@ -1326,20 +1857,26 @@
     }
   }
 
-  function launchHostedLogout() {
+  async function launchHostedLogout() {
     const logoutUri = window.location.origin + window.location.pathname;
     const logoutUrl = C.buildHostedLogoutUrl({
       domain: el.cognitoDomain.value.trim(),
       clientId: el.cognitoClientId.value.trim(),
       logoutUri,
     });
+    await logoutDevAuthSession(true);
     setToken("");
     renderOrders([]);
     renderDriverList([]);
+    updateOrderStats([]);
+    updateActiveDriverStat(0);
     renderBillingStatus(null);
     renderBillingSummary(null);
     renderBillingInvitations([]);
-    C.showMessage(el.authMessage, "Token cleared.", "success");
+    el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+    el.auditLogsView.innerHTML = "No audit logs loaded.";
+    el.routeResult.innerHTML = "No route computed yet.";
+    C.showMessage(el.authMessage, "Session cleared.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
     }
@@ -1349,6 +1886,7 @@
     el.token.value = token;
     setInteractiveState(false);
     setBillingInteractiveState(false);
+    initWorkspaceTabs();
     renderClaims();
     const params = new URLSearchParams(window.location.search);
     const billingState = params.get("billing");
@@ -1360,25 +1898,27 @@
     if (billingState) {
       params.delete("billing");
       const nextQuery = params.toString();
-      const nextUrl = window.location.pathname + (nextQuery ? "?" + nextQuery : "");
+      const nextUrl = window.location.pathname + (nextQuery ? "?" + nextQuery : "") + (window.location.hash || "");
       history.replaceState(null, "", nextUrl);
     }
     registerServiceWorker();
     await loadUiConfig();
+    await restoreDevAuthSession();
     await finishHostedLoginCallback();
     _writeOrderFilters();
     _writeAuditFilters();
     _renderSelectionCount();
     _syncSelectAllCheckbox();
     if (isAuthorizedRole) {
-      await refreshAssignableDrivers();
-      await refreshOrders();
-      await refreshDrivers();
-      await refreshDispatchSummary();
-      await refreshAuditLogs();
+      await Promise.all([
+        refreshAssignableDrivers(),
+        refreshOrders(),
+        refreshDrivers(),
+        refreshDispatchSummary(),
+        refreshAuditLogs(),
+      ]);
       if (isAdminRole) {
-        await refreshBillingSummary();
-        await refreshBillingInvitations();
+        await Promise.all([refreshBillingSummary(), refreshBillingInvitations()]);
       } else {
         renderBillingStatus(null);
         renderBillingSummary(null);
@@ -1387,27 +1927,45 @@
     } else {
       renderOrders([]);
       renderDriverList([]);
+      updateActiveDriverStat(0);
       renderBillingStatus(null);
       renderBillingSummary(null);
       renderBillingInvitations([]);
-      el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
+      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+      el.auditLogsView.innerHTML = "No audit logs loaded.";
+      el.routeResult.innerHTML = "No route computed yet.";
     }
   }
 
   el.saveToken.addEventListener("click", function () {
-    setToken(el.token.value);
-    C.showMessage(el.authMessage, "Token saved.", "success");
-    if (isAuthorizedRole) {
-      refreshAssignableDrivers().catch(function () {
-        renderDriverOptions([]);
+    logoutDevAuthSession(true)
+      .then(function () {
+        setToken(el.token.value);
+        C.showMessage(el.authMessage, "Token saved.", "success");
+        if (isAuthorizedRole) {
+          refreshAssignableDrivers().catch(function () {
+            renderDriverOptions([]);
+          });
+        }
+      })
+      .catch(function (error) {
+        C.showMessage(el.authMessage, error.message, "error");
       });
-    }
   });
   el.clearToken.addEventListener("click", function () {
-    setToken("");
-    renderDriverOptions([]);
-    el.dispatchSummaryView.textContent = "No dispatch summary loaded.";
-    C.showMessage(el.authMessage, "Token cleared.", "success");
+    logoutDevAuthSession(true)
+      .then(function () {
+        setToken("");
+        renderDriverOptions([]);
+        el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+        el.routeResult.innerHTML = "No route computed yet.";
+        updateOrderStats([]);
+        updateActiveDriverStat(0);
+        C.showMessage(el.authMessage, "Session cleared.", "success");
+      })
+      .catch(function (error) {
+        C.showMessage(el.authMessage, error.message, "error");
+      });
   });
   el.createForm.addEventListener("submit", createOrder);
   el.refreshOrders.addEventListener("click", refreshOrders);
@@ -1466,12 +2024,23 @@
   el.billingInviteForm.addEventListener("submit", createBillingInvitation);
   el.billingActivateForm.addEventListener("submit", activateBillingInvitation);
   el.billingInvitations.addEventListener("click", onInvitationActionClick);
+  if (el.devAuthActions) {
+    el.devAuthActions.addEventListener("click", function (event) {
+      onDevAuthActionClick(event).catch(function (error) {
+        C.showMessage(el.authMessage, error.message, "error");
+      });
+    });
+  }
   el.loginHostedUi.addEventListener("click", function () {
     launchHostedLogin().catch(function (error) {
       C.showMessage(el.authMessage, error.message, "error");
     });
   });
-  el.logoutHostedUi.addEventListener("click", launchHostedLogout);
+  el.logoutHostedUi.addEventListener("click", function () {
+    launchHostedLogout().catch(function (error) {
+      C.showMessage(el.authMessage, error.message, "error");
+    });
+  });
   el.mapStyleUrl.addEventListener("change", function () {
     if (map) {
       map.setStyle(el.mapStyleUrl.value || defaultMapStyle);

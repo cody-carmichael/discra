@@ -22,11 +22,16 @@
     cognitoClientId: document.getElementById("driver-cognito-client-id"),
     loginHostedUi: document.getElementById("driver-login-hosted-ui"),
     logoutHostedUi: document.getElementById("driver-logout-hosted-ui"),
+    devAuthPanel: document.getElementById("driver-dev-auth-panel"),
+    devAuthActions: document.getElementById("driver-dev-auth-actions"),
   };
 
   let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
   let locationTimer = null;
   let isAuthorizedRole = false;
+  let devAuthEnabled = false;
+  let devAuthProfiles = [];
+  let devSessionClaims = null;
 
   function claimsRoles(claims) {
     if (!claims) {
@@ -47,6 +52,27 @@
     return roles.some(function (role) {
       return driverAllowedRoles.indexOf(role) >= 0;
     });
+  }
+
+  function _claimsFromDevUser(user) {
+    if (!user || typeof user !== "object") {
+      return null;
+    }
+    const groups = Array.isArray(user.groups) ? user.groups : [];
+    return {
+      sub: user.sub || user.username || "",
+      username: user.username || user.sub || "",
+      email: user.email || null,
+      org_id: user.org_id || "",
+      "custom:org_id": user.org_id || "",
+      groups: groups,
+      "cognito:groups": groups,
+      _dev_session: true,
+    };
+  }
+
+  function _activeClaims() {
+    return devSessionClaims || C.decodeJwt(token);
   }
 
   function setInteractiveState(enabled) {
@@ -70,12 +96,12 @@
   }
 
   function requireAuthorized(messageElement) {
-    if (!token) {
-      C.showMessage(messageElement, "Set a JWT token first.", "error");
+    if (!token && !devSessionClaims) {
+      C.showMessage(messageElement, "Set a JWT token or start a dev test session first.", "error");
       return false;
     }
     if (!isAuthorizedRole) {
-      C.showMessage(messageElement, "Current token does not include Driver role.", "error");
+      C.showMessage(messageElement, "Current session does not include Driver role.", "error");
       return false;
     }
     return true;
@@ -83,12 +109,15 @@
 
   function setToken(nextToken) {
     token = C.setStoredToken(storageKey, nextToken);
+    if (token) {
+      devSessionClaims = null;
+    }
     el.token.value = token;
     renderClaims();
   }
 
   function renderClaims() {
-    const claims = C.decodeJwt(token);
+    const claims = _activeClaims();
     if (!claims) {
       el.authState.textContent = "No Token";
       el.authState.classList.add("status-idle");
@@ -98,13 +127,15 @@
       return;
     }
     const roles = C.tokenRoleSummary(claims);
-    el.authState.textContent = roles ? "Roles: " + roles : "Token Loaded";
+    const usingDevSession = !!claims._dev_session && !token;
+    el.authState.textContent = usingDevSession
+      ? (roles ? "Dev Session: " + roles : "Dev Session")
+      : (roles ? "Roles: " + roles : "Token Loaded");
     el.authState.classList.remove("status-idle");
     el.authState.classList.add("status-live");
     el.claims.textContent = JSON.stringify(claims, null, 2);
     evaluateAuthorization(claims);
   }
-
   async function loadUiConfig() {
     try {
       const config = await C.requestJson(apiBase, "/ui/config");
@@ -114,11 +145,132 @@
       if (config && config.cognito_client_id) {
         el.cognitoClientId.value = config.cognito_client_id;
       }
+      devAuthEnabled = !!(config && config.dev_auth_enabled);
+      devAuthProfiles = Array.isArray(config && config.dev_auth_profiles) ? config.dev_auth_profiles : [];
+      renderDevAuthActions();
     } catch (error) {
+      devAuthEnabled = false;
+      devAuthProfiles = [];
+      renderDevAuthActions();
       C.showMessage(el.authMessage, error.message, "error");
     }
   }
 
+  function renderDevAuthActions() {
+    if (!el.devAuthPanel || !el.devAuthActions) {
+      return;
+    }
+    if (!devAuthEnabled) {
+      el.devAuthPanel.hidden = true;
+      el.devAuthActions.innerHTML = "";
+      return;
+    }
+
+    const driverProfiles = devAuthProfiles
+      .map(function (profile, index) {
+        return { profile: profile, index: index };
+      })
+      .filter(function (entry) {
+        return entry.profile && driverAllowedRoles.indexOf(entry.profile.role) >= 0;
+      });
+    if (!driverProfiles.length) {
+      el.devAuthPanel.hidden = true;
+      el.devAuthActions.innerHTML = "";
+      return;
+    }
+
+    const buttons = driverProfiles
+      .map(function (entry) {
+        const profile = entry.profile;
+        const label = C.escapeHtml(profile.label || (profile.role + " " + profile.user_id));
+        return (
+          '<button class="btn btn-accent" type="button" data-dev-auth-index="' +
+          entry.index +
+          '">' +
+          label +
+          "</button>"
+        );
+      })
+      .join("");
+
+    el.devAuthPanel.hidden = false;
+    el.devAuthActions.innerHTML =
+      buttons +
+      '<button class="btn btn-ghost" type="button" data-dev-auth-logout="1">Exit Dev Session</button>';
+  }
+
+  async function restoreDevAuthSession() {
+    if (!devAuthEnabled) {
+      devSessionClaims = null;
+      return;
+    }
+    try {
+      const session = await C.getDevAuthSession(apiBase);
+      if (session && session.active && session.user) {
+        devSessionClaims = _claimsFromDevUser(session.user);
+        token = C.setStoredToken(storageKey, "");
+        el.token.value = token;
+        renderClaims();
+      }
+    } catch (error) {
+      // Leave normal token auth available when dev session lookup fails.
+    }
+  }
+
+  async function loginDevAuthProfile(index) {
+    const profile = devAuthProfiles[index];
+    if (!profile) {
+      return;
+    }
+    const result = await C.loginDevAuthSession(apiBase, {
+      role: profile.role,
+      user_id: profile.user_id,
+      org_id: profile.org_id,
+      email: profile.email || null,
+    });
+    devSessionClaims = _claimsFromDevUser((result && result.user) || profile);
+    token = C.setStoredToken(storageKey, "");
+    el.token.value = token;
+    renderClaims();
+    C.showMessage(el.authMessage, "Dev session ready for " + (profile.label || profile.user_id) + ".", "success");
+  }
+
+  async function logoutDevAuthSession(silent) {
+    if (devAuthEnabled) {
+      try {
+        await C.logoutDevAuthSession(apiBase);
+      } catch (error) {
+        // Keep UI usable even if logout endpoint is unavailable.
+      }
+    }
+    devSessionClaims = null;
+    renderClaims();
+    if (!silent) {
+      C.showMessage(el.authMessage, "Dev session cleared.", "success");
+    }
+  }
+
+  async function onDevAuthActionClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    if (target.getAttribute("data-dev-auth-logout") === "1") {
+      await logoutDevAuthSession();
+      return;
+    }
+
+    const rawIndex = target.getAttribute("data-dev-auth-index");
+    if (rawIndex === null) {
+      return;
+    }
+    const index = Number.parseInt(rawIndex, 10);
+    if (!Number.isFinite(index) || index < 0) {
+      return;
+    }
+    await loginDevAuthProfile(index);
+  }
   function setupSignaturePad(canvas) {
     if (!canvas || canvas.dataset.initialized === "1") {
       return;
@@ -230,6 +382,7 @@
   }
 
   function orderCardMarkup(order) {
+    const statusClass = "status-" + String(order.status || "").toLowerCase();
     return (
       "<article class=\"order-card\" data-order-id=\"" +
       C.escapeHtml(order.id) +
@@ -238,24 +391,29 @@
       C.escapeHtml(order.customer_name) +
       "</h3>" +
       "<p class=\"order-meta\">" +
+      "Order: " +
+      C.escapeHtml(order.id) +
+      "<br>Reference: " +
+      C.escapeHtml(order.reference_number || "-") +
+      "<br>Status: <span class=\"table-status " +
+      C.escapeHtml(statusClass) +
+      "\">" +
+      C.escapeHtml(order.status) +
+      "</span>" +
+      "</p>" +
+      "<p class=\"order-meta\">" +
       "Pick Up: " +
       C.escapeHtml(order.pick_up_address || "-") +
       "<br>Delivery: " +
       C.escapeHtml(order.delivery || "-") +
-      "<br>Ref #: " +
-      C.escapeHtml(order.reference_number || "-") +
       "<br>Dimensions: " +
       C.escapeHtml(order.dimensions || "-") +
       "<br>Weight: " +
       C.escapeHtml(order.weight || "-") +
-      "<br>Order: " +
-      C.escapeHtml(order.id) +
-      "<br>Status: <span class=\"chip\">" +
-      C.escapeHtml(order.status) +
-      "</span></p>" +
+      "</p>" +
       "<div class=\"status-row\">" +
-      "<button class=\"btn btn-ghost\" data-action=\"status\" data-status=\"PickedUp\">Picked Up</button>" +
-      "<button class=\"btn btn-ghost\" data-action=\"status\" data-status=\"EnRoute\">En Route</button>" +
+      "<button class=\"btn btn-primary\" data-action=\"status\" data-status=\"PickedUp\">Picked Up</button>" +
+      "<button class=\"btn btn-accent\" data-action=\"status\" data-status=\"EnRoute\">En Route</button>" +
       "<button class=\"btn btn-ghost\" data-action=\"status\" data-status=\"Failed\">Mark Failed</button>" +
       "</div>" +
       "<label class=\"field\"><span>Delivery Photo</span><input class=\"pod-photo\" type=\"file\" accept=\"image/*\"></label>" +
@@ -491,6 +649,7 @@
   async function finishHostedLoginCallback() {
     const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
     if (result.status === "success") {
+      await logoutDevAuthSession(true);
       setToken(result.token || "");
       C.showMessage(el.authMessage, "Hosted UI login complete.", "success");
       return;
@@ -500,7 +659,7 @@
     }
   }
 
-  function launchHostedLogout() {
+  async function launchHostedLogout() {
     const logoutUri = window.location.origin + window.location.pathname;
     const logoutUrl = C.buildHostedLogoutUrl({
       domain: el.cognitoDomain.value.trim(),
@@ -508,14 +667,14 @@
       logoutUri,
     });
     stopLocationShare();
+    await logoutDevAuthSession(true);
     setToken("");
     renderOrders([]);
-    C.showMessage(el.authMessage, "Token cleared.", "success");
+    C.showMessage(el.authMessage, "Session cleared.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
     }
   }
-
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) {
       return;
@@ -531,6 +690,7 @@
     renderClaims();
     registerServiceWorker();
     await loadUiConfig();
+    await restoreDevAuthSession();
     await finishHostedLoginCallback();
     if (isAuthorizedRole) {
       await refreshInbox();
@@ -538,26 +698,49 @@
       renderOrders([]);
     }
   }
-
   el.saveToken.addEventListener("click", function () {
-    setToken(el.token.value);
-    C.showMessage(el.authMessage, "Token saved.", "success");
+    logoutDevAuthSession(true)
+      .then(function () {
+        setToken(el.token.value);
+        C.showMessage(el.authMessage, "Token saved.", "success");
+      })
+      .catch(function (error) {
+        C.showMessage(el.authMessage, error.message, "error");
+      });
   });
   el.clearToken.addEventListener("click", function () {
-    setToken("");
-    C.showMessage(el.authMessage, "Token cleared.", "success");
+    logoutDevAuthSession(true)
+      .then(function () {
+        stopLocationShare();
+        setToken("");
+        renderOrders([]);
+        C.showMessage(el.authMessage, "Session cleared.", "success");
+      })
+      .catch(function (error) {
+        C.showMessage(el.authMessage, error.message, "error");
+      });
   });
   el.refreshInbox.addEventListener("click", refreshInbox);
   el.orders.addEventListener("click", onOrderActionClick);
   el.sendLocationNow.addEventListener("click", sendLocationUpdate);
   el.startLocationShare.addEventListener("click", startLocationShare);
   el.stopLocationShare.addEventListener("click", stopLocationShare);
+  if (el.devAuthActions) {
+    el.devAuthActions.addEventListener("click", function (event) {
+      onDevAuthActionClick(event).catch(function (error) {
+        C.showMessage(el.authMessage, error.message, "error");
+      });
+    });
+  }
   el.loginHostedUi.addEventListener("click", function () {
     launchHostedLogin().catch(function (error) {
       C.showMessage(el.authMessage, error.message, "error");
     });
   });
-  el.logoutHostedUi.addEventListener("click", launchHostedLogout);
-
+  el.logoutHostedUi.addEventListener("click", function () {
+    launchHostedLogout().catch(function (error) {
+      C.showMessage(el.authMessage, error.message, "error");
+    });
+  });
   bootstrap();
 })();

@@ -377,6 +377,7 @@ export default function App() {
   const [cognitoDomain, setCognitoDomain] = useState("");
   const [cognitoClientId, setCognitoClientId] = useState("");
   const [workspace, setWorkspace] = useState<Workspace>("admin");
+  const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Configure API base and JWT to begin.");
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -522,9 +523,22 @@ export default function App() {
     }
     return "";
   }, [apiBase, token, workspace, workspaceAllowed]);
+  useEffect(() => {
+    if (sessionValidationMessage) {
+      setSessionSettingsOpen(true);
+    }
+  }, [sessionValidationMessage]);
   const selectedDriver = useMemo(
     () => drivers.find((driver) => driver.driver_id === selectedDriverId) || null,
     [drivers, selectedDriverId]
+  );
+  const assignedOrdersCount = useMemo(
+    () => orders.filter((order) => !!order.assigned_to).length,
+    [orders]
+  );
+  const unassignedOrdersCount = useMemo(
+    () => Math.max(orders.length - assignedOrdersCount, 0),
+    [orders.length, assignedOrdersCount]
   );
   const selectedDriverOrders = useMemo(() => {
     if (!selectedDriverId) {
@@ -1315,62 +1329,13 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <Text style={styles.appTitle}>Discra Mobile</Text>
-        <Text style={styles.subtitle}>Admin/Dispatcher + Driver workflows</Text>
+        <Text style={styles.subtitle}>Role-focused dispatch and driver workflows</Text>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Session</Text>
-          <Text style={styles.label}>API Base URL</Text>
-          <TextInput
-            value={apiBase}
-            onChangeText={setApiBase}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.input}
-            placeholder={API_BASE_PLACEHOLDER}
-            placeholderTextColor="#6f8d98"
-          />
-          <Text style={styles.label}>Cognito Hosted UI Domain</Text>
-          <TextInput
-            value={cognitoDomain}
-            onChangeText={setCognitoDomain}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.input}
-            placeholder="your-domain.auth.us-east-1.amazoncognito.com"
-            placeholderTextColor="#6f8d98"
-          />
-          <Text style={styles.label}>Cognito App Client ID</Text>
-          <TextInput
-            value={cognitoClientId}
-            onChangeText={setCognitoClientId}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.input}
-            placeholder="app client id"
-            placeholderTextColor="#6f8d98"
-          />
-          <View style={styles.row}>
-            <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => startHostedLogin().catch(onError)}>
-              <Text style={styles.buttonText}>Login Hosted UI</Text>
-            </Pressable>
-            <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => logoutHostedLogin().catch(onError)}>
-              <Text style={styles.buttonGhostText}>Logout Hosted UI</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.label}>JWT Token</Text>
-          <TextInput
-            value={token}
-            onChangeText={setToken}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={[styles.input, styles.tokenInput]}
-            multiline
-            placeholder="Paste JWT or login via Hosted UI"
-            placeholderTextColor="#6f8d98"
-          />
+          <Text style={styles.sectionTitle}>Workspace</Text>
           <View style={styles.toggleRow}>
             <Pressable
               style={[styles.toggleButton, workspace === "admin" && styles.toggleButtonActive]}
@@ -1385,15 +1350,100 @@ export default function App() {
               <Text style={[styles.toggleText, workspace === "driver" && styles.toggleTextActive]}>Driver</Text>
             </Pressable>
           </View>
-          <Text style={styles.metaText}>Use `/dev/backend` API base from deployed SAM endpoint.</Text>
+          <Text style={styles.metaText}>
+            {workspace === "admin"
+              ? "Dispatch workspace active for operations and route planning."
+              : "Driver workspace active for live stops and POD."}
+          </Text>
           {tokenRoleText ? <Text style={styles.metaText}>Token roles: {tokenRoleText}</Text> : null}
           {queue.length ? <Text style={styles.metaText}>Queued driver events: {queue.length}</Text> : null}
+          <Pressable
+            style={[styles.button, styles.buttonGhost, styles.sessionToggle]}
+            onPress={() => setSessionSettingsOpen((current) => !current)}
+          >
+            <Text style={styles.buttonGhostText}>
+              {sessionSettingsOpen ? "Hide Session Settings" : "Show Session Settings"}
+            </Text>
+          </Pressable>
           {sessionValidationMessage ? <Text style={styles.validationText}>{sessionValidationMessage}</Text> : null}
+
+          {sessionSettingsOpen ? (
+            <>
+              <Text style={styles.label}>API Base URL</Text>
+              <TextInput
+                value={apiBase}
+                onChangeText={setApiBase}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+                placeholder={API_BASE_PLACEHOLDER}
+                placeholderTextColor="#758591"
+              />
+              <Text style={styles.label}>Cognito Hosted UI Domain</Text>
+              <TextInput
+                value={cognitoDomain}
+                onChangeText={setCognitoDomain}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+                placeholder="your-domain.auth.us-east-1.amazoncognito.com"
+                placeholderTextColor="#758591"
+              />
+              <Text style={styles.label}>Cognito App Client ID</Text>
+              <TextInput
+                value={cognitoClientId}
+                onChangeText={setCognitoClientId}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+                placeholder="app client id"
+                placeholderTextColor="#758591"
+              />
+              <View style={styles.row}>
+                <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => startHostedLogin().catch(onError)}>
+                  <Text style={styles.buttonText}>Login Hosted UI</Text>
+                </Pressable>
+                <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => logoutHostedLogin().catch(onError)}>
+                  <Text style={styles.buttonGhostText}>Logout Hosted UI</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.label}>JWT Token</Text>
+              <TextInput
+                value={token}
+                onChangeText={setToken}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={[styles.input, styles.tokenInput]}
+                multiline
+                placeholder="Paste JWT or login via Hosted UI"
+                placeholderTextColor="#758591"
+              />
+              <Text style={styles.metaText}>Use `/dev/backend` API base from deployed SAM endpoint.</Text>
+            </>
+          ) : null}
         </View>
 
         {workspace === "admin" ? (
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Dispatch + Driver Tracking</Text>
+            <View style={styles.metricRow}>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricLabel}>Orders</Text>
+                <Text style={styles.metricValue}>{orders.length}</Text>
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricLabel}>Assigned</Text>
+                <Text style={styles.metricValue}>{assignedOrdersCount}</Text>
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricLabel}>Unassigned</Text>
+                <Text style={styles.metricValue}>{unassignedOrdersCount}</Text>
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricLabel}>Drivers</Text>
+                <Text style={styles.metricValue}>{drivers.length}</Text>
+              </View>
+            </View>
             <View style={styles.row}>
               <Pressable
                 style={[styles.button, styles.buttonPrimary]}
@@ -1414,13 +1464,13 @@ export default function App() {
                   <Marker
                     key={`marker-${driver.driver_id}`}
                     coordinate={{ latitude: driver.lat, longitude: driver.lng }}
-                    pinColor={driver.driver_id === selectedDriverId ? "#ffb347" : "#27c8d7"}
+                    pinColor={driver.driver_id === selectedDriverId ? "#1c8f69" : "#0e7aa6"}
                     title={driver.driver_id}
                     description={formatTime(driver.timestamp)}
                   />
                 ))}
                 {selectedDriverRoutePoints.length > 1 ? (
-                  <Polyline coordinates={selectedDriverRoutePoints} strokeColor="#ffb347" strokeWidth={3} />
+                  <Polyline coordinates={selectedDriverRoutePoints} strokeColor="#1c8f69" strokeWidth={3} />
                 ) : null}
               </MapView>
             ) : (
@@ -1481,6 +1531,7 @@ export default function App() {
                 <Text style={styles.metaText}>No assigned stops for selected driver.</Text>
               )}
             </View>
+            <Text style={styles.sectionSubtitle}>Orders Queue</Text>
             {orders.map((order) => (
               <View key={order.id} style={styles.orderCard}>
                 <Text style={styles.orderTitle}>{order.customer_name}</Text>
@@ -1497,7 +1548,7 @@ export default function App() {
                   style={styles.input}
                   value={assignInputs[order.id] ?? order.assigned_to ?? ""}
                   placeholder="Driver ID"
-                  placeholderTextColor="#6f8d98"
+                  placeholderTextColor="#758591"
                   onChangeText={(value) => setAssignInputs((prev) => ({ ...prev, [order.id]: value }))}
                 />
                 <View style={styles.row}>
@@ -1569,6 +1620,7 @@ export default function App() {
                 </Text>
               </Pressable>
             </View>
+            <Text style={styles.sectionSubtitle}>Assigned Stops</Text>
             {inboxOrders.map((order) => (
               <View key={order.id} style={styles.orderCard}>
                 <Text style={styles.orderTitle}>{order.customer_name}</Text>
@@ -1632,7 +1684,7 @@ export default function App() {
                     value={podNotes[order.id] || ""}
                     onChangeText={(value) => setPodNotes((current) => ({ ...current, [order.id]: value }))}
                     placeholder="Delivery notes"
-                    placeholderTextColor="#6f8d98"
+                    placeholderTextColor="#758591"
                     multiline
                   />
                   <Pressable
@@ -1664,9 +1716,9 @@ export default function App() {
                   descriptionText="Sign below"
                   autoClear
                   webStyle={`
-                    .m-signature-pad--footer { background: #0d2832; }
-                    .m-signature-pad--body { border: 1px solid #2e5664; }
-                    .button { background: #27c8d7; color: #04232b; border-radius: 8px; }
+                    .m-signature-pad--footer { background: #dce8ef; }
+                    .m-signature-pad--body { border: 1px solid #b4c8d6; }
+                    .button { background: #0e7aa6; color: #f6fcff; border-radius: 8px; }
                   `}
                 />
               </View>
@@ -1677,7 +1729,7 @@ export default function App() {
           </View>
         </Modal>
 
-        {isLoading ? <ActivityIndicator /> : null}
+        {isLoading ? <ActivityIndicator color="#0e7aa6" /> : null}
         <Text style={styles.footerMessage}>{statusMessage}</Text>
       </ScrollView>
     </SafeAreaView>
@@ -1687,7 +1739,7 @@ export default function App() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#07181f",
+    backgroundColor: "#f2f6fa",
   },
   scroll: {
     flex: 1,
@@ -1704,47 +1756,47 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   loadingText: {
-    color: "#d2eaf5",
+    color: "#4f5f6c",
   },
   appTitle: {
-    color: "#f1fbff",
+    color: "#13222f",
     fontSize: 24,
     fontWeight: "700",
   },
   subtitle: {
-    color: "#89a8b5",
+    color: "#596a78",
     marginTop: 2,
   },
   card: {
     borderWidth: 1,
-    borderColor: "#265260",
+    borderColor: "#d2dde7",
     borderRadius: 14,
     padding: 12,
-    backgroundColor: "#0d2832",
+    backgroundColor: "#ffffff",
     gap: 8,
   },
   sectionTitle: {
-    color: "#f1fbff",
+    color: "#13222f",
     fontSize: 16,
     fontWeight: "700",
   },
   sectionSubtitle: {
-    color: "#d2eaf5",
+    color: "#1f3342",
     fontSize: 14,
     fontWeight: "600",
     marginTop: 6,
   },
   label: {
-    color: "#97b4c0",
+    color: "#5e6f7c",
     fontSize: 12,
     fontWeight: "600",
   },
   input: {
     borderWidth: 1,
-    borderColor: "#3a6573",
+    borderColor: "#c8d6e2",
     borderRadius: 10,
-    color: "#f1fbff",
-    backgroundColor: "#112f39",
+    color: "#172532",
+    backgroundColor: "#f9fbfd",
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
@@ -1760,21 +1812,21 @@ const styles = StyleSheet.create({
   toggleButton: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#3a6573",
+    borderColor: "#c8d6e2",
     borderRadius: 999,
     paddingVertical: 9,
     alignItems: "center",
   },
   toggleButtonActive: {
-    backgroundColor: "#27c8d7",
-    borderColor: "#27c8d7",
+    backgroundColor: "#0e7aa6",
+    borderColor: "#0e7aa6",
   },
   toggleText: {
-    color: "#b9d3dd",
+    color: "#5d6d79",
     fontWeight: "600",
   },
   toggleTextActive: {
-    color: "#04232b",
+    color: "#f5fbff",
   },
   row: {
     flexDirection: "row",
@@ -1788,40 +1840,71 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   buttonPrimary: {
-    backgroundColor: "#27c8d7",
+    backgroundColor: "#0e7aa6",
   },
   buttonDanger: {
-    backgroundColor: "#ff706d",
+    backgroundColor: "#cc4f4a",
   },
   buttonGhost: {
     borderWidth: 1,
-    borderColor: "#5d8593",
+    borderColor: "#b8cad7",
+    backgroundColor: "#ffffff",
   },
   buttonText: {
-    color: "#04232b",
+    color: "#f4fbff",
     fontWeight: "700",
     fontSize: 12,
   },
   buttonGhostText: {
-    color: "#d2eaf5",
+    color: "#274356",
     fontWeight: "700",
     fontSize: 12,
   },
+  sessionToggle: {
+    alignSelf: "flex-start",
+    marginTop: 4,
+  },
+  metricRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  metricCard: {
+    minWidth: 100,
+    borderWidth: 1,
+    borderColor: "#d7e2ea",
+    borderRadius: 10,
+    backgroundColor: "#f8fbfd",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  metricLabel: {
+    color: "#5f7280",
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  metricValue: {
+    color: "#13222f",
+    fontSize: 16,
+    fontWeight: "700",
+  },
   orderCard: {
     borderWidth: 1,
-    borderColor: "#2e5664",
+    borderColor: "#d2dde7",
     borderRadius: 12,
-    backgroundColor: "#113341",
+    backgroundColor: "#f8fbfd",
     padding: 10,
     gap: 6,
   },
   orderTitle: {
-    color: "#f1fbff",
+    color: "#13222f",
     fontSize: 15,
     fontWeight: "700",
   },
   orderMeta: {
-    color: "#b3cdda",
+    color: "#5f7280",
     fontSize: 12,
   },
   statusWrap: {
@@ -1832,33 +1915,33 @@ const styles = StyleSheet.create({
   },
   statusButton: {
     borderWidth: 1,
-    borderColor: "#567d8b",
+    borderColor: "#c6d6e2",
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 5,
   },
   statusButtonActive: {
-    backgroundColor: "#1b4b59",
-    borderColor: "#27c8d7",
+    backgroundColor: "#e8f3f8",
+    borderColor: "#0e7aa6",
   },
   statusButtonText: {
-    color: "#d2eaf5",
+    color: "#2f4a5d",
     fontSize: 11,
     fontWeight: "600",
   },
   driverCard: {
     borderWidth: 1,
-    borderColor: "#2f5967",
+    borderColor: "#d2dde7",
     borderRadius: 10,
     padding: 10,
-    backgroundColor: "#123440",
+    backgroundColor: "#f8fbfd",
   },
   driverCardSelected: {
-    borderColor: "#ffb347",
-    backgroundColor: "#1a3c49",
+    borderColor: "#1c8f69",
+    backgroundColor: "#edf8f3",
   },
   driverTitle: {
-    color: "#f1fbff",
+    color: "#13222f",
     fontWeight: "700",
   },
   mapView: {
@@ -1867,38 +1950,38 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#2f5967",
-    backgroundColor: "#102731",
+    borderColor: "#d2dde7",
+    backgroundColor: "#ecf4f9",
   },
   routeContextCard: {
     borderWidth: 1,
-    borderColor: "#2f5967",
+    borderColor: "#d2dde7",
     borderRadius: 10,
     padding: 10,
     gap: 8,
-    backgroundColor: "#123440",
+    backgroundColor: "#f8fbfd",
   },
   routeStopCard: {
     borderWidth: 1,
-    borderColor: "#355f6d",
+    borderColor: "#d2dde7",
     borderRadius: 8,
     padding: 8,
-    backgroundColor: "#173948",
+    backgroundColor: "#ffffff",
   },
   routeStopTitle: {
-    color: "#dff4ff",
+    color: "#13222f",
     fontSize: 12,
     fontWeight: "700",
     marginBottom: 4,
   },
   podSection: {
     borderTopWidth: 1,
-    borderTopColor: "#2f5967",
+    borderTopColor: "#d2dde7",
     paddingTop: 8,
     gap: 8,
   },
   podTitle: {
-    color: "#d2eaf5",
+    color: "#1f3342",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -1907,20 +1990,20 @@ const styles = StyleSheet.create({
     height: 160,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#2f5967",
-    backgroundColor: "#0e2630",
+    borderColor: "#d2dde7",
+    backgroundColor: "#ecf3f8",
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(4, 16, 24, 0.85)",
+    backgroundColor: "rgba(20, 36, 50, 0.5)",
     justifyContent: "center",
     padding: 16,
   },
   modalCard: {
-    backgroundColor: "#0d2832",
+    backgroundColor: "#ffffff",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#2f5967",
+    borderColor: "#d2dde7",
     padding: 12,
     gap: 10,
     maxHeight: "85%",
@@ -1930,20 +2013,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#2f5967",
+    borderColor: "#d2dde7",
     backgroundColor: "#f7fcff",
   },
   metaText: {
-    color: "#9ab7c3",
+    color: "#5f7280",
     fontSize: 12,
   },
   footerMessage: {
-    color: "#9ab7c3",
+    color: "#4f6270",
     fontSize: 12,
     marginTop: 8,
   },
   validationText: {
-    color: "#ffb347",
+    color: "#b7601a",
     fontSize: 12,
     fontWeight: "600",
   },

@@ -235,12 +235,24 @@
       C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
       return;
     }
-    const loginUrl = await C.startHostedLogin(hostedFlowConfig());
-    if (!loginUrl) {
+    const authorizeUrl = await C.startHostedLogin(hostedFlowConfig());
+    if (!authorizeUrl) {
       C.showMessage(el.message, "Secure sign-up is unavailable right now.", "error");
       return;
     }
-    window.location.assign(loginUrl);
+    let signupUrl = "";
+    try {
+      const parsed = new URL(authorizeUrl);
+      parsed.pathname = "/signup";
+      signupUrl = parsed.toString();
+    } catch (error) {
+      signupUrl = "";
+    }
+    if (!signupUrl) {
+      C.showMessage(el.message, "Secure sign-up is unavailable right now.", "error");
+      return;
+    }
+    window.location.assign(signupUrl);
   }
 
   async function finishHostedLoginCallback() {

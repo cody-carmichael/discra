@@ -253,6 +253,18 @@ def create_app() -> FastAPI:
     async def dev_backend_ui_register():
         return FileResponse(str(FRONTEND_DIR / "register.html"))
 
+    @app.get("/ui/login", include_in_schema=False)
+    async def ui_login():
+        return FileResponse(str(FRONTEND_DIR / "login.html"))
+
+    @app.get("/backend/ui/login", include_in_schema=False)
+    async def backend_ui_login():
+        return FileResponse(str(FRONTEND_DIR / "login.html"))
+
+    @app.get("/dev/backend/ui/login", include_in_schema=False)
+    async def dev_backend_ui_login():
+        return FileResponse(str(FRONTEND_DIR / "login.html"))
+
     @app.get("/ui/review", include_in_schema=False)
     async def ui_review():
         return FileResponse(str(FRONTEND_DIR / "review.html"))

@@ -763,6 +763,40 @@ canvas.signature-pad {
   margin: 0.25rem 0 0.65rem;
 }
 
+.login-gateway-card {
+  max-width: 480px;
+  display: grid;
+  gap: 0.62rem;
+  text-align: center;
+}
+
+.login-gateway-card h1 {
+  margin: 0.2rem 0 0;
+}
+
+.login-gateway-card .lead {
+  margin: 0;
+}
+
+.login-gateway-actions {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.login-gateway-actions .btn {
+  width: 100%;
+  padding: 0.62rem 0.86rem;
+  font-size: 0.9rem;
+}
+
+.login-gateway-card .message {
+  margin-top: 0.2rem;
+}
+
+.login-gateway-card .auth-config {
+  text-align: left;
+}
+
 .lead {
   color: var(--text-muted);
 }

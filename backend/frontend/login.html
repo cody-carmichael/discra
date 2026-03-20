@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discra Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body class="theme-admin">
+  <main class="center-stage">
+    <section class="hero-card login-gateway-card">
+      <p class="eyebrow">Discra Access</p>
+      <h1>Welcome Back</h1>
+      <p class="lead">Sign in with your approved account to continue to the Admin and Dispatcher workspace.</p>
+      <div class="login-gateway-actions">
+        <button id="login-gateway-button" class="btn btn-primary" type="button">Log In</button>
+      </div>
+      <p id="login-gateway-message" class="message"></p>
+      <details id="login-gateway-debug" class="auth-config" hidden>
+        <summary>Advanced Connection Settings</summary>
+        <label class="field">
+          <span>Cognito Hosted UI Domain</span>
+          <input id="login-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
+        </label>
+        <label class="field">
+          <span>Client ID</span>
+          <input id="login-cognito-client-id" placeholder="app client id">
+        </label>
+      </details>
+    </section>
+  </main>
+
+  <script src="assets/common.js"></script>
+  <script src="assets/login.js"></script>
+</body>
+</html>

@@ -12,12 +12,14 @@ client = TestClient(app)
 
 def test_ui_pages_are_available():
     home = client.get("/ui")
+    login = client.get("/ui/login")
     admin = client.get("/ui/admin")
     driver = client.get("/ui/driver")
     register = client.get("/ui/register")
     review = client.get("/ui/review")
 
     assert home.status_code == 200
+    assert login.status_code == 200
     assert admin.status_code == 200
     assert driver.status_code == 200
     assert register.status_code == 200
@@ -25,6 +27,9 @@ def test_ui_pages_are_available():
     assert "Transform Last-Mile Delivery Into A Growth Engine." in home.text
     assert "Request Access" in home.text
     assert "Log In" in home.text
+    assert "ui/login" in home.text
+    assert "Welcome Back" in login.text
+    assert "login-gateway-button" in login.text
     assert "Admin And Dispatcher Console" in admin.text
     assert "Driver Workflow" in driver.text
     assert "Register Your Tenant" in register.text
@@ -38,6 +43,7 @@ def test_ui_pages_are_available():
 
 def test_ui_assets_and_service_worker_are_served():
     common_js = client.get("/ui/assets/common.js")
+    login_js = client.get("/ui/assets/login.js")
     landing_js = client.get("/ui/assets/landing.js")
     styles_css = client.get("/ui/assets/styles.css")
     admin_manifest = client.get("/ui/assets/admin-manifest.json")
@@ -46,6 +52,7 @@ def test_ui_assets_and_service_worker_are_served():
     service_worker = client.get("/ui/driver-sw.js")
 
     assert common_js.status_code == 200
+    assert login_js.status_code == 200
     assert landing_js.status_code == 200
     assert styles_css.status_code == 200
     assert admin_manifest.status_code == 200
@@ -55,6 +62,7 @@ def test_ui_assets_and_service_worker_are_served():
     assert "DiscraCommon" in common_js.text
     assert "startHostedLogin" in common_js.text
     assert "consumeHostedLoginCallback" in common_js.text
+    assert "resolveAdminPath" in login_js.text
     assert "requestAnimationFrame" in landing_js.text
     assert "DiscraAdmin" in admin_manifest.text
     assert "DiscraDriver" in driver_manifest.text

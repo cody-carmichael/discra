@@ -18,7 +18,7 @@
         <p class="subtitle">Approve or reject tenant Admin requests with signed review links.</p>
       </div>
       <nav class="top-actions">
-        <span id="review-auth-state" class="status-pill status-idle">No Token</span>
+        <span id="review-auth-state" class="status-pill status-idle">Not Signed In</span>
         <a class="btn btn-ghost" href="register">Registration View</a>
       </nav>
     </header>
@@ -53,15 +53,10 @@
           <button id="review-login-hosted-ui" class="btn btn-accent" type="button">Login Hosted UI</button>
           <button id="review-logout-hosted-ui" class="btn btn-ghost" type="button">Logout</button>
         </div>
-        <label class="field">
-          <span>JWT Token (optional override)</span>
-          <textarea id="review-jwt-token" rows="4" placeholder="Paste id_token if needed"></textarea>
-        </label>
-        <div class="row">
-          <button id="review-save-token" class="btn btn-primary" type="button">Save Token</button>
-          <button id="review-clear-token" class="btn btn-ghost" type="button">Clear</button>
-        </div>
-        <pre id="review-claims-view" class="claims-view">No token decoded yet.</pre>
+        <details id="review-auth-debug" class="auth-config" hidden>
+          <summary>Advanced Connection Settings</summary>
+          <pre id="review-claims-view" class="claims-view">No active web session.</pre>
+        </details>
       </section>
 
       <section class="panel">

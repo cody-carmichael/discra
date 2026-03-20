@@ -1,6 +1,6 @@
 (function () {
   const C = window.DiscraCommon;
-  const storageKey = "discra_register_token";
+  const storageKey = "discra_register_auth";
   const apiBase = C.deriveApiBase("/ui/register");
   const query = new URLSearchParams(window.location.search || "");
   const debugAuth = query.get("debug_auth") === "1";
@@ -24,13 +24,8 @@
     authDebug: document.getElementById("register-auth-debug"),
   };
 
-  let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
   let currentRegistration = null;
-  let uiConfig = null;
-
-  function activeClaims() {
-    return C.decodeJwt(token);
-  }
+  let sessionClaims = null;
 
   function hostedFlowConfig() {
     return {
@@ -44,6 +39,23 @@
   function hostedUiConfigured() {
     const config = hostedFlowConfig();
     return Boolean(config.domain && config.clientId);
+  }
+
+  function claimsFromSessionUser(user) {
+    if (!user || typeof user !== "object") {
+      return null;
+    }
+    const groups = Array.isArray(user.groups) ? user.groups : [];
+    return {
+      sub: user.sub || user.username || "",
+      username: user.username || user.sub || "",
+      email: user.email || "",
+      org_id: user.org_id || "",
+      "custom:org_id": user.org_id || "",
+      groups: groups,
+      "cognito:groups": groups,
+      _web_session: true,
+    };
   }
 
   function statusLabel(status) {
@@ -61,15 +73,15 @@
 
   function applyUiAvailability() {
     const authReady = hostedUiConfigured();
-    const claims = activeClaims();
+    const authenticated = !!sessionClaims;
     const submitButton = el.form.querySelector('button[type="submit"]');
     el.signupHostedUi.disabled = !authReady;
     el.loginHostedUi.disabled = !authReady;
-    el.logoutHostedUi.disabled = !authReady && !token;
+    el.logoutHostedUi.disabled = !authReady && !authenticated;
     if (submitButton) {
-      submitButton.disabled = !claims;
+      submitButton.disabled = !authenticated;
     }
-    el.refreshStatus.disabled = !claims;
+    el.refreshStatus.disabled = !authenticated;
   }
 
   function renderRegistration(registration) {
@@ -118,19 +130,18 @@
   }
 
   function renderClaims() {
-    const claims = activeClaims();
+    const claims = sessionClaims;
     if (!claims) {
       el.authState.textContent = "Not Signed In";
       el.authState.classList.add("status-idle");
       el.authState.classList.remove("status-live");
       el.emailView.value = "";
       if (el.claims) {
-        el.claims.textContent = "No token decoded yet.";
+        el.claims.textContent = "No active web session.";
       }
       applyUiAvailability();
       return;
     }
-
     const email = claims.email ? String(claims.email) : "";
     el.authState.textContent = email ? "Signed In" : "Session Active";
     el.authState.classList.remove("status-idle");
@@ -142,14 +153,24 @@
     applyUiAvailability();
   }
 
-  function setToken(nextToken) {
-    token = C.setStoredToken(storageKey, nextToken);
+  async function restoreWebSession() {
+    try {
+      const session = await C.getAuthSession(apiBase);
+      if (session && session.active && session.user) {
+        sessionClaims = claimsFromSessionUser(session.user);
+      } else {
+        sessionClaims = null;
+      }
+    } catch (error) {
+      sessionClaims = null;
+    }
     renderClaims();
+    return !!sessionClaims;
   }
 
   async function loadUiConfig() {
     try {
-      uiConfig = await C.requestJson(apiBase, "/ui/config");
+      const uiConfig = await C.requestJson(apiBase, "/ui/config");
       if (uiConfig && uiConfig.cognito_domain) {
         el.cognitoDomain.value = uiConfig.cognito_domain;
       }
@@ -157,11 +178,7 @@
         el.cognitoClientId.value = uiConfig.cognito_client_id;
       }
       if (!hostedUiConfigured()) {
-        C.showMessage(
-          el.message,
-          "Secure sign-in is not configured yet. Please contact support.",
-          "error"
-        );
+        C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
       }
     } catch (error) {
       C.showMessage(el.message, error.message, "error");
@@ -170,13 +187,13 @@
   }
 
   async function refreshStatus() {
-    if (!token) {
+    if (!sessionClaims) {
       C.showMessage(el.message, "Sign in first to check registration status.", "error");
       renderRegistration(null);
       return;
     }
     try {
-      const payload = await C.requestJson(apiBase, "/onboarding/registrations/me", { token: token });
+      const payload = await C.requestJson(apiBase, "/onboarding/registrations/me");
       renderRegistration(payload && payload.exists ? payload.registration : null);
       if (payload && payload.exists && payload.registration) {
         C.showMessage(el.message, "Registration status loaded.", "success");
@@ -190,7 +207,7 @@
 
   async function submitRegistration(event) {
     event.preventDefault();
-    if (!token) {
+    if (!sessionClaims) {
       C.showMessage(el.message, "Sign in is required before submitting registration.", "error");
       return;
     }
@@ -207,7 +224,6 @@
     try {
       const result = await C.requestJson(apiBase, "/onboarding/registrations", {
         method: "POST",
-        token: token,
         json: payload,
       });
       renderRegistration(result && result.registration ? result.registration : null);
@@ -256,9 +272,9 @@
   }
 
   async function finishHostedLoginCallback() {
-    const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
+    const result = await C.consumeHostedLoginCallback(apiBase, hostedFlowConfig());
     if (result.status === "success") {
-      setToken(result.token || "");
+      await restoreWebSession();
       C.showMessage(el.message, "Sign-in complete.", "success");
       await refreshStatus();
       return;
@@ -270,12 +286,25 @@
 
   async function launchHostedLogout() {
     const logoutUri = window.location.origin + window.location.pathname;
-    const logoutUrl = C.buildHostedLogoutUrl({
-      domain: el.cognitoDomain.value.trim(),
-      clientId: el.cognitoClientId.value.trim(),
-      logoutUri,
-    });
-    setToken("");
+    let logoutUrl = "";
+    try {
+      const result = await C.logoutAuthSession(apiBase, {
+        domain: el.cognitoDomain.value.trim(),
+        client_id: el.cognitoClientId.value.trim(),
+        logout_uri: logoutUri,
+      });
+      if (result && result.logout_url) {
+        logoutUrl = result.logout_url;
+      }
+    } catch (error) {
+      logoutUrl = C.buildHostedLogoutUrl({
+        domain: el.cognitoDomain.value.trim(),
+        clientId: el.cognitoClientId.value.trim(),
+        logoutUri,
+      });
+    }
+    sessionClaims = null;
+    renderClaims();
     renderRegistration(null);
     C.showMessage(el.message, "Signed out.", "success");
     if (logoutUrl) {
@@ -289,8 +318,9 @@
     }
     renderClaims();
     await loadUiConfig();
+    await restoreWebSession();
     await finishHostedLoginCallback();
-    if (token) {
+    if (sessionClaims) {
       await refreshStatus();
     }
     if (currentRegistration && currentRegistration.status === "Approved") {

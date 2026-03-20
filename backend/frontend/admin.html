@@ -21,7 +21,7 @@
         <p class="subtitle">Operate your daily delivery flow from a single calm cockpit.</p>
       </div>
       <nav class="top-actions">
-        <span id="auth-state" class="status-pill status-idle">No Token</span>
+        <span id="auth-state" class="status-pill status-idle">Not Signed In</span>
         <a class="btn btn-ghost" href="register">Registration</a>
         <a class="btn btn-ghost" href="driver">Driver View</a>
       </nav>
@@ -50,21 +50,11 @@
 
         <details class="session-details">
           <summary>Session And Auth Settings</summary>
-          <p class="panel-help">Keep these controls here for setup and troubleshooting without blocking daily dispatch tasks.</p>
+          <p class="panel-help">Use secure Hosted UI sign-in. Tokens are managed automatically in a protected web session cookie.</p>
 
           <div id="dev-auth-panel" class="dev-auth-panel" hidden>
             <p class="panel-help">Quick test sign-in (no token required)</p>
             <div id="dev-auth-actions" class="row"></div>
-          </div>
-
-          <label class="field">
-            <span>JWT Token</span>
-            <textarea id="jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
-          </label>
-
-          <div class="row">
-            <button id="save-token" class="btn btn-primary" type="button">Save Token</button>
-            <button id="clear-token" class="btn btn-ghost" type="button">Clear</button>
           </div>
 
           <details class="auth-config">
@@ -83,7 +73,18 @@
             </div>
           </details>
 
-          <pre id="claims-view" class="claims-view">No token decoded yet.</pre>
+          <details id="admin-auth-debug" class="auth-config" hidden>
+            <summary>Debug Token Override</summary>
+            <label class="field">
+              <span>JWT Token</span>
+              <textarea id="jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
+            </label>
+            <div class="row">
+              <button id="save-token" class="btn btn-primary" type="button">Save Token</button>
+              <button id="clear-token" class="btn btn-ghost" type="button">Clear</button>
+            </div>
+            <pre id="claims-view" class="claims-view">No active web session.</pre>
+          </details>
           <p id="auth-message" class="message"></p>
         </details>
       </aside>

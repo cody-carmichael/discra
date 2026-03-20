@@ -80,7 +80,7 @@
   }
 
   async function finishHostedLoginCallback() {
-    const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
+    const result = await C.consumeHostedLoginCallback(apiBase, hostedFlowConfig());
     if (result.status === "success") {
       C.showMessage(el.message, "Sign-in complete. Redirecting to your workspace...", "success");
       window.location.assign(resolveAdminPath());
@@ -97,6 +97,15 @@
     }
     updateUiAvailability();
     await loadUiConfig();
+    try {
+      const session = await C.getAuthSession(apiBase);
+      if (session && session.active) {
+        window.location.assign(resolveAdminPath());
+        return;
+      }
+    } catch (error) {
+      // Keep login flow available even when session lookup fails.
+    }
     await finishHostedLoginCallback();
   }
 

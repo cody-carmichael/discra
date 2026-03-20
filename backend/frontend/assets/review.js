@@ -1,13 +1,12 @@
 (function () {
   const C = window.DiscraCommon;
-  const storageKey = "discra_review_token";
+  const storageKey = "discra_review_auth";
   const apiBase = C.deriveApiBase("/ui/review");
+  const query = new URLSearchParams(window.location.search || "");
+  const debugAuth = query.get("debug_auth") === "1";
 
   const el = {
     authState: document.getElementById("review-auth-state"),
-    token: document.getElementById("review-jwt-token"),
-    saveToken: document.getElementById("review-save-token"),
-    clearToken: document.getElementById("review-clear-token"),
     claims: document.getElementById("review-claims-view"),
     message: document.getElementById("review-message"),
     reviewToken: document.getElementById("review-token"),
@@ -20,13 +19,27 @@
     cognitoClientId: document.getElementById("review-cognito-client-id"),
     loginHostedUi: document.getElementById("review-login-hosted-ui"),
     logoutHostedUi: document.getElementById("review-logout-hosted-ui"),
+    authDebug: document.getElementById("review-auth-debug"),
   };
 
-  let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
   let loadedReview = null;
+  let sessionClaims = null;
 
-  function activeClaims() {
-    return C.decodeJwt(token);
+  function claimsFromSessionUser(user) {
+    if (!user || typeof user !== "object") {
+      return null;
+    }
+    const groups = Array.isArray(user.groups) ? user.groups : [];
+    return {
+      sub: user.sub || user.username || "",
+      username: user.username || user.sub || "",
+      email: user.email || "",
+      org_id: user.org_id || "",
+      "custom:org_id": user.org_id || "",
+      groups: groups,
+      "cognito:groups": groups,
+      _web_session: true,
+    };
   }
 
   function reviewTokenValue() {
@@ -85,25 +98,34 @@
   }
 
   function renderClaims() {
-    const claims = activeClaims();
+    const claims = sessionClaims;
     if (!claims) {
-      el.authState.textContent = "No Token";
+      el.authState.textContent = "Not Signed In";
       el.authState.classList.add("status-idle");
       el.authState.classList.remove("status-live");
-      el.claims.textContent = "No token decoded yet.";
+      el.claims.textContent = "No active web session.";
       return;
     }
     const roles = C.tokenRoleSummary(claims);
-    el.authState.textContent = roles ? "Roles: " + roles : "Token Loaded";
+    el.authState.textContent = roles ? "Signed In: " + roles : "Signed In";
     el.authState.classList.remove("status-idle");
     el.authState.classList.add("status-live");
     el.claims.textContent = JSON.stringify(claims, null, 2);
   }
 
-  function setToken(nextToken) {
-    token = C.setStoredToken(storageKey, nextToken);
-    el.token.value = token;
+  async function restoreWebSession() {
+    try {
+      const session = await C.getAuthSession(apiBase);
+      if (session && session.active && session.user) {
+        sessionClaims = claimsFromSessionUser(session.user);
+      } else {
+        sessionClaims = null;
+      }
+    } catch (error) {
+      sessionClaims = null;
+    }
     renderClaims();
+    return !!sessionClaims;
   }
 
   async function loadUiConfig() {
@@ -147,14 +169,13 @@
       C.showMessage(el.message, "Review token is required.", "error");
       return;
     }
-    if (!token) {
-      C.showMessage(el.message, "Approver JWT token is required.", "error");
+    if (!sessionClaims) {
+      C.showMessage(el.message, "Sign in as an approver first.", "error");
       return;
     }
     try {
       const response = await C.requestJson(apiBase, "/onboarding/review/decision", {
         method: "POST",
-        token: token,
         json: {
           token: signedToken,
           decision: decision,
@@ -187,32 +208,45 @@
   async function launchHostedLogin() {
     const loginUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!loginUrl) {
-      C.showMessage(el.message, "Hosted UI domain + client id are required.", "error");
+      C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
       return;
     }
     window.location.assign(loginUrl);
   }
 
   async function finishHostedLoginCallback() {
-    const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
+    const result = await C.consumeHostedLoginCallback(apiBase, hostedFlowConfig());
     if (result.status === "success") {
-      setToken(result.token || "");
-      C.showMessage(el.message, "Hosted UI login complete.", "success");
+      await restoreWebSession();
+      C.showMessage(el.message, "Sign-in complete.", "success");
       return;
     }
     if (result.status === "error") {
-      C.showMessage(el.message, result.message || "Hosted UI login failed.", "error");
+      C.showMessage(el.message, result.message || "Sign-in failed.", "error");
     }
   }
 
   async function launchHostedLogout() {
     const logoutUri = window.location.origin + window.location.pathname + window.location.search;
-    const logoutUrl = C.buildHostedLogoutUrl({
-      domain: el.cognitoDomain.value.trim(),
-      clientId: el.cognitoClientId.value.trim(),
-      logoutUri,
-    });
-    setToken("");
+    let logoutUrl = "";
+    try {
+      const result = await C.logoutAuthSession(apiBase, {
+        domain: el.cognitoDomain.value.trim(),
+        client_id: el.cognitoClientId.value.trim(),
+        logout_uri: logoutUri,
+      });
+      if (result && result.logout_url) {
+        logoutUrl = result.logout_url;
+      }
+    } catch (error) {
+      logoutUrl = C.buildHostedLogoutUrl({
+        domain: el.cognitoDomain.value.trim(),
+        clientId: el.cognitoClientId.value.trim(),
+        logoutUri,
+      });
+    }
+    sessionClaims = null;
+    renderClaims();
     C.showMessage(el.message, "Session cleared.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
@@ -229,24 +263,19 @@
   }
 
   async function bootstrap() {
-    el.token.value = token;
+    if (el.authDebug) {
+      el.authDebug.hidden = !debugAuth;
+    }
     renderClaims();
     preloadReviewTokenFromQuery();
     await loadUiConfig();
+    await restoreWebSession();
     await finishHostedLoginCallback();
     if (reviewTokenValue()) {
       await resolveToken();
     }
   }
 
-  el.saveToken.addEventListener("click", function () {
-    setToken(el.token.value);
-    C.showMessage(el.message, token ? "Token saved." : "Token cleared.", "success");
-  });
-  el.clearToken.addEventListener("click", function () {
-    setToken("");
-    C.showMessage(el.message, "Session cleared.", "success");
-  });
   el.loadButton.addEventListener("click", function () {
     resolveToken().catch(function (error) {
       C.showMessage(el.message, error.message, "error");

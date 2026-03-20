@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const STATUS_VALUES = ["Created", "Assigned", "PickedUp", "EnRoute", "Delivered", "Failed"];
 
   function deriveApiBase(pageSuffix) {
@@ -149,6 +149,7 @@
       method: requestOptions.method || "GET",
       headers,
       body: requestOptions.json === undefined ? requestOptions.body : JSON.stringify(requestOptions.json),
+      credentials: requestOptions.credentials || "same-origin",
     });
     const responseText = await response.text();
     let payload = null;
@@ -169,6 +170,38 @@
     return payload;
   }
 
+
+  async function getDevAuthSession(apiBase) {
+    return requestJson(apiBase, "/ui/dev-auth/session", {
+      method: "GET",
+    });
+  }
+
+  async function loginDevAuthSession(apiBase, payload) {
+    return requestJson(apiBase, "/ui/dev-auth/login", {
+      method: "POST",
+      json: payload || {},
+    });
+  }
+
+  async function logoutDevAuthSession(apiBase) {
+    return requestJson(apiBase, "/ui/dev-auth/logout", {
+      method: "POST",
+    });
+  }
+
+  async function getAuthSession(apiBase) {
+    return requestJson(apiBase, "/ui/auth/session", {
+      method: "GET",
+    });
+  }
+
+  async function logoutAuthSession(apiBase, payload) {
+    return requestJson(apiBase, "/ui/auth/logout", {
+      method: "POST",
+      json: payload || {},
+    });
+  }
   function toNumberOrNull(value) {
     if (value === undefined || value === null || value === "") {
       return null;
@@ -253,7 +286,7 @@
     return url.toString();
   }
 
-  async function consumeHostedLoginCallback(config) {
+  async function consumeHostedLoginCallback(apiBase, config) {
     if (!config || !config.storageKey || !config.redirectUri) {
       return { status: "none" };
     }
@@ -291,54 +324,30 @@
       return { status: "error", message: "Hosted login verifier is missing." };
     }
 
-    const domain = domainValue.replace(/^https?:\/\//, "").replace(/\/$/, "");
-    const tokenUrl = "https://" + domain + "/oauth2/token";
-    const form = new URLSearchParams();
-    form.set("grant_type", "authorization_code");
-    form.set("client_id", clientIdValue);
-    form.set("code", code);
-    form.set("redirect_uri", config.redirectUri);
-    form.set("code_verifier", verifier);
-
-    let response;
     try {
-      response = await fetch(tokenUrl, {
+      await requestJson(apiBase || "", "/ui/auth/hosted-login/callback", {
         method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
+        json: {
+          code: code,
+          state: actualState,
+          expected_state: expectedState,
+          code_verifier: verifier,
+          redirect_uri: config.redirectUri,
+          domain: domainValue,
+          client_id: clientIdValue,
         },
-        body: form.toString(),
       });
     } catch (error) {
       _clearAuthFlowState(config.storageKey);
       _clearOAuthQueryParams();
-      return { status: "error", message: "Hosted login token exchange failed." };
-    }
-
-    let payload = null;
-    try {
-      payload = await response.json();
-    } catch (error) {
-      payload = null;
+      return { status: "error", message: error.message || "Hosted login token exchange failed." };
     }
 
     _clearAuthFlowState(config.storageKey);
     _clearOAuthQueryParams();
 
-    if (!response.ok) {
-      const message = payload && payload.error_description ? payload.error_description : "Hosted login token exchange failed.";
-      return { status: "error", message: message };
-    }
-
-    const token = (payload && (payload.id_token || payload.access_token)) || "";
-    if (!token) {
-      return { status: "error", message: "Hosted login response did not include a token." };
-    }
-    setStoredToken(config.storageKey, token);
     return {
       status: "success",
-      token: token,
-      claims: decodeJwt(token),
     };
   }
 
@@ -382,5 +391,11 @@
     showMessage,
     buildHostedLoginUrl,
     tokenRoleSummary,
+    getDevAuthSession,
+    loginDevAuthSession,
+    logoutDevAuthSession,
+    getAuthSession,
+    logoutAuthSession,
   };
 })();
+

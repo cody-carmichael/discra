@@ -15,41 +15,42 @@
       <div>
         <p class="eyebrow">Discra Onboarding</p>
         <h1>Register Your Tenant</h1>
-        <p class="subtitle">Sign in, submit your tenant request, and track approval status.</p>
+        <p class="subtitle">Create your account, submit your tenant request, and track approval status.</p>
       </div>
       <nav class="top-actions">
-        <span id="register-auth-state" class="status-pill status-idle">No Token</span>
-        <a class="btn btn-ghost" href="admin">Admin View</a>
+        <span id="register-auth-state" class="status-pill status-idle">Not Signed In</span>
+        <a class="btn btn-ghost" href=".">Home</a>
       </nav>
     </header>
 
     <main class="driver-layout">
       <section class="panel">
         <div class="panel-title-row">
-          <h2>Hosted UI Session</h2>
+          <h2>Account Access</h2>
         </div>
-        <p class="panel-help">Use Cognito Hosted UI to sign in with your new Admin account before submitting registration.</p>
-        <label class="field">
-          <span>Cognito Hosted UI Domain</span>
-          <input id="register-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
-        </label>
-        <label class="field">
-          <span>Client ID</span>
-          <input id="register-cognito-client-id" placeholder="app client id">
-        </label>
+        <p class="panel-help">New here? create your account. Already have access? sign in to continue. You do not need to paste tokens.</p>
         <div class="row">
-          <button id="register-login-hosted-ui" class="btn btn-accent" type="button">Login Hosted UI</button>
-          <button id="register-logout-hosted-ui" class="btn btn-ghost" type="button">Logout</button>
+          <button id="register-signup-hosted-ui" class="btn btn-primary" type="button">Create Account</button>
+          <button id="register-login-hosted-ui" class="btn btn-accent" type="button">Sign In</button>
+          <button id="register-logout-hosted-ui" class="btn btn-ghost" type="button">Sign Out</button>
         </div>
+        <p class="panel-help">You will be redirected to secure authentication. New users can choose <strong>Sign up</strong> there.</p>
         <label class="field">
-          <span>JWT Token (optional override)</span>
-          <textarea id="register-jwt-token" rows="4" placeholder="Paste id_token if needed"></textarea>
+          <span>Signed-In Email</span>
+          <input id="register-email-view" disabled placeholder="Sign in to continue">
         </label>
-        <div class="row">
-          <button id="register-save-token" class="btn btn-primary" type="button">Save Token</button>
-          <button id="register-clear-token" class="btn btn-ghost" type="button">Clear</button>
-        </div>
-        <pre id="register-claims-view" class="claims-view">No token decoded yet.</pre>
+        <details id="register-auth-debug" class="auth-config" hidden>
+          <summary>Advanced Connection Settings</summary>
+          <label class="field">
+            <span>Cognito Hosted UI Domain</span>
+            <input id="register-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
+          </label>
+          <label class="field">
+            <span>Client ID</span>
+            <input id="register-cognito-client-id" placeholder="app client id">
+          </label>
+          <pre id="register-claims-view" class="claims-view">No token decoded yet.</pre>
+        </details>
       </section>
 
       <section class="panel">
@@ -67,10 +68,7 @@
             <span>Contact Name (optional)</span>
             <input id="register-contact-name" placeholder="Jane Doe">
           </label>
-          <label class="field">
-            <span>Email (from token)</span>
-            <input id="register-email-view" disabled>
-          </label>
+          <div class="field"></div>
           <label class="field field-span-2">
             <span>Notes (optional)</span>
             <textarea id="register-notes" rows="3" placeholder="Anything approvers should know"></textarea>

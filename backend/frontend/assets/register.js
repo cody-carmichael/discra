@@ -2,13 +2,11 @@
   const C = window.DiscraCommon;
   const storageKey = "discra_register_token";
   const apiBase = C.deriveApiBase("/ui/register");
+  const query = new URLSearchParams(window.location.search || "");
+  const debugAuth = query.get("debug_auth") === "1";
 
   const el = {
     authState: document.getElementById("register-auth-state"),
-    token: document.getElementById("register-jwt-token"),
-    saveToken: document.getElementById("register-save-token"),
-    clearToken: document.getElementById("register-clear-token"),
-    claims: document.getElementById("register-claims-view"),
     message: document.getElementById("register-message"),
     form: document.getElementById("register-form"),
     tenantName: document.getElementById("register-tenant-name"),
@@ -19,15 +17,33 @@
     refreshStatus: document.getElementById("register-refresh-status"),
     cognitoDomain: document.getElementById("register-cognito-domain"),
     cognitoClientId: document.getElementById("register-cognito-client-id"),
+    signupHostedUi: document.getElementById("register-signup-hosted-ui"),
     loginHostedUi: document.getElementById("register-login-hosted-ui"),
     logoutHostedUi: document.getElementById("register-logout-hosted-ui"),
+    claims: document.getElementById("register-claims-view"),
+    authDebug: document.getElementById("register-auth-debug"),
   };
 
   let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
   let currentRegistration = null;
+  let uiConfig = null;
 
   function activeClaims() {
     return C.decodeJwt(token);
+  }
+
+  function hostedFlowConfig() {
+    return {
+      domain: el.cognitoDomain.value.trim(),
+      clientId: el.cognitoClientId.value.trim(),
+      redirectUri: window.location.origin + window.location.pathname,
+      storageKey,
+    };
+  }
+
+  function hostedUiConfigured() {
+    const config = hostedFlowConfig();
+    return Boolean(config.domain && config.clientId);
   }
 
   function statusLabel(status) {
@@ -43,6 +59,19 @@
     return '<span class="table-status">Pending</span>';
   }
 
+  function applyUiAvailability() {
+    const authReady = hostedUiConfigured();
+    const claims = activeClaims();
+    const submitButton = el.form.querySelector('button[type="submit"]');
+    el.signupHostedUi.disabled = !authReady;
+    el.loginHostedUi.disabled = !authReady;
+    el.logoutHostedUi.disabled = !authReady && !token;
+    if (submitButton) {
+      submitButton.disabled = !claims;
+    }
+    el.refreshStatus.disabled = !claims;
+  }
+
   function renderRegistration(registration) {
     currentRegistration = registration || null;
     if (!registration) {
@@ -53,10 +82,10 @@
     const submittedAt = registration.submitted_at ? C.formatTimestamp(registration.submitted_at) : "-";
     const nextStep =
       registration.status === "Approved"
-        ? "Re-login via Hosted UI to receive fresh org claims, then continue to Admin view."
+        ? "Access approved. Sign in again, then continue to the Admin workspace."
         : registration.status === "Rejected"
           ? "Update details and resubmit your registration."
-          : "Your request is pending App Dev approval. You can refresh status anytime.";
+          : "Your request is pending App Dev approval. Refresh status anytime.";
 
     el.statusSurface.innerHTML =
       "<div class=\"kv-grid\">" +
@@ -91,44 +120,58 @@
   function renderClaims() {
     const claims = activeClaims();
     if (!claims) {
-      el.authState.textContent = "No Token";
+      el.authState.textContent = "Not Signed In";
       el.authState.classList.add("status-idle");
       el.authState.classList.remove("status-live");
-      el.claims.textContent = "No token decoded yet.";
       el.emailView.value = "";
+      if (el.claims) {
+        el.claims.textContent = "No token decoded yet.";
+      }
+      applyUiAvailability();
       return;
     }
-    const roles = C.tokenRoleSummary(claims);
-    el.authState.textContent = roles ? "Roles: " + roles : "Token Loaded";
+
+    const email = claims.email ? String(claims.email) : "";
+    el.authState.textContent = email ? "Signed In" : "Session Active";
     el.authState.classList.remove("status-idle");
     el.authState.classList.add("status-live");
-    el.claims.textContent = JSON.stringify(claims, null, 2);
-    el.emailView.value = claims.email ? String(claims.email) : "";
+    el.emailView.value = email;
+    if (el.claims) {
+      el.claims.textContent = JSON.stringify(claims, null, 2);
+    }
+    applyUiAvailability();
   }
 
   function setToken(nextToken) {
     token = C.setStoredToken(storageKey, nextToken);
-    el.token.value = token;
     renderClaims();
   }
 
   async function loadUiConfig() {
     try {
-      const config = await C.requestJson(apiBase, "/ui/config");
-      if (config && config.cognito_domain) {
-        el.cognitoDomain.value = config.cognito_domain;
+      uiConfig = await C.requestJson(apiBase, "/ui/config");
+      if (uiConfig && uiConfig.cognito_domain) {
+        el.cognitoDomain.value = uiConfig.cognito_domain;
       }
-      if (config && config.cognito_client_id) {
-        el.cognitoClientId.value = config.cognito_client_id;
+      if (uiConfig && uiConfig.cognito_client_id) {
+        el.cognitoClientId.value = uiConfig.cognito_client_id;
+      }
+      if (!hostedUiConfigured()) {
+        C.showMessage(
+          el.message,
+          "Secure sign-in is not configured yet. Please contact support.",
+          "error"
+        );
       }
     } catch (error) {
       C.showMessage(el.message, error.message, "error");
     }
+    applyUiAvailability();
   }
 
   async function refreshStatus() {
     if (!token) {
-      C.showMessage(el.message, "Login first to check registration status.", "error");
+      C.showMessage(el.message, "Sign in first to check registration status.", "error");
       renderRegistration(null);
       return;
     }
@@ -148,7 +191,7 @@
   async function submitRegistration(event) {
     event.preventDefault();
     if (!token) {
-      C.showMessage(el.message, "Hosted UI login is required before submitting registration.", "error");
+      C.showMessage(el.message, "Sign in is required before submitting registration.", "error");
       return;
     }
     const tenantName = el.tenantName.value.trim();
@@ -174,19 +217,27 @@
     }
   }
 
-  function hostedFlowConfig() {
-    return {
-      domain: el.cognitoDomain.value.trim(),
-      clientId: el.cognitoClientId.value.trim(),
-      redirectUri: window.location.origin + window.location.pathname,
-      storageKey,
-    };
-  }
-
   async function launchHostedLogin() {
+    if (!hostedUiConfigured()) {
+      C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
+      return;
+    }
     const loginUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!loginUrl) {
-      C.showMessage(el.message, "Hosted UI domain + client id are required.", "error");
+      C.showMessage(el.message, "Secure sign-in is unavailable right now.", "error");
+      return;
+    }
+    window.location.assign(loginUrl);
+  }
+
+  async function launchHostedSignup() {
+    if (!hostedUiConfigured()) {
+      C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
+      return;
+    }
+    const loginUrl = await C.startHostedLogin(hostedFlowConfig());
+    if (!loginUrl) {
+      C.showMessage(el.message, "Secure sign-up is unavailable right now.", "error");
       return;
     }
     window.location.assign(loginUrl);
@@ -196,12 +247,12 @@
     const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
     if (result.status === "success") {
       setToken(result.token || "");
-      C.showMessage(el.message, "Hosted UI login complete.", "success");
+      C.showMessage(el.message, "Sign-in complete.", "success");
       await refreshStatus();
       return;
     }
     if (result.status === "error") {
-      C.showMessage(el.message, result.message || "Hosted UI login failed.", "error");
+      C.showMessage(el.message, result.message || "Sign-in failed.", "error");
     }
   }
 
@@ -214,14 +265,16 @@
     });
     setToken("");
     renderRegistration(null);
-    C.showMessage(el.message, "Session cleared.", "success");
+    C.showMessage(el.message, "Signed out.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
     }
   }
 
   async function bootstrap() {
-    el.token.value = token;
+    if (el.authDebug) {
+      el.authDebug.hidden = !debugAuth;
+    }
     renderClaims();
     await loadUiConfig();
     await finishHostedLoginCallback();
@@ -229,30 +282,21 @@
       await refreshStatus();
     }
     if (currentRegistration && currentRegistration.status === "Approved") {
-      C.showMessage(el.message, "Registration is approved. Re-login to continue with fresh claims.", "success");
+      C.showMessage(el.message, "Registration is approved. Sign in again, then continue to Admin.", "success");
     }
   }
 
-  el.saveToken.addEventListener("click", function () {
-    setToken(el.token.value);
-    C.showMessage(el.message, token ? "Token saved." : "Token cleared.", "success");
-    if (token) {
-      refreshStatus().catch(function () {
-        renderRegistration(null);
-      });
-    }
-  });
-  el.clearToken.addEventListener("click", function () {
-    setToken("");
-    renderRegistration(null);
-    C.showMessage(el.message, "Session cleared.", "success");
-  });
   el.refreshStatus.addEventListener("click", function () {
     refreshStatus().catch(function (error) {
       C.showMessage(el.message, error.message, "error");
     });
   });
   el.form.addEventListener("submit", submitRegistration);
+  el.signupHostedUi.addEventListener("click", function () {
+    launchHostedSignup().catch(function (error) {
+      C.showMessage(el.message, error.message, "error");
+    });
+  });
   el.loginHostedUi.addEventListener("click", function () {
     launchHostedLogin().catch(function (error) {
       C.showMessage(el.message, error.message, "error");

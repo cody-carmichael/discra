@@ -552,6 +552,10 @@ td small {
   color: var(--text);
 }
 
+.register-gate-surface {
+  background: linear-gradient(135deg, #f7fbfd, #edf5f9);
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

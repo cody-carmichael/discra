@@ -15,7 +15,7 @@
       <div>
         <p class="eyebrow">Discra Onboarding</p>
         <h1>Register Your Tenant</h1>
-        <p class="subtitle">Create your account, submit your tenant request, and track approval status.</p>
+        <p class="subtitle">Step 1: create your account and sign in. Step 2: submit your tenant request for approval.</p>
       </div>
       <nav class="top-actions">
         <span id="register-auth-state" class="status-pill status-idle">Not Signed In</span>
@@ -28,7 +28,7 @@
         <div class="panel-title-row">
           <h2>Account Access</h2>
         </div>
-        <p class="panel-help">New here? create your account. Already have access? sign in to continue. You do not need to paste tokens.</p>
+        <p class="panel-help">New here? create your account first. Already have access? sign in to continue. Tokens are handled automatically.</p>
         <div class="row">
           <button id="register-signup-hosted-ui" class="btn btn-primary" type="button">Create Account</button>
           <button id="register-login-hosted-ui" class="btn btn-accent" type="button">Sign In</button>
@@ -39,6 +39,9 @@
           <span>Signed-In Email</span>
           <input id="register-email-view" disabled placeholder="Sign in to continue">
         </label>
+        <div id="register-gate-surface" class="data-surface register-gate-surface">
+          <strong>Next step locked:</strong> Sign in first, then the tenant registration form will appear automatically.
+        </div>
         <details id="register-auth-debug" class="auth-config" hidden>
           <summary>Advanced Connection Settings</summary>
           <label class="field">
@@ -53,7 +56,7 @@
         </details>
       </section>
 
-      <section class="panel">
+      <section id="register-tenant-panel" class="panel" hidden>
         <div class="panel-title-row">
           <h2>Tenant Registration</h2>
           <button id="register-refresh-status" class="btn btn-ghost" type="button">Refresh Status</button>

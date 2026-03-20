@@ -9,6 +9,8 @@
     authState: document.getElementById("register-auth-state"),
     message: document.getElementById("register-message"),
     form: document.getElementById("register-form"),
+    tenantPanel: document.getElementById("register-tenant-panel"),
+    gateSurface: document.getElementById("register-gate-surface"),
     tenantName: document.getElementById("register-tenant-name"),
     contactName: document.getElementById("register-contact-name"),
     notes: document.getElementById("register-notes"),
@@ -75,6 +77,7 @@
     const authReady = hostedUiConfigured();
     const authenticated = !!sessionClaims;
     const submitButton = el.form.querySelector('button[type="submit"]');
+
     el.signupHostedUi.disabled = !authReady;
     el.loginHostedUi.disabled = !authReady;
     el.logoutHostedUi.disabled = !authReady && !authenticated;
@@ -82,6 +85,22 @@
       submitButton.disabled = !authenticated;
     }
     el.refreshStatus.disabled = !authenticated;
+    if (el.tenantPanel) {
+      el.tenantPanel.hidden = !authenticated;
+    }
+    if (el.gateSurface) {
+      el.gateSurface.hidden = authenticated;
+      if (!authenticated && !authReady) {
+        el.gateSurface.innerHTML =
+          "<strong>Account sign-in is unavailable right now.</strong> Please contact support. " +
+          "Cognito Hosted UI domain/client are not configured for this environment.";
+      } else if (!authenticated) {
+        el.gateSurface.innerHTML =
+          "<strong>Next step locked:</strong> Sign in first, then the tenant registration form will appear automatically.";
+      } else {
+        el.gateSurface.textContent = "";
+      }
+    }
   }
 
   function renderRegistration(registration) {
@@ -136,6 +155,7 @@
       el.authState.classList.add("status-idle");
       el.authState.classList.remove("status-live");
       el.emailView.value = "";
+      renderRegistration(null);
       if (el.claims) {
         el.claims.textContent = "No active web session.";
       }

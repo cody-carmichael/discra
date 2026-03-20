@@ -28,6 +28,9 @@ def test_ui_pages_are_available():
     assert "Admin And Dispatcher Console" in admin.text
     assert "Driver Workflow" in driver.text
     assert "Register Your Tenant" in register.text
+    assert "Create Account" in register.text
+    assert "Sign In" in register.text
+    assert "JWT Token (optional override)" not in register.text
     assert "App Dev Review" in review.text
     assert "logout-hosted-ui" in admin.text
     assert "driver-logout-hosted-ui" in driver.text

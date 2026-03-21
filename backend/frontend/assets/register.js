@@ -74,10 +74,27 @@
     return '<span class="table-status">Pending</span>';
   }
 
+  function isSubmissionLocked(registration) {
+    if (!registration || !registration.status) {
+      return false;
+    }
+    return registration.status === "Pending" || registration.status === "Approved";
+  }
+
+  function syncSubmitButtonState() {
+    const submitButton = el.form.querySelector('button[type="submit"]');
+    if (!submitButton) {
+      return;
+    }
+    const authenticated = !!sessionClaims;
+    const locked = isSubmissionLocked(currentRegistration);
+    submitButton.disabled = !authenticated || locked;
+    submitButton.textContent = locked ? "Registration Submitted" : "Submit Registration";
+  }
+
   function applyUiAvailability() {
     const authReady = hostedUiConfigured();
     const authenticated = !!sessionClaims;
-    const submitButton = el.form.querySelector('button[type="submit"]');
 
     el.signupHostedUi.hidden = authenticated;
     el.loginHostedUi.hidden = authenticated;
@@ -85,9 +102,7 @@
     el.signupHostedUi.disabled = !authReady || authenticated;
     el.loginHostedUi.disabled = !authReady || authenticated;
     el.logoutHostedUi.disabled = !authenticated;
-    if (submitButton) {
-      submitButton.disabled = !authenticated;
-    }
+    syncSubmitButtonState();
     el.refreshStatus.disabled = !authenticated;
     if (el.accountHint) {
       if (authenticated) {
@@ -120,6 +135,7 @@
     currentRegistration = registration || null;
     if (!registration) {
       el.statusSurface.innerHTML = "No registration found for this user yet.";
+      syncSubmitButtonState();
       return;
     }
     const decidedAt = registration.decided_at ? C.formatTimestamp(registration.decided_at) : "-";
@@ -159,6 +175,7 @@
     if (!el.notes.value.trim()) {
       el.notes.value = registration.notes || "";
     }
+    syncSubmitButtonState();
   }
 
   function renderClaims() {
@@ -242,6 +259,10 @@
     event.preventDefault();
     if (!sessionClaims) {
       C.showMessage(el.message, "Sign in is required before submitting registration.", "error");
+      return;
+    }
+    if (isSubmissionLocked(currentRegistration)) {
+      C.showMessage(el.message, "Registration has already been submitted.", "error");
       return;
     }
     const tenantName = el.tenantName.value.trim();

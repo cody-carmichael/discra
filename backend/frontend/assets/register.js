@@ -78,7 +78,8 @@
     if (!registration || !registration.status) {
       return false;
     }
-    return registration.status === "Pending" || registration.status === "Approved";
+    const normalized = String(registration.status).trim().toLowerCase();
+    return normalized === "pending" || normalized === "approved";
   }
 
   function syncSubmitButtonState() {

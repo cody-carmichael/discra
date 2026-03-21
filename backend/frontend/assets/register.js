@@ -91,6 +91,7 @@
     const locked = isSubmissionLocked(currentRegistration);
     submitButton.disabled = !authenticated || locked;
     submitButton.textContent = locked ? "Registration Submitted" : "Submit Registration";
+    submitButton.setAttribute("aria-disabled", submitButton.disabled ? "true" : "false");
   }
 
   function applyUiAvailability() {
@@ -100,6 +101,9 @@
     el.signupHostedUi.hidden = authenticated;
     el.loginHostedUi.hidden = authenticated;
     el.logoutHostedUi.hidden = !authenticated;
+    el.signupHostedUi.style.display = authenticated ? "none" : "";
+    el.loginHostedUi.style.display = authenticated ? "none" : "";
+    el.logoutHostedUi.style.display = authenticated ? "" : "none";
     el.signupHostedUi.disabled = !authReady || authenticated;
     el.loginHostedUi.disabled = !authReady || authenticated;
     el.logoutHostedUi.disabled = !authenticated;

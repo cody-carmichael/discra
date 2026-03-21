@@ -17,6 +17,7 @@
     emailView: document.getElementById("register-email-view"),
     statusSurface: document.getElementById("register-status-surface"),
     refreshStatus: document.getElementById("register-refresh-status"),
+    accountHint: document.getElementById("register-account-hint"),
     cognitoDomain: document.getElementById("register-cognito-domain"),
     cognitoClientId: document.getElementById("register-cognito-client-id"),
     signupHostedUi: document.getElementById("register-signup-hosted-ui"),
@@ -78,13 +79,25 @@
     const authenticated = !!sessionClaims;
     const submitButton = el.form.querySelector('button[type="submit"]');
 
-    el.signupHostedUi.disabled = !authReady;
-    el.loginHostedUi.disabled = !authReady;
-    el.logoutHostedUi.disabled = !authReady && !authenticated;
+    el.signupHostedUi.hidden = authenticated;
+    el.loginHostedUi.hidden = authenticated;
+    el.logoutHostedUi.hidden = !authenticated;
+    el.signupHostedUi.disabled = !authReady || authenticated;
+    el.loginHostedUi.disabled = !authReady || authenticated;
+    el.logoutHostedUi.disabled = !authenticated;
     if (submitButton) {
       submitButton.disabled = !authenticated;
     }
     el.refreshStatus.disabled = !authenticated;
+    if (el.accountHint) {
+      if (authenticated) {
+        el.accountHint.innerHTML =
+          "You are signed in. Complete your tenant details below and submit for App Dev approval.";
+      } else {
+        el.accountHint.innerHTML =
+          "You will be redirected to secure authentication. <strong>Create Account</strong> opens sign-up directly.";
+      }
+    }
     if (el.tenantPanel) {
       el.tenantPanel.hidden = !authenticated;
     }
@@ -254,6 +267,10 @@
   }
 
   async function launchHostedLogin() {
+    if (sessionClaims) {
+      C.showMessage(el.message, "You are already signed in. Continue with tenant registration below.", "success");
+      return;
+    }
     if (!hostedUiConfigured()) {
       C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
       return;
@@ -267,6 +284,10 @@
   }
 
   async function launchHostedSignup() {
+    if (sessionClaims) {
+      C.showMessage(el.message, "You are already signed in. Sign out first to create a different account.", "error");
+      return;
+    }
     if (!hostedUiConfigured()) {
       C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
       return;
@@ -292,7 +313,18 @@
   }
 
   async function finishHostedLoginCallback() {
-    const result = await C.consumeHostedLoginCallback(apiBase, hostedFlowConfig());
+    const config = hostedFlowConfig();
+    let result = { status: "none" };
+    if (typeof C.consumeHostedLoginCallback === "function") {
+      // Support both callback helper signatures:
+      // - legacy: consumeHostedLoginCallback(config)
+      // - current: consumeHostedLoginCallback(apiBase, config)
+      if (C.consumeHostedLoginCallback.length <= 1) {
+        result = await C.consumeHostedLoginCallback(config);
+      } else {
+        result = await C.consumeHostedLoginCallback(apiBase, config);
+      }
+    }
     if (result.status === "success") {
       await restoreWebSession();
       C.showMessage(el.message, "Sign-in complete.", "success");

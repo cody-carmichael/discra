@@ -286,7 +286,16 @@
     return url.toString();
   }
 
-  async function consumeHostedLoginCallback(apiBase, config) {
+  async function consumeHostedLoginCallback(apiBaseOrConfig, configOverride) {
+    let apiBase = "";
+    let config = null;
+    if (apiBaseOrConfig && typeof apiBaseOrConfig === "object") {
+      config = apiBaseOrConfig;
+    } else {
+      apiBase = typeof apiBaseOrConfig === "string" ? apiBaseOrConfig : "";
+      config = configOverride;
+    }
+
     if (!config || !config.storageKey || !config.redirectUri) {
       return { status: "none" };
     }

@@ -80,7 +80,18 @@
   }
 
   async function finishHostedLoginCallback() {
-    const result = await C.consumeHostedLoginCallback(apiBase, hostedFlowConfig());
+    const config = hostedFlowConfig();
+    let result = { status: "none" };
+    if (typeof C.consumeHostedLoginCallback === "function") {
+      // Support both callback helper signatures:
+      // - legacy: consumeHostedLoginCallback(config)
+      // - current: consumeHostedLoginCallback(apiBase, config)
+      if (C.consumeHostedLoginCallback.length <= 1) {
+        result = await C.consumeHostedLoginCallback(config);
+      } else {
+        result = await C.consumeHostedLoginCallback(apiBase, config);
+      }
+    }
     if (result.status === "success") {
       C.showMessage(el.message, "Sign-in complete. Redirecting to your workspace...", "success");
       window.location.assign(resolveAdminPath());

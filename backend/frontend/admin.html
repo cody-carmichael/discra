@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0e7aa6">
-  <link rel="stylesheet" href="assets/styles.css?v=20260321a">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322a">
 </head>
 <body class="theme-admin">
   <div class="app-shell">
@@ -32,6 +32,7 @@
         <h2 class="sidebar-title">Workspace</h2>
         <div class="workspace-nav" role="tablist" aria-label="Console workspaces">
           <button class="workspace-tab is-active" type="button" data-workspace-target="operations">Operations</button>
+          <button class="workspace-tab" type="button" data-workspace-target="orders">Orders</button>
           <button class="workspace-tab" type="button" data-workspace-target="planning">Planning</button>
           <button class="workspace-tab" type="button" data-workspace-target="insights">Insights</button>
           <button class="workspace-tab" type="button" data-workspace-target="admin">Admin</button>
@@ -94,10 +95,9 @@
           <section class="panel">
             <div class="panel-title-row">
               <h2>Operations Cockpit</h2>
-              <button id="refresh-orders" class="btn btn-ghost" type="button">Refresh Orders</button>
             </div>
-            <p class="panel-help">Track volume, assignment health, and driver coverage before dispatching changes.</p>
-            <div class="stats-grid">
+            <p class="panel-help">Track volume, assignment health, active drivers, and upcoming deadlines before dispatching changes.</p>
+            <div class="stats-grid stats-grid-5">
               <article class="stat-card">
                 <span>Total Orders</span>
                 <strong id="stats-total-orders">0</strong>
@@ -114,84 +114,156 @@
                 <span>Active Drivers</span>
                 <strong id="stats-active-drivers">0</strong>
               </article>
+              <button id="stats-upcoming-due-card" class="stat-card stat-card-action" type="button">
+                <span>Upcoming Due Dates</span>
+                <strong id="stats-upcoming-due">0</strong>
+                <small>View Orders</small>
+              </button>
             </div>
           </section>
 
-          <div class="ops-grid">
+          <div class="ops-grid ops-grid-cockpit">
             <section class="panel">
               <div class="panel-title-row">
-                <h2>Order Queue</h2>
-                <div class="row">
-                  <input id="bulk-driver-id" class="compact-input" list="driver-options" placeholder="driver id">
-                  <button id="bulk-assign-selected" class="btn btn-primary" type="button">Assign Selected</button>
-                  <button id="bulk-unassign-selected" class="btn btn-ghost" type="button">Unassign</button>
-                  <button id="clear-selection" class="btn btn-ghost" type="button">Clear</button>
-                  <span id="selection-count" class="status-pill status-idle">0 selected</span>
-                </div>
-              </div>
-
-              <datalist id="driver-options"></datalist>
-
-              <form id="orders-filter-form" class="row orders-filters">
-                <label class="field">
-                  <span>Status</span>
-                  <select id="orders-status-filter" name="status">
-                    <option value="">Any status</option>
-                    <option value="Created">Created</option>
-                    <option value="Assigned">Assigned</option>
-                    <option value="PickedUp">PickedUp</option>
-                    <option value="EnRoute">EnRoute</option>
-                    <option value="Delivered">Delivered</option>
-                    <option value="Failed">Failed</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>Assigned Driver</span>
-                  <input id="orders-assigned-filter" name="assigned_to" placeholder="driver id">
-                </label>
-                <label class="field">
-                  <span>Search</span>
-                  <input id="orders-search-filter" name="search" placeholder="customer / reference / order id">
-                </label>
-                <div class="filter-actions">
-                  <button class="btn btn-primary" type="submit">Apply</button>
-                  <button id="orders-clear-filters" class="btn btn-ghost" type="button">Clear</button>
-                </div>
-              </form>
-
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th><input id="select-all-orders" type="checkbox" aria-label="Select all orders"></th>
-                      <th>Order</th>
-                      <th>Stops</th>
-                      <th>Window</th>
-                      <th>Assignment</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody id="orders-tbody"></tbody>
-                </table>
-              </div>
-              <div id="orders-mobile" class="orders-mobile"></div>
-              <p id="orders-message" class="message"></p>
-            </section>
-
-            <section class="panel">
-              <div class="panel-title-row">
-                <h2>Driver Tracking</h2>
+                <h2>Live Driver Map</h2>
                 <button id="refresh-drivers" class="btn btn-ghost" type="button">Refresh</button>
               </div>
-              <label class="field">
-                <span>Map Style URL</span>
-                <input id="map-style-url" placeholder="https://demotiles.maplibre.org/style.json">
-              </label>
+              <p class="panel-help">Select a driver from the list or map marker to center instantly and set assignment context.</p>
               <div id="driver-map" class="map-card"></div>
-              <ul id="driver-list" class="driver-list"></ul>
+              <ul id="driver-list" class="driver-list driver-list-interactive"></ul>
               <p id="drivers-message" class="message"></p>
             </section>
+
+            <section class="panel">
+              <div class="panel-title-row">
+                <h2>Dispatch Board</h2>
+              </div>
+              <p id="assignment-context" class="panel-help">Select a driver, then assign from the unassigned queue in one click.</p>
+              <div class="selected-driver-chip">
+                <span>Selected Driver</span>
+                <strong id="selected-driver-label">None selected</strong>
+              </div>
+              <div class="assignment-columns">
+                <article class="assignment-column">
+                  <div class="panel-title-row">
+                    <h3>Unassigned Orders</h3>
+                    <span id="unassigned-queue-count" class="status-pill status-idle">0</span>
+                  </div>
+                  <div id="unassigned-orders-list" class="assignment-list"></div>
+                </article>
+                <article class="assignment-column">
+                  <div class="panel-title-row">
+                    <h3>Assigned Orders</h3>
+                    <span id="assigned-queue-count" class="status-pill status-live">0</span>
+                  </div>
+                  <div id="assigned-orders-list" class="assignment-list"></div>
+                </article>
+              </div>
+              <p id="assignment-message" class="message"></p>
+            </section>
           </div>
+        </section>
+
+        <section class="workspace-panel" data-workspace-panel="orders">
+          <section class="panel">
+            <div class="panel-title-row">
+              <h2>Orders View</h2>
+              <button id="refresh-orders" class="btn btn-ghost" type="button">Refresh Orders</button>
+            </div>
+            <p class="panel-help">Spreadsheet-style order management with sorting, filtering, and fast assignment actions.</p>
+
+            <div class="row">
+              <input id="bulk-driver-id" class="compact-input" list="driver-options" placeholder="driver id">
+              <button id="bulk-assign-selected" class="btn btn-primary" type="button">Assign Selected</button>
+              <button id="bulk-unassign-selected" class="btn btn-ghost" type="button">Unassign</button>
+              <button id="clear-selection" class="btn btn-ghost" type="button">Clear</button>
+              <span id="selection-count" class="status-pill status-idle">0 selected</span>
+            </div>
+
+            <datalist id="driver-options"></datalist>
+
+            <form id="orders-filter-form" class="row orders-filters">
+              <label class="field">
+                <span>Status</span>
+                <select id="orders-status-filter" name="status">
+                  <option value="">Any status</option>
+                  <option value="Created">Created</option>
+                  <option value="Assigned">Assigned</option>
+                  <option value="PickedUp">PickedUp</option>
+                  <option value="EnRoute">EnRoute</option>
+                  <option value="Delivered">Delivered</option>
+                  <option value="Failed">Failed</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Assigned Driver</span>
+                <input id="orders-assigned-filter" name="assigned_to" placeholder="driver id">
+              </label>
+              <label class="field">
+                <span>Assignment</span>
+                <select id="orders-assignment-filter" name="assignment">
+                  <option value="">All</option>
+                  <option value="assigned">Assigned only</option>
+                  <option value="unassigned">Unassigned only</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Due Date</span>
+                <select id="orders-due-filter" name="due">
+                  <option value="">Any</option>
+                  <option value="upcoming">Upcoming (next 2h)</option>
+                  <option value="overdue">Overdue</option>
+                  <option value="none">No deadline</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Search</span>
+                <input id="orders-search-filter" name="search" placeholder="customer / reference / order id">
+              </label>
+              <label class="field">
+                <span>Sort By</span>
+                <select id="orders-sort-field" name="sort_field">
+                  <option value="dropoff_deadline">Dropoff Deadline</option>
+                  <option value="pickup_deadline">Pickup Deadline</option>
+                  <option value="created_at">Created At</option>
+                  <option value="customer_name">Customer</option>
+                  <option value="reference_number">Reference Number</option>
+                  <option value="status">Status</option>
+                  <option value="assigned_to">Assigned Driver</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Direction</span>
+                <select id="orders-sort-direction" name="sort_direction">
+                  <option value="asc">Ascending</option>
+                  <option value="desc">Descending</option>
+                </select>
+              </label>
+              <div class="filter-actions">
+                <button class="btn btn-primary" type="submit">Apply</button>
+                <button id="orders-clear-filters" class="btn btn-ghost" type="button">Clear</button>
+              </div>
+            </form>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th><input id="select-all-orders" type="checkbox" aria-label="Select all orders"></th>
+                    <th><button class="table-sort" type="button" data-order-sort-field="customer_name">Order</button></th>
+                    <th><button class="table-sort" type="button" data-order-sort-field="pick_up_address">Stops</button></th>
+                    <th><button class="table-sort" type="button" data-order-sort-field="pickup_deadline">Deadlines</button></th>
+                    <th><button class="table-sort" type="button" data-order-sort-field="time_window_end">Window</button></th>
+                    <th><button class="table-sort" type="button" data-order-sort-field="assigned_to">Assignment</button></th>
+                    <th><button class="table-sort" type="button" data-order-sort-field="status">Status</button></th>
+                  </tr>
+                </thead>
+                <tbody id="orders-tbody"></tbody>
+              </table>
+            </div>
+            <div id="orders-mobile" class="orders-mobile"></div>
+            <p id="orders-message" class="message"></p>
+          </section>
         </section>
 
         <section class="workspace-panel" data-workspace-panel="planning">
@@ -210,6 +282,8 @@
                 <label class="field"><span>Weight</span><input name="weight" type="number" step="any" min="0.01" required></label>
                 <label class="field"><span>Time Window Start</span><input name="time_window_start" type="datetime-local"></label>
                 <label class="field"><span>Time Window End</span><input name="time_window_end" type="datetime-local"></label>
+                <label class="field"><span>Pick Up Deadline</span><input name="pickup_deadline" type="datetime-local"></label>
+                <label class="field"><span>Drop Off Deadline</span><input name="dropoff_deadline" type="datetime-local"></label>
                 <label class="field"><span>Phone</span><input name="phone"></label>
                 <label class="field"><span>Email</span><input name="email" type="email"></label>
                 <label class="field"><span>Packages</span><input name="num_packages" type="number" min="1" value="1"></label>
@@ -330,7 +404,7 @@
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260321a"></script>
-  <script src="assets/admin.js?v=20260321a"></script>
+  <script src="assets/common.js?v=20260322a"></script>
+  <script src="assets/admin.js?v=20260322a"></script>
 </body>
 </html>

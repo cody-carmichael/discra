@@ -3,6 +3,8 @@
   const storageKey = "discra_admin_auth";
   const apiBase = C.deriveApiBase("/ui/admin");
   const defaultMapStyle = "https://demotiles.maplibre.org/style.json";
+  const terminalStatuses = new Set(["Delivered", "Failed"]);
+  const dueSoonMinutes = 120;
   const adminAllowedRoles = ["Admin", "Dispatcher"];
   const query = new URLSearchParams(window.location.search || "");
   const debugAuth = query.get("debug_auth") === "1";
@@ -26,11 +28,25 @@
     ordersFilterForm: document.getElementById("orders-filter-form"),
     ordersStatusFilter: document.getElementById("orders-status-filter"),
     ordersAssignedFilter: document.getElementById("orders-assigned-filter"),
+    ordersAssignmentFilter: document.getElementById("orders-assignment-filter"),
+    ordersDueFilter: document.getElementById("orders-due-filter"),
     ordersSearchFilter: document.getElementById("orders-search-filter"),
+    ordersSortField: document.getElementById("orders-sort-field"),
+    ordersSortDirection: document.getElementById("orders-sort-direction"),
     ordersClearFilters: document.getElementById("orders-clear-filters"),
     ordersBody: document.getElementById("orders-tbody"),
     ordersMobile: document.getElementById("orders-mobile"),
     ordersMessage: document.getElementById("orders-message"),
+    assignmentMessage: document.getElementById("assignment-message"),
+    assignmentContext: document.getElementById("assignment-context"),
+    selectedDriverLabel: document.getElementById("selected-driver-label"),
+    unassignedQueueCount: document.getElementById("unassigned-queue-count"),
+    assignedQueueCount: document.getElementById("assigned-queue-count"),
+    unassignedOrdersList: document.getElementById("unassigned-orders-list"),
+    assignedOrdersList: document.getElementById("assigned-orders-list"),
+    statsUpcomingDue: document.getElementById("stats-upcoming-due"),
+    statsUpcomingDueCard: document.getElementById("stats-upcoming-due-card"),
+    orderSortButtons: Array.from(document.querySelectorAll("[data-order-sort-field]")),
     driverOptions: document.getElementById("driver-options"),
     refreshDrivers: document.getElementById("refresh-drivers"),
     driversMessage: document.getElementById("drivers-message"),
@@ -62,7 +78,6 @@
     refreshInvitations: document.getElementById("refresh-invitations"),
     billingInvitations: document.getElementById("billing-invitations"),
     billingMessage: document.getElementById("billing-message"),
-    mapStyleUrl: document.getElementById("map-style-url"),
     mapContainer: document.getElementById("driver-map"),
     cognitoDomain: document.getElementById("cognito-domain"),
     cognitoClientId: document.getElementById("cognito-client-id"),
@@ -84,8 +99,12 @@
   let token = "";
   let map = null;
   let mapMarkers = [];
+  let mapStyleUrl = defaultMapStyle;
   let driverRefreshTimer = null;
+  let allOrders = [];
   let lastOrders = [];
+  let lastDriverLocations = [];
+  let selectedDriverId = "";
   let isAuthorizedRole = false;
   let isAdminRole = false;
   let devAuthEnabled = false;
@@ -97,7 +116,11 @@
   let orderFilters = {
     status: "",
     assignedTo: "",
+    assignment: "",
+    due: "",
     search: "",
+    sortField: "dropoff_deadline",
+    sortDirection: "asc",
   };
   let auditFilters = {
     action: "",
@@ -207,6 +230,71 @@
     el.statsLastSync.textContent = new Date().toLocaleTimeString();
   }
 
+  function _parseDateOrNull(value) {
+    if (!value) {
+      return null;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    return date;
+  }
+
+  function _orderDeadlineDate(order) {
+    return _parseDateOrNull(order && (order.dropoff_deadline || order.time_window_end || order.pickup_deadline));
+  }
+
+  function _isTerminalOrder(order) {
+    return terminalStatuses.has(String(order && order.status ? order.status : ""));
+  }
+
+  function _isUpcomingDue(order, nowDate) {
+    if (!order || _isTerminalOrder(order)) {
+      return false;
+    }
+    const deadline = _orderDeadlineDate(order);
+    if (!deadline) {
+      return false;
+    }
+    const deltaMs = deadline.getTime() - nowDate.getTime();
+    return deltaMs >= 0 && deltaMs <= dueSoonMinutes * 60 * 1000;
+  }
+
+  function _isOverdue(order, nowDate) {
+    if (!order || _isTerminalOrder(order)) {
+      return false;
+    }
+    const deadline = _orderDeadlineDate(order);
+    if (!deadline) {
+      return false;
+    }
+    return deadline.getTime() < nowDate.getTime();
+  }
+
+  function _formatOrderDeadlines(order) {
+    return (
+      "Pickup: " +
+      C.formatTimestamp(order && order.pickup_deadline) +
+      " -> Dropoff: " +
+      C.formatTimestamp(order && order.dropoff_deadline)
+    );
+  }
+
+  function _dueBadge(order, nowDate) {
+    if (_isOverdue(order, nowDate)) {
+      return { label: "Overdue", cssClass: "due-pill overdue" };
+    }
+    if (_isUpcomingDue(order, nowDate)) {
+      return { label: "Due Soon", cssClass: "due-pill" };
+    }
+    const deadline = _orderDeadlineDate(order);
+    if (!deadline) {
+      return { label: "No Deadline", cssClass: "due-pill" };
+    }
+    return { label: "Scheduled", cssClass: "due-pill" };
+  }
+
   function renderWorkspace(target) {
     activeWorkspace = target || "operations";
     el.workspaceTabs.forEach(function (tab) {
@@ -230,7 +318,7 @@
       return;
     }
     const hashPanel = (window.location.hash || "").replace("#", "").trim();
-    const knownPanels = new Set(["operations", "planning", "insights", "admin"]);
+    const knownPanels = new Set(["operations", "orders", "planning", "insights", "admin"]);
     renderWorkspace(knownPanels.has(hashPanel) ? hashPanel : "operations");
     el.workspaceTabs.forEach(function (tab) {
       tab.addEventListener("click", function () {
@@ -248,6 +336,10 @@
       return !!order.assigned_to;
     }).length;
     const unassigned = Math.max(total - assigned, 0);
+    const nowDate = new Date();
+    const upcomingDue = list.filter(function (order) {
+      return _isUpcomingDue(order, nowDate);
+    }).length;
     if (el.statsTotalOrders) {
       el.statsTotalOrders.textContent = String(total);
     }
@@ -256,6 +348,9 @@
     }
     if (el.statsUnassignedOrders) {
       el.statsUnassignedOrders.textContent = String(unassigned);
+    }
+    if (el.statsUpcomingDue) {
+      el.statsUpcomingDue.textContent = String(upcomingDue);
     }
   }
 
@@ -280,6 +375,14 @@
     el.ordersFilterForm.querySelectorAll("input, select, button").forEach(function (element) {
       element.disabled = !enabled;
     });
+    if (el.statsUpcomingDueCard) {
+      el.statsUpcomingDueCard.disabled = !enabled;
+    }
+    if (Array.isArray(el.orderSortButtons)) {
+      el.orderSortButtons.forEach(function (button) {
+        button.disabled = !enabled;
+      });
+    }
     el.refreshDrivers.disabled = !enabled;
     el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
       element.disabled = !enabled;
@@ -318,7 +421,11 @@
     return {
       status: (el.ordersStatusFilter.value || "").trim(),
       assignedTo: (el.ordersAssignedFilter.value || "").trim(),
+      assignment: (el.ordersAssignmentFilter.value || "").trim(),
+      due: (el.ordersDueFilter.value || "").trim(),
       search: (el.ordersSearchFilter.value || "").trim(),
+      sortField: (el.ordersSortField.value || "dropoff_deadline").trim(),
+      sortDirection: (el.ordersSortDirection.value || "asc").trim().toLowerCase() === "desc" ? "desc" : "asc",
     };
   }
 
@@ -358,39 +465,140 @@
   function _writeOrderFilters() {
     el.ordersStatusFilter.value = orderFilters.status || "";
     el.ordersAssignedFilter.value = orderFilters.assignedTo || "";
+    el.ordersAssignmentFilter.value = orderFilters.assignment || "";
+    el.ordersDueFilter.value = orderFilters.due || "";
     el.ordersSearchFilter.value = orderFilters.search || "";
+    el.ordersSortField.value = orderFilters.sortField || "dropoff_deadline";
+    el.ordersSortDirection.value = orderFilters.sortDirection || "asc";
   }
 
   function _ordersPathFromFilters() {
-    const params = new URLSearchParams();
-    if (orderFilters.status) {
-      params.set("status", orderFilters.status);
-    }
-    if (orderFilters.assignedTo) {
-      params.set("assignedTo", orderFilters.assignedTo);
-    }
-    return "/orders/" + (params.toString() ? "?" + params.toString() : "");
+    return "/orders/";
   }
 
-  function _filterOrdersBySearch(orders) {
-    if (!orderFilters.search) {
-      return orders;
+  function _orderSortValue(order, field) {
+    if (!order || !field) {
+      return "";
     }
-    const search = orderFilters.search.toLowerCase();
-    return (orders || []).filter(function (order) {
-      const ref = order.reference_number === null || order.reference_number === undefined ? "" : String(order.reference_number);
-      const haystack = [
-        order.id,
-        order.external_order_id,
-        order.customer_name,
-        ref,
-        order.pick_up_address,
-        order.delivery,
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.indexOf(search) >= 0;
+    if (field === "dropoff_deadline") {
+      return _orderDeadlineDate(order) || null;
+    }
+    if (field === "pickup_deadline") {
+      return _parseDateOrNull(order.pickup_deadline);
+    }
+    if (field === "time_window_end") {
+      return _parseDateOrNull(order.time_window_end);
+    }
+    if (field === "created_at") {
+      return _parseDateOrNull(order.created_at);
+    }
+    if (field === "reference_number") {
+      return Number.isFinite(order.reference_number) ? order.reference_number : Number.parseInt(order.reference_number || "0", 10) || 0;
+    }
+    const raw = order[field];
+    if (raw === null || raw === undefined) {
+      return "";
+    }
+    return String(raw).toLowerCase();
+  }
+
+  function _compareOrderSortValues(left, right) {
+    if (left === right) {
+      return 0;
+    }
+    if (left === null || left === undefined || left === "") {
+      return 1;
+    }
+    if (right === null || right === undefined || right === "") {
+      return -1;
+    }
+    if (left instanceof Date && right instanceof Date) {
+      return left.getTime() - right.getTime();
+    }
+    if (typeof left === "number" && typeof right === "number") {
+      return left - right;
+    }
+    return String(left).localeCompare(String(right));
+  }
+
+  function _matchesOrderSearch(order, search) {
+    if (!search) {
+      return true;
+    }
+    const ref = order.reference_number === null || order.reference_number === undefined ? "" : String(order.reference_number);
+    const haystack = [
+      order.id,
+      order.external_order_id,
+      order.customer_name,
+      ref,
+      order.pick_up_address,
+      order.delivery,
+      order.assigned_to,
+      order.status,
+      order.pickup_deadline,
+      order.dropoff_deadline,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.indexOf(search) >= 0;
+  }
+
+  function _passesDueFilter(order, dueFilter, nowDate) {
+    if (!dueFilter) {
+      return true;
+    }
+    if (dueFilter === "upcoming") {
+      return _isUpcomingDue(order, nowDate);
+    }
+    if (dueFilter === "overdue") {
+      return _isOverdue(order, nowDate);
+    }
+    if (dueFilter === "none") {
+      return !_orderDeadlineDate(order);
+    }
+    return true;
+  }
+
+  function _applyOrderFiltersAndSort(orders) {
+    const list = Array.isArray(orders) ? orders.slice() : [];
+    const nowDate = new Date();
+    const search = (orderFilters.search || "").toLowerCase();
+    const filtered = list.filter(function (order) {
+      if (orderFilters.status && String(order.status || "") !== orderFilters.status) {
+        return false;
+      }
+      if (orderFilters.assignedTo && String(order.assigned_to || "").trim() !== orderFilters.assignedTo) {
+        return false;
+      }
+      if (orderFilters.assignment === "assigned" && !order.assigned_to) {
+        return false;
+      }
+      if (orderFilters.assignment === "unassigned" && !!order.assigned_to) {
+        return false;
+      }
+      if (!_passesDueFilter(order, orderFilters.due, nowDate)) {
+        return false;
+      }
+      return _matchesOrderSearch(order, search);
     });
+
+    const sortField = orderFilters.sortField || "dropoff_deadline";
+    const direction = orderFilters.sortDirection === "desc" ? -1 : 1;
+    filtered.sort(function (left, right) {
+      const leftValue = _orderSortValue(left, sortField);
+      const rightValue = _orderSortValue(right, sortField);
+      const leftMissing = leftValue === null || leftValue === undefined || leftValue === "";
+      const rightMissing = rightValue === null || rightValue === undefined || rightValue === "";
+      if (leftMissing !== rightMissing) {
+        return leftMissing ? 1 : -1;
+      }
+      const primary = _compareOrderSortValues(leftValue, rightValue);
+      if (primary !== 0) {
+        return primary * direction;
+      }
+      return _compareOrderSortValues(_parseDateOrNull(right.created_at), _parseDateOrNull(left.created_at));
+    });
+    return filtered;
   }
 
   async function applyOrderFilters(event) {
@@ -402,7 +610,43 @@
   }
 
   async function clearOrderFilters() {
-    orderFilters = { status: "", assignedTo: "", search: "" };
+    orderFilters = {
+      status: "",
+      assignedTo: "",
+      assignment: "",
+      due: "",
+      search: "",
+      sortField: "dropoff_deadline",
+      sortDirection: "asc",
+    };
+    _writeOrderFilters();
+    await refreshOrders();
+  }
+
+  async function applyUpcomingDueFilter() {
+    orderFilters.status = "";
+    orderFilters.assignedTo = "";
+    orderFilters.due = "upcoming";
+    orderFilters.assignment = "";
+    orderFilters.search = "";
+    orderFilters.sortField = "dropoff_deadline";
+    orderFilters.sortDirection = "asc";
+    _writeOrderFilters();
+    renderWorkspace("orders");
+    history.replaceState(null, "", "#orders");
+    await refreshOrders();
+  }
+
+  async function sortOrdersByField(field) {
+    if (!field) {
+      return;
+    }
+    if (orderFilters.sortField === field) {
+      orderFilters.sortDirection = orderFilters.sortDirection === "asc" ? "desc" : "asc";
+    } else {
+      orderFilters.sortField = field;
+      orderFilters.sortDirection = field === "dropoff_deadline" || field === "pickup_deadline" ? "asc" : "desc";
+    }
     _writeOrderFilters();
     await refreshOrders();
   }
@@ -413,6 +657,170 @@
     }
     auditFilters = _readAuditFilters();
     await refreshAuditLogs();
+  }
+
+  function renderAssignmentQueues(orders) {
+    const list = Array.isArray(orders) ? orders : [];
+    const nowDate = new Date();
+    const unassigned = list.filter(function (order) {
+      return !order.assigned_to;
+    });
+    const assigned = list.filter(function (order) {
+      return !!order.assigned_to;
+    });
+
+    if (el.unassignedQueueCount) {
+      el.unassignedQueueCount.textContent = String(unassigned.length);
+    }
+    if (el.assignedQueueCount) {
+      el.assignedQueueCount.textContent = String(assigned.length);
+    }
+
+    if (el.unassignedOrdersList) {
+      if (!unassigned.length) {
+        el.unassignedOrdersList.innerHTML = "<p class=\"assignment-empty\">No unassigned orders.</p>";
+      } else {
+        el.unassignedOrdersList.innerHTML = unassigned
+          .slice(0, 12)
+          .map(function (order) {
+            const due = _dueBadge(order, nowDate);
+            return (
+              "<article class=\"assignment-item\">" +
+              "<h4>" +
+              C.escapeHtml(order.customer_name || order.id) +
+              "</h4>" +
+              "<p>Order: " +
+              C.escapeHtml(order.id) +
+              "<br>Dropoff: " +
+              C.escapeHtml(order.delivery || "-") +
+              "<br>" +
+              C.escapeHtml(_formatOrderDeadlines(order)) +
+              "</p>" +
+              "<div class=\"assignment-item-footer\">" +
+              "<span class=\"" +
+              C.escapeHtml(due.cssClass) +
+              "\">" +
+              C.escapeHtml(due.label) +
+              "</span>" +
+              "<button class=\"btn btn-primary\" type=\"button\" data-queue-action=\"assign-selected\" data-order-id=\"" +
+              C.escapeHtml(order.id) +
+              "\">Assign Selected Driver</button>" +
+              "</div>" +
+              "</article>"
+            );
+          })
+          .join("");
+      }
+    }
+
+    if (el.assignedOrdersList) {
+      if (!assigned.length) {
+        el.assignedOrdersList.innerHTML = "<p class=\"assignment-empty\">No assigned orders yet.</p>";
+      } else {
+        el.assignedOrdersList.innerHTML = assigned
+          .slice(0, 12)
+          .map(function (order) {
+            const due = _dueBadge(order, nowDate);
+            return (
+              "<article class=\"assignment-item\">" +
+              "<h4>" +
+              C.escapeHtml(order.customer_name || order.id) +
+              "</h4>" +
+              "<p>Driver: " +
+              C.escapeHtml(order.assigned_to || "-") +
+              "<br>Status: " +
+              C.escapeHtml(order.status || "-") +
+              "<br>" +
+              C.escapeHtml(_formatOrderDeadlines(order)) +
+              "</p>" +
+              "<div class=\"assignment-item-footer\">" +
+              "<span class=\"" +
+              C.escapeHtml(due.cssClass) +
+              "\">" +
+              C.escapeHtml(due.label) +
+              "</span>" +
+              "<button class=\"btn btn-ghost\" type=\"button\" data-queue-action=\"unassign\" data-order-id=\"" +
+              C.escapeHtml(order.id) +
+              "\">Unassign</button>" +
+              "</div>" +
+              "</article>"
+            );
+          })
+          .join("");
+      }
+    }
+
+    if (el.selectedDriverLabel) {
+      el.selectedDriverLabel.textContent = selectedDriverId || "None selected";
+    }
+    if (el.assignmentContext) {
+      if (selectedDriverId) {
+        el.assignmentContext.textContent = "Driver " + selectedDriverId + " selected. Use Assign Selected Driver on unassigned orders.";
+      } else {
+        el.assignmentContext.textContent = "Select a driver, then assign from the unassigned queue in one click.";
+      }
+    }
+  }
+
+  function selectDriver(driverId, options) {
+    const safeDriverId = String(driverId || "").trim();
+    selectedDriverId = safeDriverId;
+    if (el.bulkDriverId) {
+      el.bulkDriverId.value = safeDriverId;
+    }
+    renderDriverList(lastDriverLocations);
+    renderDriverMarkers(lastDriverLocations, { focusDriverId: safeDriverId, keepCurrentViewport: !!(options && options.keepViewport) });
+    renderAssignmentQueues(allOrders);
+    if (!(options && options.silent) && safeDriverId) {
+      C.showMessage(el.assignmentMessage || el.ordersMessage, "Selected driver " + safeDriverId + ".", "success");
+    }
+  }
+
+  async function onDriverListClick(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const button = target.closest("[data-driver-id]");
+    if (!(button instanceof HTMLElement)) {
+      return;
+    }
+    const driverId = button.getAttribute("data-driver-id");
+    if (!driverId) {
+      return;
+    }
+    selectDriver(driverId);
+  }
+
+  async function applyQuickAssign(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const action = target.getAttribute("data-queue-action");
+    const orderId = target.getAttribute("data-order-id");
+    if (!action || !orderId) {
+      return;
+    }
+    if (!requireAuthorized(el.assignmentMessage || el.ordersMessage)) {
+      return;
+    }
+    try {
+      if (action === "assign-selected") {
+        if (!selectedDriverId) {
+          C.showMessage(el.assignmentMessage || el.ordersMessage, "Select a driver first.", "error");
+          return;
+        }
+        await assignOrder(orderId, selectedDriverId);
+        C.showMessage(el.assignmentMessage || el.ordersMessage, "Order assigned to " + selectedDriverId + ".", "success");
+      } else if (action === "unassign") {
+        await unassignOrder(orderId);
+        C.showMessage(el.assignmentMessage || el.ordersMessage, "Order unassigned.", "success");
+      }
+      await refreshOrders();
+    } catch (error) {
+      C.showMessage(el.assignmentMessage || el.ordersMessage, error.message, "error");
+    }
   }
 
   function _syncSelectAllCheckbox() {
@@ -495,8 +903,15 @@
       isAuthorizedRole = false;
       isAdminRole = false;
       stopDriverAutoRefresh();
+      allOrders = [];
+      lastOrders = [];
+      lastDriverLocations = [];
+      selectedDriverId = "";
       _clearSelection();
       renderDriverOptions([]);
+      renderDriverList([]);
+      renderDriverMarkers([]);
+      renderAssignmentQueues([]);
       updateOrderStats([]);
       updateActiveDriverStat(0);
       setInteractiveState(false);
@@ -513,6 +928,10 @@
     isAdminRole = hasAdminRole(claims);
     if (!isAuthorizedRole) {
       stopDriverAutoRefresh();
+      allOrders = [];
+      lastOrders = [];
+      lastDriverLocations = [];
+      selectedDriverId = "";
       _clearSelection();
     }
     setInteractiveState(isAuthorizedRole);
@@ -520,6 +939,9 @@
     if (!isAuthorizedRole) {
       el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
       renderDriverOptions([]);
+      renderDriverList([]);
+      renderDriverMarkers([]);
+      renderAssignmentQueues([]);
       C.showMessage(el.authMessage, "This console requires Admin or Dispatcher role.", "error");
       return;
     }
@@ -599,13 +1021,13 @@
       devAuthEnabled = !!(config && config.dev_auth_enabled);
       devAuthProfiles = Array.isArray(config && config.dev_auth_profiles) ? config.dev_auth_profiles : [];
       renderDevAuthActions();
-      el.mapStyleUrl.value = (config && config.map_style_url) || defaultMapStyle;
+      mapStyleUrl = (config && config.map_style_url) || defaultMapStyle;
       ensureMap();
     } catch (error) {
       devAuthEnabled = false;
       devAuthProfiles = [];
       renderDevAuthActions();
-      el.mapStyleUrl.value = defaultMapStyle;
+      mapStyleUrl = defaultMapStyle;
       ensureMap();
       C.showMessage(el.authMessage, error.message, "error");
     }
@@ -784,10 +1206,16 @@
   function normalizeCreatePayload(formData) {
     const startRaw = formData.get("time_window_start");
     const endRaw = formData.get("time_window_end");
+    const pickupDeadlineRaw = formData.get("pickup_deadline");
+    const dropoffDeadlineRaw = formData.get("dropoff_deadline");
     const startDate = startRaw ? new Date(startRaw) : null;
     const endDate = endRaw ? new Date(endRaw) : null;
+    const pickupDeadlineDate = pickupDeadlineRaw ? new Date(pickupDeadlineRaw) : null;
+    const dropoffDeadlineDate = dropoffDeadlineRaw ? new Date(dropoffDeadlineRaw) : null;
     const timeWindowStart = startDate && !Number.isNaN(startDate.getTime()) ? startDate.toISOString() : null;
     const timeWindowEnd = endDate && !Number.isNaN(endDate.getTime()) ? endDate.toISOString() : null;
+    const pickupDeadline = pickupDeadlineDate && !Number.isNaN(pickupDeadlineDate.getTime()) ? pickupDeadlineDate.toISOString() : null;
+    const dropoffDeadline = dropoffDeadlineDate && !Number.isNaN(dropoffDeadlineDate.getTime()) ? dropoffDeadlineDate.toISOString() : null;
     const payload = {
       customer_name: formData.get("customer_name"),
       reference_number: C.toIntOrNull(formData.get("reference_number")),
@@ -797,6 +1225,8 @@
       weight: C.toNumberOrNull(formData.get("weight")),
       time_window_start: timeWindowStart,
       time_window_end: timeWindowEnd,
+      pickup_deadline: pickupDeadline,
+      dropoff_deadline: dropoffDeadline,
       phone: formData.get("phone") || null,
       email: formData.get("email") || null,
       notes: formData.get("notes") || null,
@@ -839,17 +1269,22 @@
   function renderOrders(orders) {
     lastOrders = orders || [];
     _pruneSelectionToVisibleOrders();
-    updateOrderStats(lastOrders);
+    renderAssignmentQueues(allOrders);
     if (!lastOrders.length) {
-      el.ordersBody.innerHTML = "<tr><td colspan=\"6\">No orders available.</td></tr>";
+      el.ordersBody.innerHTML = "<tr><td colspan=\"7\">No orders available for the current filters.</td></tr>";
       el.ordersMobile.innerHTML = "<p class=\"panel-help\">No orders available.</p>";
+      _syncSelectAllCheckbox();
+      _renderSelectionCount();
       return;
     }
 
+    const nowDate = new Date();
     const rows = lastOrders.map(function (order) {
       const isSelected = selectedOrderIds.has(order.id);
       const assignLabel = order.assigned_to ? "Reassign" : "Assign";
       const currentStatusClass = statusClass(order.status);
+      const due = _dueBadge(order, nowDate);
+      const suggestedDriver = order.assigned_to || selectedDriverId || "";
       const statusOptions = C.STATUS_VALUES.map(function (statusValue) {
         const selected = statusValue === order.status ? "selected" : "";
         return "<option " + selected + " value=\"" + statusValue + "\">" + statusValue + "</option>";
@@ -879,6 +1314,13 @@
         C.escapeHtml(order.weight || "-") +
         "</small></td>" +
         "<td><small>" +
+        C.escapeHtml(_formatOrderDeadlines(order)) +
+        "</small><br><span class=\"" +
+        C.escapeHtml(due.cssClass) +
+        "\">" +
+        C.escapeHtml(due.label) +
+        "</span></td>" +
+        "<td><small>" +
         C.escapeHtml(C.formatTimestamp(order.time_window_start)) +
         " -> " +
         C.escapeHtml(C.formatTimestamp(order.time_window_end)) +
@@ -890,7 +1332,7 @@
         "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
         C.escapeHtml(order.id) +
         "\" placeholder=\"driver sub\" value=\"" +
-        C.escapeHtml(order.assigned_to || "") +
+        C.escapeHtml(suggestedDriver) +
         "\">" +
         "<div class=\"actions-stack\">" +
         "<button class=\"btn btn-primary\" data-action=\"assign\" data-order-id=\"" +
@@ -898,6 +1340,9 @@
         "\">" +
         assignLabel +
         "</button>" +
+        "<button class=\"btn btn-accent\" data-action=\"assign-selected\" data-order-id=\"" +
+        C.escapeHtml(order.id) +
+        "\">Assign Selected Driver</button>" +
         "<button class=\"btn btn-ghost\" data-action=\"unassign\" data-order-id=\"" +
         C.escapeHtml(order.id) +
         "\">Unassign</button>" +
@@ -927,6 +1372,8 @@
       const isSelected = selectedOrderIds.has(order.id);
       const assignLabel = order.assigned_to ? "Reassign" : "Assign";
       const currentStatusClass = statusClass(order.status);
+      const due = _dueBadge(order, nowDate);
+      const suggestedDriver = order.assigned_to || selectedDriverId || "";
       const statusOptions = C.STATUS_VALUES.map(function (statusValue) {
         const selected = statusValue === order.status ? "selected" : "";
         return "<option " + selected + " value=\"" + statusValue + "\">" + statusValue + "</option>";
@@ -957,6 +1404,13 @@
         C.escapeHtml(C.formatTimestamp(order.time_window_start)) +
         " -> " +
         C.escapeHtml(C.formatTimestamp(order.time_window_end)) +
+        "<br>Deadlines: " +
+        C.escapeHtml(_formatOrderDeadlines(order)) +
+        "<br>Due: <span class=\"" +
+        C.escapeHtml(due.cssClass) +
+        "\">" +
+        C.escapeHtml(due.label) +
+        "</span>" +
         "<br>Status: <span class=\"table-status " +
         currentStatusClass +
         "\">" +
@@ -969,7 +1423,7 @@
         "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
         C.escapeHtml(order.id) +
         "\" placeholder=\"driver sub\" value=\"" +
-        C.escapeHtml(order.assigned_to || "") +
+        C.escapeHtml(suggestedDriver) +
         "\">" +
         "<div class=\"actions-stack\">" +
         "<button class=\"btn btn-primary\" data-action=\"assign\" data-order-id=\"" +
@@ -977,6 +1431,9 @@
         "\">" +
         assignLabel +
         "</button>" +
+        "<button class=\"btn btn-accent\" data-action=\"assign-selected\" data-order-id=\"" +
+        C.escapeHtml(order.id) +
+        "\">Assign Selected</button>" +
         "<button class=\"btn btn-ghost\" data-action=\"unassign\" data-order-id=\"" +
         C.escapeHtml(order.id) +
         "\">Unassign</button>" +
@@ -1000,20 +1457,27 @@
 
   async function refreshOrders() {
     if (!requireAuthorized(el.ordersMessage)) {
+      allOrders = [];
       renderOrders([]);
+      updateOrderStats([]);
       return;
     }
     try {
       const orders = await C.requestJson(apiBase, _ordersPathFromFilters(), { token });
-      const filteredOrders = _filterOrdersBySearch(orders || []);
+      allOrders = Array.isArray(orders) ? orders : [];
+      updateOrderStats(allOrders);
+      const filteredOrders = _applyOrderFiltersAndSort(allOrders);
       renderOrders(filteredOrders || []);
       setLastSyncStamp();
       C.showMessage(
         el.ordersMessage,
-        "Loaded " + (filteredOrders || []).length + " orders.",
+        "Loaded " + (filteredOrders || []).length + " orders (" + allOrders.length + " total).",
         "success"
       );
     } catch (error) {
+      allOrders = [];
+      renderOrders([]);
+      updateOrderStats([]);
       C.showMessage(el.ordersMessage, error.message, "error");
     }
   }
@@ -1135,14 +1599,14 @@
     }
     map = new window.maplibregl.Map({
       container: el.mapContainer,
-      style: el.mapStyleUrl.value || defaultMapStyle,
+      style: mapStyleUrl || defaultMapStyle,
       center: [-97.7431, 30.2672],
       zoom: 4,
     });
     return map;
   }
 
-  function renderDriverMarkers(driverLocations) {
+  function renderDriverMarkers(driverLocations, options) {
     const currentMap = ensureMap();
     if (!currentMap) {
       return;
@@ -1154,9 +1618,13 @@
     if (!driverLocations.length) {
       return;
     }
+    const markerOptions = options || {};
+    const focusDriverId = String(markerOptions.focusDriverId || selectedDriverId || "").trim();
+    let focusedDriver = null;
     const bounds = new window.maplibregl.LngLatBounds();
     driverLocations.forEach(function (item) {
-      const marker = new window.maplibregl.Marker({ color: "#ffb347" })
+      const isSelectedDriver = !!focusDriverId && item.driver_id === focusDriverId;
+      const marker = new window.maplibregl.Marker({ color: isSelectedDriver ? "#0e7aa6" : "#ffb347" })
         .setLngLat([item.lng, item.lat])
         .setPopup(
           new window.maplibregl.Popup({ offset: 15 }).setHTML(
@@ -1167,9 +1635,22 @@
           )
         )
         .addTo(currentMap);
+      marker.getElement().addEventListener("click", function () {
+        selectDriver(item.driver_id, { silent: true, keepViewport: false });
+      });
       mapMarkers.push(marker);
       bounds.extend([item.lng, item.lat]);
+      if (isSelectedDriver) {
+        focusedDriver = item;
+      }
     });
+    if (markerOptions.keepCurrentViewport) {
+      return;
+    }
+    if (focusedDriver) {
+      currentMap.flyTo({ center: [focusedDriver.lng, focusedDriver.lat], zoom: 12 });
+      return;
+    }
     if (driverLocations.length === 1) {
       currentMap.flyTo({ center: [driverLocations[0].lng, driverLocations[0].lat], zoom: 11 });
       return;
@@ -1184,16 +1665,19 @@
     }
     el.driverList.innerHTML = driverLocations
       .map(function (item) {
+        const selectedClass = item.driver_id === selectedDriverId ? " is-selected" : "";
         return (
-          "<li><strong>" +
+          "<li><button type=\"button\" class=\"driver-list-button" +
+          selectedClass +
+          "\" data-driver-id=\"" +
           C.escapeHtml(item.driver_id) +
-          "</strong> @ " +
-          item.lat.toFixed(5) +
-          ", " +
-          item.lng.toFixed(5) +
-          " (" +
+          "\"><strong>" +
+          C.escapeHtml(item.driver_id) +
+          "</strong><small>" +
+          C.escapeHtml(item.lat.toFixed(5) + ", " + item.lng.toFixed(5)) +
+          " | " +
           C.escapeHtml(C.formatTimestamp(item.timestamp)) +
-          ")</li>"
+          "</small></button></li>"
         );
       })
       .join("");
@@ -1230,7 +1714,7 @@
   }
 
   async function refreshAssignableDrivers() {
-    if (!token || !isAuthorizedRole) {
+    if (!isAuthorizedRole) {
       renderDriverOptions([]);
       return;
     }
@@ -1244,17 +1728,34 @@
 
   async function refreshDrivers() {
     if (!requireAuthorized(el.driversMessage)) {
+      lastDriverLocations = [];
+      selectedDriverId = "";
+      renderDriverList([]);
+      renderDriverMarkers([]);
+      renderAssignmentQueues(allOrders);
       updateActiveDriverStat(0);
       return;
     }
     try {
       const drivers = await C.requestJson(apiBase, "/drivers?active_minutes=120", { token });
-      renderDriverList(drivers || []);
-      renderDriverMarkers(drivers || []);
-      updateActiveDriverStat((drivers || []).length);
+      lastDriverLocations = Array.isArray(drivers) ? drivers : [];
+      const selectedStillActive = selectedDriverId && lastDriverLocations.some(function (item) {
+        return item.driver_id === selectedDriverId;
+      });
+      if (!selectedStillActive) {
+        selectedDriverId = "";
+      }
+      renderDriverList(lastDriverLocations);
+      renderDriverMarkers(lastDriverLocations, { keepCurrentViewport: !!selectedStillActive });
+      renderAssignmentQueues(allOrders);
+      updateActiveDriverStat(lastDriverLocations.length);
       setLastSyncStamp();
-      C.showMessage(el.driversMessage, "Loaded " + (drivers || []).length + " active drivers.", "success");
+      C.showMessage(el.driversMessage, "Loaded " + lastDriverLocations.length + " active drivers.", "success");
     } catch (error) {
+      lastDriverLocations = [];
+      renderDriverList([]);
+      renderDriverMarkers([]);
+      renderAssignmentQueues(allOrders);
       updateActiveDriverStat(0);
       C.showMessage(el.driversMessage, error.message, "error");
     }
@@ -1888,6 +2389,11 @@
           throw new Error("Driver ID is required to assign an order.");
         }
         await assignOrder(orderId, driverId);
+      } else if (action === "assign-selected") {
+        if (!selectedDriverId) {
+          throw new Error("Select a driver from the map/list first.");
+        }
+        await assignOrder(orderId, selectedDriverId);
       } else if (action === "unassign") {
         await unassignOrder(orderId);
       } else if (action === "status") {
@@ -1962,8 +2468,14 @@
     await logoutDevAuthSession(true);
     webSessionClaims = null;
     setToken("");
+    allOrders = [];
+    lastOrders = [];
+    lastDriverLocations = [];
+    selectedDriverId = "";
     renderOrders([]);
     renderDriverList([]);
+    renderDriverMarkers([]);
+    renderAssignmentQueues([]);
     updateOrderStats([]);
     updateActiveDriverStat(0);
     renderBillingStatus(null);
@@ -2028,8 +2540,14 @@
         renderBillingInvitations([]);
       }
     } else {
+      allOrders = [];
+      lastOrders = [];
+      lastDriverLocations = [];
+      selectedDriverId = "";
       renderOrders([]);
       renderDriverList([]);
+      renderDriverMarkers([]);
+      renderAssignmentQueues([]);
       updateActiveDriverStat(0);
       renderBillingStatus(null);
       renderBillingSummary(null);
@@ -2059,7 +2577,15 @@
     logoutDevAuthSession(true)
       .then(function () {
         setToken("");
+        allOrders = [];
+        lastOrders = [];
+        lastDriverLocations = [];
+        selectedDriverId = "";
         renderDriverOptions([]);
+        renderOrders([]);
+        renderDriverList([]);
+        renderDriverMarkers([]);
+        renderAssignmentQueues([]);
         el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
         el.routeResult.innerHTML = "No route computed yet.";
         updateOrderStats([]);
@@ -2072,6 +2598,13 @@
   });
   el.createForm.addEventListener("submit", createOrder);
   el.refreshOrders.addEventListener("click", refreshOrders);
+  if (el.statsUpcomingDueCard) {
+    el.statsUpcomingDueCard.addEventListener("click", function () {
+      applyUpcomingDueFilter().catch(function (error) {
+        C.showMessage(el.ordersMessage, error.message, "error");
+      });
+    });
+  }
   el.bulkAssignSelected.addEventListener("click", function () {
     bulkAssignSelectedOrders().catch(function (error) {
       C.showMessage(el.ordersMessage, error.message, "error");
@@ -2097,11 +2630,56 @@
       C.showMessage(el.ordersMessage, error.message, "error");
     });
   });
+  if (el.ordersSortField) {
+    el.ordersSortField.addEventListener("change", function () {
+      applyOrderFilters().catch(function (error) {
+        C.showMessage(el.ordersMessage, error.message, "error");
+      });
+    });
+  }
+  if (el.ordersSortDirection) {
+    el.ordersSortDirection.addEventListener("change", function () {
+      applyOrderFilters().catch(function (error) {
+        C.showMessage(el.ordersMessage, error.message, "error");
+      });
+    });
+  }
+  if (Array.isArray(el.orderSortButtons)) {
+    el.orderSortButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        const field = button.getAttribute("data-order-sort-field");
+        sortOrdersByField(field).catch(function (error) {
+          C.showMessage(el.ordersMessage, error.message, "error");
+        });
+      });
+    });
+  }
   el.ordersBody.addEventListener("change", onOrderSelectionChange);
   el.ordersMobile.addEventListener("change", onOrderSelectionChange);
   el.ordersBody.addEventListener("click", onOrderActionClick);
   el.ordersMobile.addEventListener("click", onOrderActionClick);
+  if (el.unassignedOrdersList) {
+    el.unassignedOrdersList.addEventListener("click", function (event) {
+      applyQuickAssign(event).catch(function (error) {
+        C.showMessage(el.assignmentMessage || el.ordersMessage, error.message, "error");
+      });
+    });
+  }
+  if (el.assignedOrdersList) {
+    el.assignedOrdersList.addEventListener("click", function (event) {
+      applyQuickAssign(event).catch(function (error) {
+        C.showMessage(el.assignmentMessage || el.ordersMessage, error.message, "error");
+      });
+    });
+  }
   el.refreshDrivers.addEventListener("click", refreshDrivers);
+  if (el.driverList) {
+    el.driverList.addEventListener("click", function (event) {
+      onDriverListClick(event).catch(function (error) {
+        C.showMessage(el.driversMessage, error.message, "error");
+      });
+    });
+  }
   el.refreshDispatchSummary.addEventListener("click", function () {
     refreshDispatchSummary().catch(function (error) {
       C.showMessage(el.dispatchSummaryMessage, error.message, "error");
@@ -2143,11 +2721,6 @@
     launchHostedLogout().catch(function (error) {
       C.showMessage(el.authMessage, error.message, "error");
     });
-  });
-  el.mapStyleUrl.addEventListener("change", function () {
-    if (map) {
-      map.setStyle(el.mapStyleUrl.value || defaultMapStyle);
-    }
   });
 
   bootstrap();

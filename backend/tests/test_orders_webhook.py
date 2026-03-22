@@ -37,6 +37,8 @@ def _webhook_payload(
     reference_number: int,
     time_window_start: Optional[str] = None,
     time_window_end: Optional[str] = None,
+    pickup_deadline: Optional[str] = None,
+    dropoff_deadline: Optional[str] = None,
 ):
     order_payload = {
         "external_order_id": external_order_id,
@@ -52,6 +54,10 @@ def _webhook_payload(
         order_payload["time_window_start"] = time_window_start
     if time_window_end:
         order_payload["time_window_end"] = time_window_end
+    if pickup_deadline:
+        order_payload["pickup_deadline"] = pickup_deadline
+    if dropoff_deadline:
+        order_payload["dropoff_deadline"] = dropoff_deadline
 
     return {
         "org_id": org_id,
@@ -271,6 +277,55 @@ def test_orders_webhook_rejects_invalid_time_window():
         222,
         time_window_start="2026-03-02T13:00:00Z",
         time_window_end="2026-03-02T12:30:00Z",
+    )
+    webhook = client.post(
+        "/webhooks/orders",
+        json=payload,
+        headers={"x-orders-webhook-token": "orders-secret"},
+    )
+    assert webhook.status_code == 422
+
+
+def test_orders_webhook_persists_pickup_and_dropoff_deadlines():
+    payload = _webhook_payload(
+        "org-1",
+        "ext-deadline-window",
+        "Alice",
+        "Warehouse A",
+        "100 Main",
+        223,
+        pickup_deadline="2026-03-02T09:30:00Z",
+        dropoff_deadline="2026-03-02T14:15:00Z",
+    )
+    webhook = client.post(
+        "/webhooks/orders",
+        json=payload,
+        headers={"x-orders-webhook-token": "orders-secret"},
+    )
+    assert webhook.status_code == 200
+
+    dispatcher_token = make_token("disp-1", "org-1", ["Dispatcher"])
+    list_response = client.get(
+        "/orders/",
+        headers={"Authorization": f"Bearer {dispatcher_token}"},
+    )
+    assert list_response.status_code == 200
+    order = next((item for item in list_response.json() if item["external_order_id"] == "ext-deadline-window"), None)
+    assert order is not None
+    assert order["pickup_deadline"] == "2026-03-02T09:30:00Z"
+    assert order["dropoff_deadline"] == "2026-03-02T14:15:00Z"
+
+
+def test_orders_webhook_rejects_invalid_dropoff_deadline():
+    payload = _webhook_payload(
+        "org-1",
+        "ext-bad-deadline",
+        "Alice",
+        "Warehouse A",
+        "100 Main",
+        224,
+        pickup_deadline="2026-03-02T14:30:00Z",
+        dropoff_deadline="2026-03-02T13:30:00Z",
     )
     webhook = client.post(
         "/webhooks/orders",

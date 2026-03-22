@@ -34,6 +34,8 @@ def make_order_payload(
     reference_number: int = 1001,
     time_window_start: Optional[str] = None,
     time_window_end: Optional[str] = None,
+    pickup_deadline: Optional[str] = None,
+    dropoff_deadline: Optional[str] = None,
 ):
     payload = {
         "customer_name": customer_name,
@@ -48,6 +50,10 @@ def make_order_payload(
         payload["time_window_start"] = time_window_start
     if time_window_end:
         payload["time_window_end"] = time_window_end
+    if pickup_deadline:
+        payload["pickup_deadline"] = pickup_deadline
+    if dropoff_deadline:
+        payload["dropoff_deadline"] = dropoff_deadline
     return payload
 
 
@@ -97,6 +103,22 @@ def test_create_order_with_time_window():
     assert body["time_window_end"] == "2026-03-01T11:00:00Z"
 
 
+def test_create_order_with_pickup_and_dropoff_deadlines():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    payload = make_order_payload(
+        "Alice",
+        "Warehouse 1",
+        "123 Main St",
+        pickup_deadline="2026-03-01T10:15:00Z",
+        dropoff_deadline="2026-03-01T13:45:00Z",
+    )
+    created = client.post("/orders/", json=payload, headers={"Authorization": f"Bearer {admin_token}"})
+    assert created.status_code == 200
+    body = created.json()
+    assert body["pickup_deadline"] == "2026-03-01T10:15:00Z"
+    assert body["dropoff_deadline"] == "2026-03-01T13:45:00Z"
+
+
 def test_create_order_rejects_invalid_time_window():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
     payload = make_order_payload(
@@ -105,6 +127,19 @@ def test_create_order_rejects_invalid_time_window():
         "123 Main St",
         time_window_start="2026-03-01T12:00:00Z",
         time_window_end="2026-03-01T11:00:00Z",
+    )
+    created = client.post("/orders/", json=payload, headers={"Authorization": f"Bearer {admin_token}"})
+    assert created.status_code == 422
+
+
+def test_create_order_rejects_invalid_dropoff_deadline():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    payload = make_order_payload(
+        "Alice",
+        "Warehouse 1",
+        "123 Main St",
+        pickup_deadline="2026-03-01T14:00:00Z",
+        dropoff_deadline="2026-03-01T13:00:00Z",
     )
     created = client.post("/orders/", json=payload, headers={"Authorization": f"Bearer {admin_token}"})
     assert created.status_code == 422

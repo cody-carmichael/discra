@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0e7aa6">
-  <link rel="stylesheet" href="assets/styles.css?v=20260322c">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322d">
 </head>
 <body class="theme-admin">
   <div class="app-shell">
@@ -349,62 +349,103 @@
               <h2>Billing And Seats</h2>
               <button id="refresh-billing" class="btn btn-ghost" type="button">Refresh</button>
             </div>
-            <p class="panel-help">Admin-only controls for seat limits, Stripe actions, and invitation management.</p>
+            <p class="panel-help">Your free tier includes 1 admin/dispatcher seat and 1 driver seat. Invite team members using available seats, or purchase more capacity.</p>
+            <p id="billing-message" class="message"></p>
 
-            <div id="billing-status" class="data-surface">No billing provider status loaded.</div>
-            <div id="billing-summary" class="data-surface">No billing summary loaded.</div>
-
-            <div class="admin-forms-grid">
-              <form id="billing-seats-form" class="form-grid">
-                <label class="field"><span>Dispatcher Seat Limit</span><input name="dispatcher_seat_limit" type="number" min="0"></label>
-                <label class="field"><span>Driver Seat Limit</span><input name="driver_seat_limit" type="number" min="0"></label>
-                <button class="btn btn-primary field-span-2" type="submit">Update Seat Limits</button>
-              </form>
-
-              <form id="billing-checkout-form" class="form-grid">
-                <label class="field"><span>Checkout Dispatcher Seats</span><input name="dispatcher_seat_limit" type="number" min="0"></label>
-                <label class="field"><span>Checkout Driver Seats</span><input name="driver_seat_limit" type="number" min="0"></label>
-                <button class="btn btn-accent field-span-2" type="submit">Start Stripe Checkout</button>
-              </form>
-
-              <form id="billing-portal-form" class="form-grid">
-                <button class="btn btn-ghost field-span-2" type="submit">Open Stripe Billing Portal</button>
-              </form>
-
-              <form id="billing-invite-form" class="form-grid">
-                <label class="field"><span>User ID</span><input name="user_id" required></label>
-                <label class="field"><span>Email (optional)</span><input name="email" type="email"></label>
-                <label class="field field-span-2">
-                  <span>Role</span>
-                  <select name="role">
-                    <option value="Admin">Admin</option>
-                    <option value="Dispatcher">Dispatcher</option>
-                    <option value="Driver">Driver</option>
-                  </select>
-                </label>
-                <button class="btn btn-accent field-span-2" type="submit">Create Invitation</button>
-              </form>
-
-              <form id="billing-activate-form" class="form-grid">
-                <label class="field field-span-2"><span>Invitation ID</span><input name="invitation_id" required></label>
-                <button class="btn btn-ghost field-span-2" type="submit">Activate Invitation</button>
-              </form>
+            <div id="billing-seat-cards" class="billing-seat-cards">
+              <article class="stat-card">
+                <span>Admin / Dispatcher Seats</span>
+                <strong id="seat-dispatcher-usage">0 / 0</strong>
+                <small id="seat-dispatcher-detail">0 pending</small>
+              </article>
+              <article class="stat-card">
+                <span>Driver Seats</span>
+                <strong id="seat-driver-usage">0 / 0</strong>
+                <small id="seat-driver-detail">0 pending</small>
+              </article>
+              <article class="stat-card">
+                <span>Available Seats</span>
+                <strong id="seat-available-total">0</strong>
+                <small id="seat-available-detail">ready to assign</small>
+              </article>
+              <article class="stat-card">
+                <span>Pending Invitations</span>
+                <strong id="seat-pending-total">0</strong>
+                <small>awaiting activation</small>
+              </article>
             </div>
 
+            <div id="billing-status" class="data-surface" hidden>No billing provider status loaded.</div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title-row">
+              <h3>Invite a Team Member</h3>
+            </div>
+            <p class="panel-help">Send an invitation to assign one of your available seats. Enter the person's email address and choose their role.</p>
+
+            <form id="billing-invite-form" class="form-grid">
+              <label class="field"><span>Email Address</span><input name="email" type="email" required placeholder="colleague@example.com"></label>
+              <label class="field">
+                <span>Role</span>
+                <select name="role">
+                  <option value="Admin">Admin</option>
+                  <option value="Dispatcher">Dispatcher</option>
+                  <option value="Driver">Driver</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>User ID (optional)</span>
+                <input name="user_id" placeholder="auto-set from email if blank">
+              </label>
+              <button class="btn btn-accent field-span-2" type="submit">Send Invitation</button>
+            </form>
+          </section>
+
+          <section class="panel">
             <div class="panel-title-row">
               <h3>Invitations</h3>
               <button id="refresh-invitations" class="btn btn-ghost" type="button">Refresh</button>
             </div>
             <ul id="billing-invitations" class="driver-list invitation-list"></ul>
-            <p id="billing-message" class="message"></p>
           </section>
+
+          <section class="panel">
+            <div class="panel-title-row">
+              <h3>Purchase Seats</h3>
+            </div>
+            <p class="panel-help">Need more capacity? Purchase additional dispatcher or driver seats through Stripe. Your current seat limits will increase immediately after payment.</p>
+            <div class="billing-purchase-actions">
+              <button id="open-purchase-modal" class="btn btn-primary" type="button">Purchase Additional Seats</button>
+              <form id="billing-portal-form" class="inline-form">
+                <button class="btn btn-ghost" type="submit">Manage Billing Portal</button>
+              </form>
+            </div>
+          </section>
+
+          <div id="purchase-modal" class="modal-overlay" hidden>
+            <div class="modal-dialog">
+              <div class="modal-header">
+                <h3>Purchase Additional Seats</h3>
+                <button id="close-purchase-modal" class="btn btn-ghost modal-close" type="button" aria-label="Close">&times;</button>
+              </div>
+              <div class="modal-body">
+                <p class="panel-help">Set the new total seat limits for your organization. If you already have a Stripe subscription, quantities will be updated with proration. Otherwise, a new checkout session will start.</p>
+                <form id="billing-checkout-form" class="form-grid">
+                  <label class="field"><span>Total Dispatcher Seats</span><input name="dispatcher_seat_limit" type="number" min="0" placeholder="e.g. 3"></label>
+                  <label class="field"><span>Total Driver Seats</span><input name="driver_seat_limit" type="number" min="0" placeholder="e.g. 5"></label>
+                  <button class="btn btn-primary field-span-2" type="submit">Proceed to Checkout</button>
+                </form>
+              </div>
+            </div>
+          </div>
         </section>
       </main>
     </div>
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260322c"></script>
-  <script src="assets/admin.js?v=20260322c"></script>
+  <script src="assets/common.js?v=20260322d"></script>
+  <script src="assets/admin.js?v=20260322d"></script>
 </body>
 </html>

@@ -31,7 +31,8 @@ def test_ui_pages_are_available():
     assert "ui/login" in home.text
     assert "Welcome Back" in login.text
     assert "login-gateway-button" in login.text
-    assert "Admin And Dispatcher Console" in admin.text
+    assert "Discra" in admin.text
+    assert "Dispatch" in admin.text
     assert "Driver Workflow" in driver.text
     assert "Register Your Tenant" in register.text
     assert "Create Account" in register.text

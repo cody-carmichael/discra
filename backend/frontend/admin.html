@@ -6,446 +6,466 @@
   <title>Discra Dispatch Console</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
-  <meta name="theme-color" content="#0e7aa6">
-  <link rel="stylesheet" href="assets/styles.css?v=20260322d">
+  <meta name="theme-color" content="#0b1117">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322e">
 </head>
 <body class="theme-admin">
-  <div class="app-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Discra Dispatch</p>
-        <h1>Admin And Dispatcher Console</h1>
-        <p class="subtitle">Operate your daily delivery flow from a single calm cockpit.</p>
-      </div>
-      <nav class="top-actions">
-        <span id="auth-state" class="status-pill status-idle">Not Signed In</span>
-        <a class="btn btn-ghost" href="register">Registration</a>
-        <a class="btn btn-ghost" href="driver">Driver View</a>
-      </nav>
-    </header>
 
-    <div class="workspace-shell">
-      <aside class="sidebar panel">
-        <h2 class="sidebar-title">Workspace</h2>
-        <div class="workspace-nav" role="tablist" aria-label="Console workspaces">
-          <button class="workspace-tab is-active" type="button" data-workspace-target="operations">Operations</button>
-          <button class="workspace-tab" type="button" data-workspace-target="orders">Orders</button>
-          <button class="workspace-tab" type="button" data-workspace-target="planning">Planning</button>
-          <button class="workspace-tab" type="button" data-workspace-target="insights">Insights</button>
-          <button class="workspace-tab" type="button" data-workspace-target="admin">Admin</button>
-        </div>
-
-        <div class="sidebar-stats">
-          <div class="sidebar-stat">
-            <span>Last sync</span>
-            <strong id="stats-last-sync">Not synced</strong>
-          </div>
-          <div class="sidebar-stat">
-            <span>Selected orders</span>
-            <strong id="stats-selection">0</strong>
-          </div>
-        </div>
-
-        <details class="session-details">
-          <summary>Session And Auth Settings</summary>
-          <p class="panel-help">Use secure Hosted UI sign-in. Tokens are managed automatically in a protected web session cookie.</p>
-
-          <div id="dev-auth-panel" class="dev-auth-panel" hidden>
-            <p class="panel-help">Quick test sign-in (no token required)</p>
-            <div id="dev-auth-actions" class="row"></div>
-          </div>
-
-          <details class="auth-config">
-            <summary>Hosted UI login</summary>
-            <label class="field">
-              <span>Cognito Hosted UI Domain</span>
-              <input id="cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
-            </label>
-            <label class="field">
-              <span>Client ID</span>
-              <input id="cognito-client-id" placeholder="app client id">
-            </label>
-            <div class="row">
-              <button id="login-hosted-ui" class="btn btn-accent" type="button">Login Hosted UI</button>
-              <button id="logout-hosted-ui" class="btn btn-ghost" type="button">Logout</button>
-            </div>
-          </details>
-
-          <details id="admin-auth-debug" class="auth-config" hidden>
-            <summary>Debug Token Override</summary>
-            <label class="field">
-              <span>JWT Token</span>
-              <textarea id="jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
-            </label>
-            <div class="row">
-              <button id="save-token" class="btn btn-primary" type="button">Save Token</button>
-              <button id="clear-token" class="btn btn-ghost" type="button">Clear</button>
-            </div>
-            <pre id="claims-view" class="claims-view">No active web session.</pre>
-          </details>
-          <p id="auth-message" class="message"></p>
-        </details>
-      </aside>
-
-      <main class="workspace-main">
-        <section class="workspace-panel is-active" data-workspace-panel="operations">
-          <section class="panel">
-            <div class="panel-title-row">
-              <h2>Operations Cockpit</h2>
-            </div>
-            <p class="panel-help">Track volume, assignment health, active drivers, and upcoming deadlines before dispatching changes.</p>
-            <div class="stats-grid stats-grid-5">
-              <article class="stat-card">
-                <span>Total Orders</span>
-                <strong id="stats-total-orders">0</strong>
-              </article>
-              <article class="stat-card">
-                <span>Assigned</span>
-                <strong id="stats-assigned-orders">0</strong>
-              </article>
-              <article class="stat-card">
-                <span>Unassigned</span>
-                <strong id="stats-unassigned-orders">0</strong>
-              </article>
-              <article class="stat-card">
-                <span>Active Drivers</span>
-                <strong id="stats-active-drivers">0</strong>
-              </article>
-              <button id="stats-upcoming-due-card" class="stat-card stat-card-action" type="button">
-                <span>Upcoming Due Dates</span>
-                <strong id="stats-upcoming-due">0</strong>
-                <small>View Orders</small>
-              </button>
-            </div>
-          </section>
-
-          <div class="ops-grid ops-grid-cockpit">
-            <section class="panel">
-              <div class="panel-title-row">
-                <h2>Live Driver Map</h2>
-                <button id="refresh-drivers" class="btn btn-ghost" type="button">Refresh</button>
-              </div>
-              <p class="panel-help">Select a driver from the list or map marker to center instantly and set assignment context.</p>
-              <div id="driver-map" class="map-card"></div>
-              <ul id="driver-list" class="driver-list driver-list-interactive"></ul>
-              <p id="drivers-message" class="message"></p>
-            </section>
-
-            <section class="panel">
-              <div class="panel-title-row">
-                <h2>Dispatch Board</h2>
-              </div>
-              <p id="assignment-context" class="panel-help">Select a driver, then assign from the unassigned queue in one click.</p>
-              <div class="selected-driver-chip">
-                <span>Selected Driver</span>
-                <strong id="selected-driver-label">None selected</strong>
-              </div>
-              <div class="assignment-columns">
-                <article class="assignment-column">
-                  <div class="panel-title-row">
-                    <h3>Unassigned Orders</h3>
-                    <span id="unassigned-queue-count" class="status-pill status-idle">0</span>
-                  </div>
-                  <div id="unassigned-orders-list" class="assignment-list"></div>
-                </article>
-                <article class="assignment-column">
-                  <div class="panel-title-row">
-                    <h3>Assigned Orders</h3>
-                    <span id="assigned-queue-count" class="status-pill status-live">0</span>
-                  </div>
-                  <div id="assigned-orders-list" class="assignment-list"></div>
-                </article>
-              </div>
-              <p id="assignment-message" class="message"></p>
-            </section>
-          </div>
-        </section>
-
-        <section class="workspace-panel" data-workspace-panel="orders">
-          <section class="panel">
-            <div class="panel-title-row">
-              <h2>Orders View</h2>
-              <button id="refresh-orders" class="btn btn-ghost" type="button">Refresh Orders</button>
-            </div>
-            <p class="panel-help">Spreadsheet-style order management with sorting, filtering, and fast assignment actions.</p>
-
-            <div class="row">
-              <input id="bulk-driver-id" class="compact-input" list="driver-options" placeholder="driver id">
-              <button id="bulk-assign-selected" class="btn btn-primary" type="button">Assign Selected</button>
-              <button id="bulk-unassign-selected" class="btn btn-ghost" type="button">Unassign</button>
-              <button id="clear-selection" class="btn btn-ghost" type="button">Clear</button>
-              <span id="selection-count" class="status-pill status-idle">0 selected</span>
-            </div>
-
-            <datalist id="driver-options"></datalist>
-
-            <form id="orders-filter-form" class="row orders-filters">
-              <label class="field">
-                <span>Status</span>
-                <select id="orders-status-filter" name="status">
-                  <option value="">Any status</option>
-                  <option value="Created">Created</option>
-                  <option value="Assigned">Assigned</option>
-                  <option value="PickedUp">PickedUp</option>
-                  <option value="EnRoute">EnRoute</option>
-                  <option value="Delivered">Delivered</option>
-                  <option value="Failed">Failed</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Assigned Driver</span>
-                <input id="orders-assigned-filter" name="assigned_to" placeholder="driver id">
-              </label>
-              <label class="field">
-                <span>Assignment</span>
-                <select id="orders-assignment-filter" name="assignment">
-                  <option value="">All</option>
-                  <option value="assigned">Assigned only</option>
-                  <option value="unassigned">Unassigned only</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Due Date</span>
-                <select id="orders-due-filter" name="due">
-                  <option value="">Any</option>
-                  <option value="upcoming">Upcoming (next 2h)</option>
-                  <option value="overdue">Overdue</option>
-                  <option value="none">No deadline</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Search</span>
-                <input id="orders-search-filter" name="search" placeholder="customer / reference / order id">
-              </label>
-              <label class="field">
-                <span>Sort By</span>
-                <select id="orders-sort-field" name="sort_field">
-                  <option value="dropoff_deadline">Dropoff Deadline</option>
-                  <option value="pickup_deadline">Pickup Deadline</option>
-                  <option value="created_at">Created At</option>
-                  <option value="customer_name">Customer</option>
-                  <option value="reference_number">Reference Number</option>
-                  <option value="status">Status</option>
-                  <option value="assigned_to">Assigned Driver</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Direction</span>
-                <select id="orders-sort-direction" name="sort_direction">
-                  <option value="asc">Ascending</option>
-                  <option value="desc">Descending</option>
-                </select>
-              </label>
-              <div class="filter-actions">
-                <button class="btn btn-primary" type="submit">Apply</button>
-                <button id="orders-clear-filters" class="btn btn-ghost" type="button">Clear</button>
-              </div>
-            </form>
-
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th><input id="select-all-orders" type="checkbox" aria-label="Select all orders"></th>
-                    <th><button class="table-sort" type="button" data-order-sort-field="customer_name">Order</button></th>
-                    <th><button class="table-sort" type="button" data-order-sort-field="pick_up_address">Stops</button></th>
-                    <th><button class="table-sort" type="button" data-order-sort-field="pickup_deadline">Deadlines</button></th>
-                    <th><button class="table-sort" type="button" data-order-sort-field="time_window_end">Window</button></th>
-                    <th><button class="table-sort" type="button" data-order-sort-field="assigned_to">Assignment</button></th>
-                    <th><button class="table-sort" type="button" data-order-sort-field="status">Status</button></th>
-                  </tr>
-                </thead>
-                <tbody id="orders-tbody"></tbody>
-              </table>
-            </div>
-            <div id="orders-mobile" class="orders-mobile"></div>
-            <p id="orders-message" class="message"></p>
-          </section>
-        </section>
-
-        <section class="workspace-panel" data-workspace-panel="planning">
-          <div class="planning-grid">
-            <section class="panel">
-              <div class="panel-title-row">
-                <h2>Create Order</h2>
-              </div>
-              <p class="panel-help">Capture complete order details, then move to optimization and assignment.</p>
-              <form id="create-order-form" class="form-grid">
-                <label class="field"><span>Customer Name</span><input name="customer_name" required></label>
-                <label class="field"><span>Reference Number</span><input name="reference_number" type="number" min="1" required></label>
-                <label class="field"><span>Pick Up Address</span><input name="pick_up_address" required></label>
-                <label class="field"><span>Delivery</span><input name="delivery" required></label>
-                <label class="field"><span>Dimensions</span><input name="dimensions" placeholder="e.g. 12x8x5 in" required></label>
-                <label class="field"><span>Weight</span><input name="weight" type="number" step="any" min="0.01" required></label>
-                <label class="field"><span>Time Window Start</span><input name="time_window_start" type="datetime-local"></label>
-                <label class="field"><span>Time Window End</span><input name="time_window_end" type="datetime-local"></label>
-                <label class="field"><span>Pick Up Deadline</span><input name="pickup_deadline" type="datetime-local"></label>
-                <label class="field"><span>Drop Off Deadline</span><input name="dropoff_deadline" type="datetime-local"></label>
-                <label class="field"><span>Phone</span><input name="phone"></label>
-                <label class="field"><span>Email</span><input name="email" type="email"></label>
-                <label class="field"><span>Packages</span><input name="num_packages" type="number" min="1" value="1"></label>
-                <label class="field field-span-2"><span>Notes</span><textarea name="notes" rows="2"></textarea></label>
-                <button class="btn btn-primary field-span-2" type="submit">Create Order</button>
-              </form>
-              <p id="create-order-message" class="message"></p>
-            </section>
-
-            <section class="panel">
-              <div class="panel-title-row">
-                <h2>Route Optimization</h2>
-              </div>
-              <p class="panel-help">Optimize assigned stops for one driver, then export route guidance.</p>
-              <form id="optimize-form" class="form-grid">
-                <label class="field"><span>Driver ID</span><input name="driver_id" required></label>
-                <label class="field"><span>Start Latitude (optional)</span><input name="start_lat" type="number" step="any"></label>
-                <label class="field"><span>Start Longitude (optional)</span><input name="start_lng" type="number" step="any"></label>
-                <label class="field field-span-2">
-                  <span>Stops JSON override (optional)</span>
-                  <textarea name="stops_json" rows="4" placeholder='[{"order_id":"id","lat":37.77,"lng":-122.42}]'></textarea>
-                </label>
-                <button class="btn btn-accent field-span-2" type="submit">Optimize Stops</button>
-              </form>
-              <div id="route-result" class="data-surface">No route computed yet.</div>
-              <p id="route-message" class="message"></p>
-            </section>
-          </div>
-        </section>
-
-        <section class="workspace-panel" data-workspace-panel="insights">
-          <section class="panel">
-            <div class="panel-title-row">
-              <h2>Dispatch Summary</h2>
-              <button id="refresh-dispatch-summary" class="btn btn-ghost" type="button">Refresh</button>
-            </div>
-            <form id="dispatch-summary-form" class="form-grid compact-form">
-              <label class="field"><span>Active Driver Window (minutes)</span><input id="dispatch-active-minutes" name="active_minutes" type="number" min="1" max="1440" value="120"></label>
-            </form>
-            <div id="dispatch-summary-view" class="data-surface">No dispatch summary loaded.</div>
-            <p id="dispatch-summary-message" class="message"></p>
-          </section>
-
-          <section class="panel">
-            <div class="panel-title-row">
-              <h2>Audit Logs</h2>
-              <button id="refresh-audit-logs" class="btn btn-ghost" type="button">Refresh</button>
-            </div>
-            <form id="audit-filter-form" class="form-grid">
-              <label class="field"><span>Action (optional)</span><input id="audit-action-filter" name="action" placeholder="order.assigned"></label>
-              <label class="field"><span>Target Type (optional)</span><input id="audit-target-filter" name="target_type" placeholder="order"></label>
-              <label class="field"><span>Actor ID (optional)</span><input id="audit-actor-filter" name="actor_id" placeholder="admin-123"></label>
-              <label class="field"><span>Limit</span><input id="audit-limit-filter" name="limit" type="number" min="1" max="200" value="50"></label>
-            </form>
-            <div id="audit-logs-view" class="data-surface">No audit logs loaded.</div>
-            <p id="audit-message" class="message"></p>
-          </section>
-        </section>
-
-        <section class="workspace-panel" data-workspace-panel="admin">
-          <section class="panel">
-            <div class="panel-title-row">
-              <h2>Billing And Seats</h2>
-              <button id="refresh-billing" class="btn btn-ghost" type="button">Refresh</button>
-            </div>
-            <p class="panel-help">Your free tier includes 1 admin/dispatcher seat and 1 driver seat. Invite team members using available seats, or purchase more capacity.</p>
-            <p id="billing-message" class="message"></p>
-
-            <div id="billing-seat-cards" class="billing-seat-cards">
-              <article class="stat-card">
-                <span>Admin / Dispatcher Seats</span>
-                <strong id="seat-dispatcher-usage">0 / 0</strong>
-                <small id="seat-dispatcher-detail">0 pending</small>
-              </article>
-              <article class="stat-card">
-                <span>Driver Seats</span>
-                <strong id="seat-driver-usage">0 / 0</strong>
-                <small id="seat-driver-detail">0 pending</small>
-              </article>
-              <article class="stat-card">
-                <span>Available Seats</span>
-                <strong id="seat-available-total">0</strong>
-                <small id="seat-available-detail">ready to assign</small>
-              </article>
-              <article class="stat-card">
-                <span>Pending Invitations</span>
-                <strong id="seat-pending-total">0</strong>
-                <small>awaiting activation</small>
-              </article>
-            </div>
-
-            <div id="billing-status" class="data-surface" hidden>No billing provider status loaded.</div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-title-row">
-              <h3>Invite a Team Member</h3>
-            </div>
-            <p class="panel-help">Send an invitation to assign one of your available seats. Enter the person's email address and choose their role.</p>
-
-            <form id="billing-invite-form" class="form-grid">
-              <label class="field"><span>Email Address</span><input name="email" type="email" required placeholder="colleague@example.com"></label>
-              <label class="field">
-                <span>Role</span>
-                <select name="role">
-                  <option value="Admin">Admin</option>
-                  <option value="Dispatcher">Dispatcher</option>
-                  <option value="Driver">Driver</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>User ID (optional)</span>
-                <input name="user_id" placeholder="auto-set from email if blank">
-              </label>
-              <button class="btn btn-accent field-span-2" type="submit">Send Invitation</button>
-            </form>
-          </section>
-
-          <section class="panel">
-            <div class="panel-title-row">
-              <h3>Invitations</h3>
-              <button id="refresh-invitations" class="btn btn-ghost" type="button">Refresh</button>
-            </div>
-            <ul id="billing-invitations" class="driver-list invitation-list"></ul>
-          </section>
-
-          <section class="panel">
-            <div class="panel-title-row">
-              <h3>Purchase Seats</h3>
-            </div>
-            <p class="panel-help">Need more capacity? Purchase additional dispatcher or driver seats through Stripe. Your current seat limits will increase immediately after payment.</p>
-            <div class="billing-purchase-actions">
-              <button id="open-purchase-modal" class="btn btn-primary" type="button">Purchase Additional Seats</button>
-              <form id="billing-portal-form" class="inline-form">
-                <button class="btn btn-ghost" type="submit">Manage Billing Portal</button>
-              </form>
-            </div>
-          </section>
-
-          <div id="purchase-modal" class="modal-overlay" hidden>
-            <div class="modal-dialog">
-              <div class="modal-header">
-                <h3>Purchase Additional Seats</h3>
-                <button id="close-purchase-modal" class="btn btn-ghost modal-close" type="button" aria-label="Close">&times;</button>
-              </div>
-              <div class="modal-body">
-                <p class="panel-help">Set the new total seat limits for your organization. If you already have a Stripe subscription, quantities will be updated with proration. Otherwise, a new checkout session will start.</p>
-                <form id="billing-checkout-form" class="form-grid">
-                  <label class="field"><span>Total Dispatcher Seats</span><input name="dispatcher_seat_limit" type="number" min="0" placeholder="e.g. 3"></label>
-                  <label class="field"><span>Total Driver Seats</span><input name="driver_seat_limit" type="number" min="0" placeholder="e.g. 5"></label>
-                  <button class="btn btn-primary field-span-2" type="submit">Proceed to Checkout</button>
-                </form>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
+  <!-- ========== SLIM TOPBAR ========== -->
+  <header class="topbar-slim">
+    <div class="topbar-slim-left">
+      <div class="topbar-logo-mark">D</div>
+      <span class="topbar-brand">Discra</span>
     </div>
-  </div>
+    <nav class="topbar-workspace-nav" role="tablist" aria-label="Console workspaces">
+      <button class="topbar-ws-tab is-active" type="button" data-workspace-target="operations">Dispatch</button>
+      <button class="topbar-ws-tab" type="button" data-workspace-target="orders">Orders</button>
+      <button class="topbar-ws-tab" type="button" data-workspace-target="planning">Planning</button>
+      <button class="topbar-ws-tab" type="button" data-workspace-target="insights">Insights</button>
+      <button class="topbar-ws-tab" type="button" data-workspace-target="admin">Admin</button>
+    </nav>
+    <div class="topbar-slim-right">
+      <span id="auth-state" class="status-pill status-idle">Not Signed In</span>
+      <a class="topbar-link" href="register">Registration</a>
+      <a class="topbar-link" href="driver">Driver</a>
+    </div>
+  </header>
+
+  <!-- ========== WORKSPACE PANELS ========== -->
+  <main class="workspace-main-redesign">
+
+    <!-- ===== OPERATIONS / DISPATCH (3-column layout) ===== -->
+    <section class="workspace-panel is-active" data-workspace-panel="operations">
+      <div class="dispatch-layout">
+
+        <!-- LEFT PANEL: Orders -->
+        <aside class="dispatch-left">
+          <div class="dispatch-panel-header">
+            <div class="dispatch-panel-header-row">
+              <span class="dispatch-panel-title">Active Orders</span>
+              <span id="unassigned-queue-count" class="dispatch-count-badge">0</span>
+            </div>
+            <input id="dispatch-order-search" class="dispatch-search" type="text" placeholder="Search orders, customers...">
+            <div class="dispatch-filter-row">
+              <button class="dispatch-filter-btn is-active" type="button" data-dispatch-filter="all">All</button>
+              <button class="dispatch-filter-btn" type="button" data-dispatch-filter="dispatched">Dispatched</button>
+              <button class="dispatch-filter-btn" type="button" data-dispatch-filter="enroute">En Route</button>
+              <button class="dispatch-filter-btn" type="button" data-dispatch-filter="unassigned">Unassigned</button>
+            </div>
+          </div>
+          <div id="dispatch-order-list" class="dispatch-order-list"></div>
+          <p id="assignment-message" class="message dispatch-message"></p>
+        </aside>
+
+        <!-- CENTER: MAP -->
+        <div class="dispatch-map-area">
+          <div class="dispatch-map-overlay-stats" id="dispatch-map-stats">
+            <div class="map-stat-chip">
+              <span class="map-stat-chip-label">Active</span>
+              <strong class="map-stat-chip-value" id="stats-active-drivers">0</strong>
+            </div>
+            <div class="map-stat-chip">
+              <span class="map-stat-chip-label">Orders</span>
+              <strong class="map-stat-chip-value" id="stats-total-orders">0</strong>
+            </div>
+            <div class="map-stat-chip">
+              <span class="map-stat-chip-label">Assigned</span>
+              <strong class="map-stat-chip-value stat-success" id="stats-assigned-orders">0</strong>
+            </div>
+            <div class="map-stat-chip">
+              <span class="map-stat-chip-label">Unassigned</span>
+              <strong class="map-stat-chip-value stat-accent" id="stats-unassigned-orders">0</strong>
+            </div>
+            <button id="stats-upcoming-due-card" class="map-stat-chip map-stat-chip-action" type="button">
+              <span class="map-stat-chip-label">Due Soon</span>
+              <strong class="map-stat-chip-value stat-warning" id="stats-upcoming-due">0</strong>
+            </button>
+          </div>
+
+          <div id="driver-map" class="dispatch-map-container"></div>
+
+          <div class="dispatch-map-actions">
+            <div class="dispatch-selected-driver">
+              <span>Selected Driver</span>
+              <strong id="selected-driver-label">None</strong>
+            </div>
+            <span id="assignment-context" class="dispatch-context-hint">Select a driver to begin assigning</span>
+            <button id="refresh-drivers" class="btn-dispatch btn-dispatch-ghost" type="button">Refresh Drivers</button>
+            <button id="refresh-orders" class="btn-dispatch btn-dispatch-ghost" type="button">Refresh Orders</button>
+          </div>
+          <p id="drivers-message" class="message dispatch-message"></p>
+        </div>
+
+        <!-- RIGHT PANEL: Drivers -->
+        <aside class="dispatch-right">
+          <div class="dispatch-panel-header">
+            <div class="dispatch-panel-header-row">
+              <span class="dispatch-panel-title">Drivers</span>
+            </div>
+          </div>
+          <ul id="driver-list" class="dispatch-driver-list"></ul>
+        </aside>
+
+      </div>
+    </section>
+
+    <!-- ===== ORDERS VIEW (existing, wrapped) ===== -->
+    <section class="workspace-panel" data-workspace-panel="orders">
+      <div class="workspace-contained">
+        <section class="panel">
+          <div class="panel-title-row">
+            <h2>Orders View</h2>
+            <button id="refresh-orders-table" class="btn btn-ghost" type="button">Refresh Orders</button>
+          </div>
+          <p class="panel-help">Spreadsheet-style order management with sorting, filtering, and fast assignment actions.</p>
+
+          <div class="row">
+            <input id="bulk-driver-id" class="compact-input" list="driver-options" placeholder="driver id">
+            <button id="bulk-assign-selected" class="btn btn-primary" type="button">Assign Selected</button>
+            <button id="bulk-unassign-selected" class="btn btn-ghost" type="button">Unassign</button>
+            <button id="clear-selection" class="btn btn-ghost" type="button">Clear</button>
+            <span id="selection-count" class="status-pill status-idle">0 selected</span>
+          </div>
+
+          <datalist id="driver-options"></datalist>
+
+          <form id="orders-filter-form" class="row orders-filters">
+            <label class="field">
+              <span>Status</span>
+              <select id="orders-status-filter" name="status">
+                <option value="">Any status</option>
+                <option value="Created">Created</option>
+                <option value="Assigned">Assigned</option>
+                <option value="PickedUp">PickedUp</option>
+                <option value="EnRoute">EnRoute</option>
+                <option value="Delivered">Delivered</option>
+                <option value="Failed">Failed</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Assigned Driver</span>
+              <input id="orders-assigned-filter" name="assigned_to" placeholder="driver id">
+            </label>
+            <label class="field">
+              <span>Assignment</span>
+              <select id="orders-assignment-filter" name="assignment">
+                <option value="">All</option>
+                <option value="assigned">Assigned only</option>
+                <option value="unassigned">Unassigned only</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Due Date</span>
+              <select id="orders-due-filter" name="due">
+                <option value="">Any</option>
+                <option value="upcoming">Upcoming (next 2h)</option>
+                <option value="overdue">Overdue</option>
+                <option value="none">No deadline</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Search</span>
+              <input id="orders-search-filter" name="search" placeholder="customer / reference / order id">
+            </label>
+            <label class="field">
+              <span>Sort By</span>
+              <select id="orders-sort-field" name="sort_field">
+                <option value="dropoff_deadline">Dropoff Deadline</option>
+                <option value="pickup_deadline">Pickup Deadline</option>
+                <option value="created_at">Created At</option>
+                <option value="customer_name">Customer</option>
+                <option value="reference_number">Reference Number</option>
+                <option value="status">Status</option>
+                <option value="assigned_to">Assigned Driver</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Direction</span>
+              <select id="orders-sort-direction" name="sort_direction">
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
+            </label>
+            <div class="filter-actions">
+              <button class="btn btn-primary" type="submit">Apply</button>
+              <button id="orders-clear-filters" class="btn btn-ghost" type="button">Clear</button>
+            </div>
+          </form>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="select-all-orders" type="checkbox" aria-label="Select all orders"></th>
+                  <th><button class="table-sort" type="button" data-order-sort-field="customer_name">Order</button></th>
+                  <th><button class="table-sort" type="button" data-order-sort-field="pick_up_address">Stops</button></th>
+                  <th><button class="table-sort" type="button" data-order-sort-field="pickup_deadline">Deadlines</button></th>
+                  <th><button class="table-sort" type="button" data-order-sort-field="time_window_end">Window</button></th>
+                  <th><button class="table-sort" type="button" data-order-sort-field="assigned_to">Assignment</button></th>
+                  <th><button class="table-sort" type="button" data-order-sort-field="status">Status</button></th>
+                </tr>
+              </thead>
+              <tbody id="orders-tbody"></tbody>
+            </table>
+          </div>
+          <div id="orders-mobile" class="orders-mobile"></div>
+          <p id="orders-message" class="message"></p>
+        </section>
+      </div>
+    </section>
+
+    <!-- ===== PLANNING (existing, wrapped) ===== -->
+    <section class="workspace-panel" data-workspace-panel="planning">
+      <div class="workspace-contained">
+        <div class="planning-grid">
+          <section class="panel">
+            <div class="panel-title-row">
+              <h2>Create Order</h2>
+            </div>
+            <p class="panel-help">Capture complete order details, then move to optimization and assignment.</p>
+            <form id="create-order-form" class="form-grid">
+              <label class="field"><span>Customer Name</span><input name="customer_name" required></label>
+              <label class="field"><span>Reference Number</span><input name="reference_number" type="number" min="1" required></label>
+              <label class="field"><span>Pick Up Address</span><input name="pick_up_address" required></label>
+              <label class="field"><span>Delivery</span><input name="delivery" required></label>
+              <label class="field"><span>Dimensions</span><input name="dimensions" placeholder="e.g. 12x8x5 in" required></label>
+              <label class="field"><span>Weight</span><input name="weight" type="number" step="any" min="0.01" required></label>
+              <label class="field"><span>Time Window Start</span><input name="time_window_start" type="datetime-local"></label>
+              <label class="field"><span>Time Window End</span><input name="time_window_end" type="datetime-local"></label>
+              <label class="field"><span>Pick Up Deadline</span><input name="pickup_deadline" type="datetime-local"></label>
+              <label class="field"><span>Drop Off Deadline</span><input name="dropoff_deadline" type="datetime-local"></label>
+              <label class="field"><span>Phone</span><input name="phone"></label>
+              <label class="field"><span>Email</span><input name="email" type="email"></label>
+              <label class="field"><span>Packages</span><input name="num_packages" type="number" min="1" value="1"></label>
+              <label class="field field-span-2"><span>Notes</span><textarea name="notes" rows="2"></textarea></label>
+              <button class="btn btn-primary field-span-2" type="submit">Create Order</button>
+            </form>
+            <p id="create-order-message" class="message"></p>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title-row">
+              <h2>Route Optimization</h2>
+            </div>
+            <p class="panel-help">Optimize assigned stops for one driver, then export route guidance.</p>
+            <form id="optimize-form" class="form-grid">
+              <label class="field"><span>Driver ID</span><input name="driver_id" required></label>
+              <label class="field"><span>Start Latitude (optional)</span><input name="start_lat" type="number" step="any"></label>
+              <label class="field"><span>Start Longitude (optional)</span><input name="start_lng" type="number" step="any"></label>
+              <label class="field field-span-2">
+                <span>Stops JSON override (optional)</span>
+                <textarea name="stops_json" rows="4" placeholder='[{"order_id":"id","lat":37.77,"lng":-122.42}]'></textarea>
+              </label>
+              <button class="btn btn-accent field-span-2" type="submit">Optimize Stops</button>
+            </form>
+            <div id="route-result" class="data-surface">No route computed yet.</div>
+            <p id="route-message" class="message"></p>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== INSIGHTS (existing, wrapped) ===== -->
+    <section class="workspace-panel" data-workspace-panel="insights">
+      <div class="workspace-contained">
+        <section class="panel">
+          <div class="panel-title-row">
+            <h2>Dispatch Summary</h2>
+            <button id="refresh-dispatch-summary" class="btn btn-ghost" type="button">Refresh</button>
+          </div>
+          <form id="dispatch-summary-form" class="form-grid compact-form">
+            <label class="field"><span>Active Driver Window (minutes)</span><input id="dispatch-active-minutes" name="active_minutes" type="number" min="1" max="1440" value="120"></label>
+          </form>
+          <div id="dispatch-summary-view" class="data-surface">No dispatch summary loaded.</div>
+          <p id="dispatch-summary-message" class="message"></p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row">
+            <h2>Audit Logs</h2>
+            <button id="refresh-audit-logs" class="btn btn-ghost" type="button">Refresh</button>
+          </div>
+          <form id="audit-filter-form" class="form-grid">
+            <label class="field"><span>Action (optional)</span><input id="audit-action-filter" name="action" placeholder="order.assigned"></label>
+            <label class="field"><span>Target Type (optional)</span><input id="audit-target-filter" name="target_type" placeholder="order"></label>
+            <label class="field"><span>Actor ID (optional)</span><input id="audit-actor-filter" name="actor_id" placeholder="admin-123"></label>
+            <label class="field"><span>Limit</span><input id="audit-limit-filter" name="limit" type="number" min="1" max="200" value="50"></label>
+          </form>
+          <div id="audit-logs-view" class="data-surface">No audit logs loaded.</div>
+          <p id="audit-message" class="message"></p>
+        </section>
+      </div>
+    </section>
+
+    <!-- ===== ADMIN (existing + session/auth config moved here, wrapped) ===== -->
+    <section class="workspace-panel" data-workspace-panel="admin">
+      <div class="workspace-contained">
+
+        <!-- Session & Auth (moved from sidebar) -->
+        <section class="panel">
+          <details class="session-details" open>
+            <summary>Session And Auth Settings</summary>
+            <p class="panel-help">Use secure Hosted UI sign-in. Tokens are managed automatically in a protected web session cookie.</p>
+
+            <div id="dev-auth-panel" class="dev-auth-panel" hidden>
+              <p class="panel-help">Quick test sign-in (no token required)</p>
+              <div id="dev-auth-actions" class="row"></div>
+            </div>
+
+            <details class="auth-config">
+              <summary>Hosted UI login</summary>
+              <label class="field">
+                <span>Cognito Hosted UI Domain</span>
+                <input id="cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
+              </label>
+              <label class="field">
+                <span>Client ID</span>
+                <input id="cognito-client-id" placeholder="app client id">
+              </label>
+              <div class="row">
+                <button id="login-hosted-ui" class="btn btn-accent" type="button">Login Hosted UI</button>
+                <button id="logout-hosted-ui" class="btn btn-ghost" type="button">Logout</button>
+              </div>
+            </details>
+
+            <details id="admin-auth-debug" class="auth-config" hidden>
+              <summary>Debug Token Override</summary>
+              <label class="field">
+                <span>JWT Token</span>
+                <textarea id="jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
+              </label>
+              <div class="row">
+                <button id="save-token" class="btn btn-primary" type="button">Save Token</button>
+                <button id="clear-token" class="btn btn-ghost" type="button">Clear</button>
+              </div>
+              <pre id="claims-view" class="claims-view">No active web session.</pre>
+            </details>
+            <p id="auth-message" class="message"></p>
+          </details>
+
+          <div class="sidebar-stats">
+            <div class="sidebar-stat">
+              <span>Last sync</span>
+              <strong id="stats-last-sync">Not synced</strong>
+            </div>
+            <div class="sidebar-stat">
+              <span>Selected orders</span>
+              <strong id="stats-selection">0</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- Billing & Seats -->
+        <section class="panel">
+          <div class="panel-title-row">
+            <h2>Billing And Seats</h2>
+            <button id="refresh-billing" class="btn btn-ghost" type="button">Refresh</button>
+          </div>
+          <p class="panel-help">Your free tier includes 1 admin/dispatcher seat and 1 driver seat. Invite team members using available seats, or purchase more capacity.</p>
+          <p id="billing-message" class="message"></p>
+
+          <div id="billing-seat-cards" class="billing-seat-cards">
+            <article class="stat-card">
+              <span>Admin / Dispatcher Seats</span>
+              <strong id="seat-dispatcher-usage">0 / 0</strong>
+              <small id="seat-dispatcher-detail">0 pending</small>
+            </article>
+            <article class="stat-card">
+              <span>Driver Seats</span>
+              <strong id="seat-driver-usage">0 / 0</strong>
+              <small id="seat-driver-detail">0 pending</small>
+            </article>
+            <article class="stat-card">
+              <span>Available Seats</span>
+              <strong id="seat-available-total">0</strong>
+              <small id="seat-available-detail">ready to assign</small>
+            </article>
+            <article class="stat-card">
+              <span>Pending Invitations</span>
+              <strong id="seat-pending-total">0</strong>
+              <small>awaiting activation</small>
+            </article>
+          </div>
+
+          <div id="billing-status" class="data-surface" hidden>No billing provider status loaded.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row">
+            <h3>Invite a Team Member</h3>
+          </div>
+          <p class="panel-help">Send an invitation to assign one of your available seats. Enter the person's email address and choose their role.</p>
+
+          <form id="billing-invite-form" class="form-grid">
+            <label class="field"><span>Email Address</span><input name="email" type="email" required placeholder="colleague@example.com"></label>
+            <label class="field">
+              <span>Role</span>
+              <select name="role">
+                <option value="Admin">Admin</option>
+                <option value="Dispatcher">Dispatcher</option>
+                <option value="Driver">Driver</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>User ID (optional)</span>
+              <input name="user_id" placeholder="auto-set from email if blank">
+            </label>
+            <button class="btn btn-accent field-span-2" type="submit">Send Invitation</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row">
+            <h3>Invitations</h3>
+            <button id="refresh-invitations" class="btn btn-ghost" type="button">Refresh</button>
+          </div>
+          <ul id="billing-invitations" class="driver-list invitation-list"></ul>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row">
+            <h3>Purchase Seats</h3>
+          </div>
+          <p class="panel-help">Need more capacity? Purchase additional dispatcher or driver seats through Stripe.</p>
+          <div class="billing-purchase-actions">
+            <button id="open-purchase-modal" class="btn btn-primary" type="button">Purchase Additional Seats</button>
+            <form id="billing-portal-form" class="inline-form">
+              <button class="btn btn-ghost" type="submit">Manage Billing Portal</button>
+            </form>
+          </div>
+        </section>
+
+        <div id="purchase-modal" class="modal-overlay" hidden>
+          <div class="modal-dialog">
+            <div class="modal-header">
+              <h3>Purchase Additional Seats</h3>
+              <button id="close-purchase-modal" class="btn btn-ghost modal-close" type="button" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+              <p class="panel-help">Set the new total seat limits for your organization.</p>
+              <form id="billing-checkout-form" class="form-grid">
+                <label class="field"><span>Total Dispatcher Seats</span><input name="dispatcher_seat_limit" type="number" min="0" placeholder="e.g. 3"></label>
+                <label class="field"><span>Total Driver Seats</span><input name="driver_seat_limit" type="number" min="0" placeholder="e.g. 5"></label>
+                <button class="btn btn-primary field-span-2" type="submit">Proceed to Checkout</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Hidden elements for assignment queue rendering (used by JS) -->
+  <div id="unassigned-orders-list" hidden></div>
+  <div id="assigned-orders-list" hidden></div>
+  <span id="assigned-queue-count" hidden>0</span>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260322d"></script>
-  <script src="assets/admin.js?v=20260322d"></script>
+  <script src="assets/common.js?v=20260322e"></script>
+  <script src="assets/admin.js?v=20260322e"></script>
 </body>
 </html>

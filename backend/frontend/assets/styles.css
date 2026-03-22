@@ -374,6 +374,10 @@ textarea {
   gap: 0.65rem;
 }
 
+.stats-grid-5 {
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+}
+
 .stat-card {
   border: 1px solid var(--panel-border);
   border-radius: 12px;
@@ -393,10 +397,35 @@ textarea {
   line-height: 1.05;
 }
 
+.stat-card-action {
+  appearance: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.stat-card-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(14, 122, 166, 0.5);
+  background: rgba(14, 122, 166, 0.08);
+}
+
+.stat-card-action small {
+  color: var(--primary-strong);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .ops-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
   gap: 1rem;
+}
+
+.ops-grid-cockpit {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
 }
 
 .planning-grid {
@@ -483,6 +512,23 @@ td small {
   gap: 0.34rem;
 }
 
+.table-sort {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.table-sort:hover {
+  color: var(--primary-strong);
+}
+
 .table-status {
   display: inline-block;
   border-radius: 999px;
@@ -554,6 +600,137 @@ td small {
   margin-bottom: 0.35rem;
   color: var(--text-muted);
   font-size: 0.86rem;
+}
+
+.driver-list-interactive {
+  list-style: none;
+  padding-left: 0;
+  display: grid;
+  gap: 0.42rem;
+}
+
+.driver-list-interactive li {
+  margin: 0;
+}
+
+.driver-list-button {
+  width: 100%;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  padding: 0.55rem 0.62rem;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.driver-list-button:hover {
+  transform: translateY(-1px);
+}
+
+.driver-list-button.is-selected {
+  border-color: rgba(14, 122, 166, 0.55);
+  background: rgba(14, 122, 166, 0.1);
+}
+
+.driver-list-button strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.driver-list-button small {
+  color: var(--text-muted);
+  font-size: 0.79rem;
+}
+
+.selected-driver-chip {
+  display: inline-grid;
+  gap: 0.2rem;
+  padding: 0.52rem 0.62rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  margin-bottom: 0.7rem;
+}
+
+.selected-driver-chip span {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.selected-driver-chip strong {
+  font-size: 0.95rem;
+}
+
+.assignment-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.assignment-column {
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  padding: 0.62rem;
+}
+
+.assignment-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.assignment-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.assignment-item {
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.54rem;
+  display: grid;
+  gap: 0.38rem;
+}
+
+.assignment-item h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.assignment-item p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.81rem;
+  line-height: 1.34;
+}
+
+.assignment-item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.due-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.16rem 0.48rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(14, 122, 166, 0.11);
+  color: var(--primary-strong);
+}
+
+.due-pill.overdue {
+  background: rgba(204, 79, 74, 0.14);
+  color: var(--danger);
 }
 
 .data-surface {
@@ -1278,6 +1455,14 @@ canvas.signature-pad {
 
   .stats-grid {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .stats-grid-5 {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .assignment-columns {
+    grid-template-columns: 1fr;
   }
 }
 

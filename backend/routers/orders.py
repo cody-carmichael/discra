@@ -164,6 +164,8 @@ async def create_order(
         weight=payload.weight,
         time_window_start=payload.time_window_start,
         time_window_end=payload.time_window_end,
+        pickup_deadline=payload.pickup_deadline,
+        dropoff_deadline=payload.dropoff_deadline,
         phone=payload.phone,
         email=payload.email,
         notes=payload.notes,

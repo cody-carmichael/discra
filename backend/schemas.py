@@ -22,6 +22,8 @@ class OrderCreate(BaseModel):
     weight: float = Field(..., gt=0)
     time_window_start: Optional[datetime] = None
     time_window_end: Optional[datetime] = None
+    pickup_deadline: Optional[datetime] = None
+    dropoff_deadline: Optional[datetime] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
@@ -33,6 +35,10 @@ class OrderCreate(BaseModel):
         end_utc = _to_utc(self.time_window_end)
         if start_utc and end_utc and end_utc < start_utc:
             raise ValueError("time_window_end must be greater than or equal to time_window_start")
+        pickup_deadline_utc = _to_utc(self.pickup_deadline)
+        dropoff_deadline_utc = _to_utc(self.dropoff_deadline)
+        if pickup_deadline_utc and dropoff_deadline_utc and dropoff_deadline_utc < pickup_deadline_utc:
+            raise ValueError("dropoff_deadline must be greater than or equal to pickup_deadline")
         return self
 
 
@@ -55,6 +61,8 @@ class Order(BaseModel):
     weight: float
     time_window_start: Optional[datetime] = None
     time_window_end: Optional[datetime] = None
+    pickup_deadline: Optional[datetime] = None
+    dropoff_deadline: Optional[datetime] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
@@ -248,6 +256,8 @@ class WebhookOrderInput(BaseModel):
     weight: float = Field(..., gt=0)
     time_window_start: Optional[datetime] = None
     time_window_end: Optional[datetime] = None
+    pickup_deadline: Optional[datetime] = None
+    dropoff_deadline: Optional[datetime] = None
     phone: Optional[str] = Field(default=None, max_length=40)
     email: Optional[str] = Field(default=None, max_length=320)
     notes: Optional[str] = Field(default=None, max_length=1000)
@@ -259,6 +269,10 @@ class WebhookOrderInput(BaseModel):
         end_utc = _to_utc(self.time_window_end)
         if start_utc and end_utc and end_utc < start_utc:
             raise ValueError("time_window_end must be greater than or equal to time_window_start")
+        pickup_deadline_utc = _to_utc(self.pickup_deadline)
+        dropoff_deadline_utc = _to_utc(self.dropoff_deadline)
+        if pickup_deadline_utc and dropoff_deadline_utc and dropoff_deadline_utc < pickup_deadline_utc:
+            raise ValueError("dropoff_deadline must be greater than or equal to pickup_deadline")
         return self
 
 

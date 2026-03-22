@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=20260322a">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322b">
 </head>
 <body class="theme-admin">
   <div class="app-shell app-shell-compact">
@@ -27,12 +27,16 @@
       <section class="panel">
         <div class="panel-title-row">
           <h2>Review Link</h2>
-          <button id="review-load" class="btn btn-ghost" type="button">Resolve Token</button>
         </div>
-        <label class="field">
-          <span>Signed Review Token</span>
-          <textarea id="review-token" rows="3" placeholder="token=..."></textarea>
-        </label>
+        <p id="review-link-mode" class="panel-help">Open a signed review link from email to load request details.</p>
+        <details id="review-token-manual" class="auth-config" hidden>
+          <summary>Use Manual Token (Advanced)</summary>
+          <label class="field">
+            <span>Signed Review Token</span>
+            <textarea id="review-token" rows="3" placeholder="token=..."></textarea>
+          </label>
+          <button id="review-load" class="btn btn-ghost" type="button">Resolve Token</button>
+        </details>
         <div id="review-summary-surface" class="data-surface">Paste a token to load registration details.</div>
       </section>
 
@@ -40,19 +44,23 @@
         <div class="panel-title-row">
           <h2>Approver Session</h2>
         </div>
-        <p class="panel-help">Sign in as an allowlisted App Dev user before applying a decision.</p>
-        <label class="field">
-          <span>Cognito Hosted UI Domain</span>
-          <input id="review-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
-        </label>
-        <label class="field">
-          <span>Client ID</span>
-          <input id="review-cognito-client-id" placeholder="app client id">
-        </label>
+        <p id="review-session-help" class="panel-help">Sign in as an allowlisted App Dev user before applying a decision.</p>
+        <p id="review-approver-email" class="panel-help" hidden></p>
         <div class="row">
-          <button id="review-login-hosted-ui" class="btn btn-accent" type="button">Login Hosted UI</button>
+          <button id="review-login-hosted-ui" class="btn btn-accent" type="button">Sign In To Review</button>
           <button id="review-logout-hosted-ui" class="btn btn-ghost" type="button">Logout</button>
         </div>
+        <details id="review-auth-config" class="auth-config" hidden>
+          <summary>Connection Settings</summary>
+          <label class="field">
+            <span>Cognito Hosted UI Domain</span>
+            <input id="review-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
+          </label>
+          <label class="field">
+            <span>Client ID</span>
+            <input id="review-cognito-client-id" placeholder="app client id">
+          </label>
+        </details>
         <details id="review-auth-debug" class="auth-config" hidden>
           <summary>Advanced Connection Settings</summary>
           <pre id="review-claims-view" class="claims-view">No active web session.</pre>
@@ -63,6 +71,7 @@
         <div class="panel-title-row">
           <h2>Apply Decision</h2>
         </div>
+        <p id="review-decision-gate" class="panel-help">Sign in and load a review token to continue.</p>
         <label class="field">
           <span>Reason (optional, recommended on rejection)</span>
           <textarea id="review-reason" rows="3" placeholder="Reason shown in audit and requester email"></textarea>
@@ -77,7 +86,7 @@
     </main>
   </div>
 
-  <script src="assets/common.js?v=20260322a"></script>
-  <script src="assets/review.js?v=20260322a"></script>
+  <script src="assets/common.js?v=20260322b"></script>
+  <script src="assets/review.js?v=20260322b"></script>
 </body>
 </html>

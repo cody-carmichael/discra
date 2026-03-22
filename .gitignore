@@ -11,6 +11,15 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 
+# IDE and editor artifacts
+.classpath
+.project
+.settings/
+.metadata/
+*.iml
+.idea/
+.vscode/
+
 # Mobile app artifacts
 mobile/node_modules/
 mobile/.expo/

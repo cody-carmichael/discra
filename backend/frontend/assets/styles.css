@@ -1429,6 +1429,162 @@ canvas.signature-pad {
   border-radius: 12px;
 }
 
+body.theme-admin {
+  --bg: #08111a;
+  --bg-soft: #0d1823;
+  --panel: #101f2f;
+  --panel-2: #142639;
+  --panel-border: #2b4458;
+  --text: #e6f0f8;
+  --text-muted: #9cb1c1;
+  --primary: #1ca2d4;
+  --primary-strong: #6ecaf0;
+  --accent: #22b784;
+  --danger: #f17368;
+  --ok: #2ecf98;
+  --shadow: 0 14px 34px rgba(2, 10, 17, 0.42);
+  color-scheme: dark;
+  background:
+    radial-gradient(circle at 9% 11%, rgba(30, 107, 149, 0.28), transparent 34%),
+    radial-gradient(circle at 87% 12%, rgba(34, 183, 132, 0.2), transparent 34%),
+    linear-gradient(180deg, #0a1420, #08111a 58%, #0a1624 100%);
+}
+
+body.theme-admin .app-shell {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  min-height: 100vh;
+  padding: 1.2rem clamp(1rem, 2vw, 2.2rem) 1.8rem;
+}
+
+body.theme-admin .topbar {
+  margin-bottom: 1.1rem;
+}
+
+body.theme-admin .workspace-shell {
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 1.1rem;
+}
+
+body.theme-admin .panel {
+  background: linear-gradient(150deg, rgba(16, 31, 47, 0.95), rgba(11, 22, 35, 0.95));
+  border-color: rgba(98, 137, 168, 0.38);
+  box-shadow: 0 14px 28px rgba(2, 9, 16, 0.4);
+}
+
+body.theme-admin .workspace-tab {
+  background: rgba(17, 32, 47, 0.82);
+  border-color: rgba(85, 120, 149, 0.38);
+  color: #e0edf6;
+}
+
+body.theme-admin .workspace-tab.is-active {
+  border-color: rgba(95, 188, 226, 0.58);
+  background: rgba(28, 162, 212, 0.2);
+  color: #88d6f5;
+}
+
+body.theme-admin .btn-ghost {
+  background: rgba(9, 20, 31, 0.86);
+  border-color: rgba(86, 121, 148, 0.46);
+  color: #e0edf7;
+}
+
+body.theme-admin .status-idle {
+  background: rgba(160, 178, 194, 0.2);
+  color: #c0d3e2;
+}
+
+body.theme-admin .claims-view {
+  background: rgba(8, 19, 30, 0.86);
+  color: #c0d8e9;
+}
+
+body.theme-admin input,
+body.theme-admin textarea,
+body.theme-admin select {
+  background: rgba(9, 21, 33, 0.96);
+  border-color: rgba(86, 121, 149, 0.44);
+  color: #e7f2fb;
+}
+
+body.theme-admin input::placeholder,
+body.theme-admin textarea::placeholder {
+  color: #8ea7bb;
+}
+
+body.theme-admin input:focus,
+body.theme-admin textarea:focus,
+body.theme-admin select:focus {
+  outline: 2px solid rgba(92, 189, 228, 0.35);
+  border-color: rgba(98, 194, 230, 0.6);
+}
+
+body.theme-admin .stat-card-action:hover {
+  border-color: rgba(95, 188, 226, 0.58);
+  background: rgba(28, 162, 212, 0.18);
+}
+
+body.theme-admin .table-wrap {
+  border-color: rgba(84, 118, 147, 0.5);
+}
+
+body.theme-admin th {
+  background: rgba(16, 31, 46, 0.96);
+  color: #a5bed1;
+}
+
+body.theme-admin td {
+  background: rgba(12, 25, 39, 0.72);
+}
+
+body.theme-admin .assignment-item,
+body.theme-admin .audit-item,
+body.theme-admin .route-stop-item,
+body.theme-admin .metric-item,
+body.theme-admin .kv-item,
+body.theme-admin .invitation-list li {
+  background: rgba(9, 21, 33, 0.88);
+  border-color: rgba(80, 116, 146, 0.42);
+}
+
+body.theme-admin .ops-grid-cockpit {
+  grid-template-columns: minmax(0, 1.85fr) minmax(380px, 1fr);
+}
+
+body.theme-admin .map-card {
+  height: clamp(460px, 62vh, 760px);
+  margin-bottom: 0.9rem;
+  background: #122235;
+  border-color: rgba(98, 133, 162, 0.48);
+}
+
+body.theme-admin .map-card canvas,
+body.theme-admin .map-card .maplibregl-canvas {
+  filter: saturate(0.9) brightness(0.82) contrast(1.08);
+}
+
+@media (max-width: 1160px) {
+  body.theme-admin .workspace-shell {
+    grid-template-columns: 1fr;
+  }
+
+  body.theme-admin .ops-grid-cockpit {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  body.theme-admin .app-shell {
+    padding: 1rem 0.8rem 1.4rem;
+  }
+
+  body.theme-admin .map-card {
+    height: 360px;
+  }
+}
+
 @media (max-width: 1160px) {
   .workspace-shell {
     grid-template-columns: 1fr;

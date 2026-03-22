@@ -25,6 +25,7 @@
     selectionCount: document.getElementById("selection-count"),
     selectAllOrders: document.getElementById("select-all-orders"),
     refreshOrders: document.getElementById("refresh-orders"),
+    refreshOrdersTable: document.getElementById("refresh-orders-table"),
     ordersFilterForm: document.getElementById("orders-filter-form"),
     ordersStatusFilter: document.getElementById("orders-status-filter"),
     ordersAssignedFilter: document.getElementById("orders-assigned-filter"),
@@ -101,6 +102,9 @@
     statsAssignedOrders: document.getElementById("stats-assigned-orders"),
     statsUnassignedOrders: document.getElementById("stats-unassigned-orders"),
     statsActiveDrivers: document.getElementById("stats-active-drivers"),
+    dispatchOrderList: document.getElementById("dispatch-order-list"),
+    dispatchOrderSearch: document.getElementById("dispatch-order-search"),
+    dispatchFilterBtns: Array.from(document.querySelectorAll("[data-dispatch-filter]")),
   };
 
   let token = "";
@@ -136,6 +140,152 @@
     limit: 50,
   };
   let activeWorkspace = "operations";
+  let dispatchFilter = "all";
+  let dispatchSearchTerm = "";
+
+  function _closestDeadlineMs(order) {
+    if (!order) return Infinity;
+    var candidates = [
+      _parseDateOrNull(order.pickup_deadline),
+      _parseDateOrNull(order.dropoff_deadline),
+    ].filter(Boolean);
+    if (!candidates.length) return Infinity;
+    return Math.min.apply(null, candidates.map(function (d) { return d.getTime(); }));
+  }
+
+  function _statusBadgeClass(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "created") return "badge-created";
+    if (s === "assigned") return "badge-assigned";
+    if (s === "pickedup") return "badge-pickedup";
+    if (s === "enroute") return "badge-enroute";
+    if (s === "delivered") return "badge-delivered";
+    if (s === "failed") return "badge-failed";
+    return "badge-created";
+  }
+
+  function _dispatchFilterOrders(orders) {
+    var list = Array.isArray(orders) ? orders : [];
+    var nowDate = new Date();
+    var search = (dispatchSearchTerm || "").toLowerCase();
+
+    var filtered = list.filter(function (order) {
+      if (dispatchFilter === "dispatched") {
+        return order.status === "Assigned" || order.status === "PickedUp";
+      }
+      if (dispatchFilter === "enroute") {
+        return order.status === "EnRoute";
+      }
+      if (dispatchFilter === "unassigned") {
+        return !order.assigned_to || order.status === "Created";
+      }
+      return true;
+    });
+
+    if (search) {
+      filtered = filtered.filter(function (order) {
+        return _matchesOrderSearch(order, search);
+      });
+    }
+
+    if (dispatchFilter === "unassigned") {
+      filtered.sort(function (a, b) {
+        var aMs = _closestDeadlineMs(a);
+        var bMs = _closestDeadlineMs(b);
+        if (aMs === Infinity && bMs === Infinity) return 0;
+        if (aMs === Infinity) return 1;
+        if (bMs === Infinity) return -1;
+        return aMs - bMs;
+      });
+    }
+
+    return filtered;
+  }
+
+  function _formatDeadlineRelative(order, nowDate) {
+    var deadlineDate = _parseDateOrNull(order.pickup_deadline) || _parseDateOrNull(order.dropoff_deadline);
+    if (!deadlineDate) return { text: "No deadline", cssClass: "" };
+    var deltaMs = deadlineDate.getTime() - nowDate.getTime();
+    if (deltaMs < 0) {
+      var overdueMin = Math.abs(Math.round(deltaMs / 60000));
+      if (overdueMin < 60) return { text: overdueMin + "m overdue", cssClass: "overdue" };
+      return { text: Math.floor(overdueMin / 60) + "h overdue", cssClass: "overdue" };
+    }
+    var minLeft = Math.round(deltaMs / 60000);
+    if (minLeft < 60) return { text: minLeft + "m left", cssClass: minLeft <= 30 ? "due-soon" : "" };
+    if (minLeft < 1440) return { text: Math.floor(minLeft / 60) + "h " + (minLeft % 60) + "m", cssClass: "" };
+    return { text: Math.floor(minLeft / 1440) + "d", cssClass: "" };
+  }
+
+  function renderDispatchOrderList() {
+    if (!el.dispatchOrderList) return;
+    var filtered = _dispatchFilterOrders(allOrders);
+    var nowDate = new Date();
+
+    if (el.unassignedQueueCount) {
+      var unassignedCount = allOrders.filter(function (o) {
+        return !o.assigned_to || o.status === "Created";
+      }).length;
+      el.unassignedQueueCount.textContent = String(filtered.length);
+    }
+
+    if (!filtered.length) {
+      el.dispatchOrderList.innerHTML = "<div class=\"dispatch-empty\">No orders match the current filter.</div>";
+      return;
+    }
+
+    el.dispatchOrderList.innerHTML = filtered.map(function (order) {
+      var isUnassigned = !order.assigned_to;
+      var deadline = _formatDeadlineRelative(order, nowDate);
+      var statusLabel = isUnassigned ? "Unassigned" : order.status;
+      var badgeClass = isUnassigned ? "badge-unassigned" : _statusBadgeClass(order.status);
+      var driverLabel = isUnassigned ? "Unassigned" : C.escapeHtml(order.assigned_to);
+      var dotClass = isUnassigned ? "dispatch-driver-dot unassigned" : "dispatch-driver-dot";
+      var pickup = C.escapeHtml(order.pick_up_address || "-");
+      var delivery = C.escapeHtml(order.delivery || "-");
+      if (pickup.length > 32) pickup = pickup.substring(0, 30) + "...";
+      if (delivery.length > 32) delivery = delivery.substring(0, 30) + "...";
+
+      var assignBtnHtml = "";
+      if (isUnassigned) {
+        assignBtnHtml = "<button class=\"dispatch-card-assign-btn\" type=\"button\" data-queue-action=\"assign-selected\" data-order-id=\"" +
+          C.escapeHtml(order.id) + "\"" + (selectedDriverId ? "" : " disabled") + ">Assign" +
+          (selectedDriverId ? " to " + C.escapeHtml(selectedDriverId) : " (select driver)") + "</button>";
+      }
+
+      return (
+        "<article class=\"dispatch-order-card\" data-dispatch-order-id=\"" + C.escapeHtml(order.id) + "\">" +
+        "<div class=\"dispatch-card-header\">" +
+        "<div class=\"dispatch-card-id\">" +
+        "<div class=\"dispatch-card-pin\"><div class=\"dispatch-card-pin-inner\"></div></div>" +
+        "<span class=\"dispatch-card-number\">" + C.escapeHtml(order.customer_name || "Order") + "</span>" +
+        "</div>" +
+        "<span class=\"dispatch-status-badge " + badgeClass + "\">" + C.escapeHtml(statusLabel) + "</span>" +
+        "</div>" +
+        "<div class=\"dispatch-card-details\">" +
+        "<div class=\"dispatch-card-detail\"><span class=\"dispatch-card-label\">Pickup</span><span class=\"dispatch-card-value\">" + pickup + "</span></div>" +
+        "<div class=\"dispatch-card-detail\"><span class=\"dispatch-card-label\">Delivery</span><span class=\"dispatch-card-value\">" + delivery + "</span></div>" +
+        "</div>" +
+        "<div class=\"dispatch-card-footer\">" +
+        "<div class=\"dispatch-card-driver\"><span class=\"" + dotClass + "\"></span>" + driverLabel + "</div>" +
+        "<div class=\"dispatch-card-time\">" +
+        "<div class=\"dispatch-card-time-label\">" + (deadline.text === "No deadline" ? "" : "Due") + "</div>" +
+        "<div class=\"dispatch-card-time-value " + deadline.cssClass + "\">" + C.escapeHtml(deadline.text) + "</div>" +
+        "</div>" +
+        "</div>" +
+        assignBtnHtml +
+        "</article>"
+      );
+    }).join("");
+  }
+
+  function setDispatchFilter(filter) {
+    dispatchFilter = filter || "all";
+    el.dispatchFilterBtns.forEach(function (btn) {
+      btn.classList.toggle("is-active", btn.getAttribute("data-dispatch-filter") === dispatchFilter);
+    });
+    renderDispatchOrderList();
+  }
 
   function claimsRoles(claims) {
     if (!claims) {
@@ -312,12 +462,10 @@
     el.workspacePanels.forEach(function (panel) {
       const isActive = panel.getAttribute("data-workspace-panel") === activeWorkspace;
       panel.classList.toggle("is-active", isActive);
-      if (isActive) {
-        panel.removeAttribute("hidden");
-      } else {
-        panel.setAttribute("hidden", "hidden");
-      }
     });
+    if (activeWorkspace === "operations" && map) {
+      setTimeout(function () { map.resize(); }, 50);
+    }
   }
 
   function initWorkspaceTabs() {
@@ -753,15 +901,16 @@
     }
 
     if (el.selectedDriverLabel) {
-      el.selectedDriverLabel.textContent = selectedDriverId || "None selected";
+      el.selectedDriverLabel.textContent = selectedDriverId || "None";
     }
     if (el.assignmentContext) {
       if (selectedDriverId) {
-        el.assignmentContext.textContent = "Driver " + selectedDriverId + " selected. Use Assign Selected Driver on unassigned orders.";
+        el.assignmentContext.textContent = "Driver " + selectedDriverId + " selected — assign from orders list.";
       } else {
-        el.assignmentContext.textContent = "Select a driver, then assign from the unassigned queue in one click.";
+        el.assignmentContext.textContent = "Select a driver to begin assigning";
       }
     }
+    renderDispatchOrderList();
   }
 
   function selectDriver(driverId, options) {
@@ -876,7 +1025,7 @@
     if (!("serviceWorker" in navigator)) {
       return;
     }
-    navigator.serviceWorker.register("admin-sw.js?v=20260322c", { scope: "./" }).catch(function () {
+    navigator.serviceWorker.register("admin-sw.js?v=20260322e", { scope: "./" }).catch(function () {
       // Keep dispatch workflow available even if worker registration fails.
     });
   }
@@ -1626,7 +1775,7 @@
     const bounds = new window.maplibregl.LngLatBounds();
     driverLocations.forEach(function (item) {
       const isSelectedDriver = !!focusDriverId && item.driver_id === focusDriverId;
-      const marker = new window.maplibregl.Marker({ color: isSelectedDriver ? "#0e7aa6" : "#ffb347" })
+      const marker = new window.maplibregl.Marker({ color: isSelectedDriver ? "#e63946" : "#3498db" })
         .setLngLat([item.lng, item.lat])
         .setPopup(
           new window.maplibregl.Popup({ offset: 15 }).setHTML(
@@ -1662,27 +1811,38 @@
 
   function renderDriverList(driverLocations) {
     if (!driverLocations.length) {
-      el.driverList.innerHTML = "<li>No active drivers in range.</li>";
+      el.driverList.innerHTML = "<li class=\"dispatch-empty\">No active drivers in range.</li>";
       return;
     }
-    el.driverList.innerHTML = driverLocations
-      .map(function (item) {
-        const selectedClass = item.driver_id === selectedDriverId ? " is-selected" : "";
-        return (
-          "<li><button type=\"button\" class=\"driver-list-button" +
-          selectedClass +
-          "\" data-driver-id=\"" +
-          C.escapeHtml(item.driver_id) +
-          "\"><strong>" +
-          C.escapeHtml(item.driver_id) +
-          "</strong><small>" +
-          C.escapeHtml(item.lat.toFixed(5) + ", " + item.lng.toFixed(5)) +
-          " | " +
-          C.escapeHtml(C.formatTimestamp(item.timestamp)) +
-          "</small></button></li>"
-        );
-      })
-      .join("");
+    var initials = function (id) {
+      var parts = String(id || "").split(/[\s@._-]/);
+      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+      return String(id || "?").substring(0, 2).toUpperCase();
+    };
+    el.driverList.innerHTML =
+      "<li class=\"dispatch-driver-section-label\">Active (" + driverLocations.length + ")</li>" +
+      driverLocations
+        .map(function (item) {
+          const selectedClass = item.driver_id === selectedDriverId ? " is-selected" : "";
+          return (
+            "<li><button type=\"button\" class=\"dispatch-driver-card" +
+            selectedClass +
+            "\" data-driver-id=\"" +
+            C.escapeHtml(item.driver_id) +
+            "\"><div class=\"dispatch-driver-avatar\">" +
+            C.escapeHtml(initials(item.driver_id)) +
+            "<span class=\"dispatch-driver-status-dot\"></span>" +
+            "</div><div class=\"dispatch-driver-info\">" +
+            "<span class=\"dispatch-driver-name\">" +
+            C.escapeHtml(item.driver_id) +
+            "</span><span class=\"dispatch-driver-meta\">" +
+            C.escapeHtml(item.lat.toFixed(4) + ", " + item.lng.toFixed(4)) +
+            " | " +
+            C.escapeHtml(C.formatTimestamp(item.timestamp)) +
+            "</span></div></button></li>"
+          );
+        })
+        .join("");
   }
 
   function renderDriverOptions(users) {
@@ -2659,6 +2819,52 @@
       C.showMessage(el.authMessage, error.message, "error");
     });
   });
+  if (el.refreshOrdersTable) {
+    el.refreshOrdersTable.addEventListener("click", refreshOrders);
+  }
+
+  // Dispatch filter tabs
+  el.dispatchFilterBtns.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      setDispatchFilter(btn.getAttribute("data-dispatch-filter") || "all");
+    });
+  });
+
+  // Dispatch order search
+  if (el.dispatchOrderSearch) {
+    el.dispatchOrderSearch.addEventListener("input", function () {
+      dispatchSearchTerm = (el.dispatchOrderSearch.value || "").trim();
+      renderDispatchOrderList();
+    });
+  }
+
+  // Dispatch order list clicks (assign actions)
+  if (el.dispatchOrderList) {
+    el.dispatchOrderList.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      var btn = target.closest("[data-queue-action]");
+      if (!btn) return;
+      var action = btn.getAttribute("data-queue-action");
+      var orderId = btn.getAttribute("data-order-id");
+      if (!action || !orderId) return;
+      if (!requireAuthorized(el.assignmentMessage || el.ordersMessage)) return;
+      if (action === "assign-selected") {
+        if (!selectedDriverId) {
+          C.showMessage(el.assignmentMessage || el.ordersMessage, "Select a driver first.", "error");
+          return;
+        }
+        assignOrder(orderId, selectedDriverId)
+          .then(function () {
+            C.showMessage(el.assignmentMessage || el.ordersMessage, "Order assigned to " + selectedDriverId + ".", "success");
+            return refreshOrders();
+          })
+          .catch(function (error) {
+            C.showMessage(el.assignmentMessage || el.ordersMessage, error.message, "error");
+          });
+      }
+    });
+  }
 
   bootstrap();
 })();

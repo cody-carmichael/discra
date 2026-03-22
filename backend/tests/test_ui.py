@@ -66,7 +66,8 @@ def test_ui_assets_and_service_worker_are_served():
     assert "requestAnimationFrame" in landing_js.text
     assert "DiscraAdmin" in admin_manifest.text
     assert "DiscraDriver" in driver_manifest.text
-    assert "discra-admin-v1" in admin_service_worker.text
+    assert "discra-admin-v" in admin_service_worker.text
+    assert "CACHE_PREFIX = \"discra-admin-\"" in admin_service_worker.text
     assert "CACHE_NAME" in service_worker.text
 
 

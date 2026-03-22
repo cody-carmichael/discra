@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 
 from fastapi.testclient import TestClient
@@ -66,7 +67,9 @@ def test_ui_assets_and_service_worker_are_served():
     assert "requestAnimationFrame" in landing_js.text
     assert "DiscraAdmin" in admin_manifest.text
     assert "DiscraDriver" in driver_manifest.text
-    assert "discra-admin-v" in admin_service_worker.text
+    cache_name_match = re.search(r'const CACHE_NAME = "([^"]+)"', admin_service_worker.text)
+    assert cache_name_match is not None
+    assert cache_name_match.group(1).startswith("discra-admin-v")
     assert "CACHE_PREFIX = \"discra-admin-\"" in admin_service_worker.text
     assert "CACHE_NAME" in service_worker.text
 

@@ -454,7 +454,17 @@ class OnboardingReviewDecisionRequest(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=1000)
 
 
+class OnboardingReviewDecisionByRegistrationRequest(BaseModel):
+    registration_id: str = Field(..., min_length=8, max_length=120)
+    decision: OnboardingReviewDecision
+    reason: Optional[str] = Field(default=None, max_length=1000)
+
+
 class OnboardingReviewDecisionResponse(BaseModel):
     registration: OnboardingRegistrationRecord
     idempotent: bool = False
     message: str
+
+
+class OnboardingPendingRegistrationsResponse(BaseModel):
+    items: List[OnboardingRegistrationRecord] = Field(default_factory=list)

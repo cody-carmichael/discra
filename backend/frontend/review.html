@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=20260322b">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322c">
 </head>
 <body class="theme-admin">
   <div class="app-shell app-shell-compact">
@@ -29,6 +29,13 @@
           <h2>Review Link</h2>
         </div>
         <p id="review-link-mode" class="panel-help">Open a signed review link from email to load request details.</p>
+        <div id="review-queue" class="row" hidden>
+          <label class="field" style="flex:1 1 360px; margin:0;">
+            <span>Pending Requests</span>
+            <select id="review-pending-select"></select>
+          </label>
+          <button id="review-load-pending" class="btn btn-ghost" type="button">Refresh Pending</button>
+        </div>
         <details id="review-token-manual" class="auth-config" hidden>
           <summary>Use Manual Token (Advanced)</summary>
           <label class="field">
@@ -86,7 +93,7 @@
     </main>
   </div>
 
-  <script src="assets/common.js?v=20260322b"></script>
-  <script src="assets/review.js?v=20260322b"></script>
+  <script src="assets/common.js?v=20260322c"></script>
+  <script src="assets/review.js?v=20260322c"></script>
 </body>
 </html>

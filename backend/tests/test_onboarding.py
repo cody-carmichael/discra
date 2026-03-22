@@ -189,6 +189,58 @@ def test_approve_flow_updates_org_user_cognito_and_notifications():
     assert len(approval_messages) >= 1
 
 
+def test_approver_can_list_pending_and_approve_from_queue():
+    notifier = FakeNotifier()
+    cognito = FakeCognitoAdminClient()
+    app.dependency_overrides[onboarding_router.get_onboarding_notifier] = lambda: notifier
+    app.dependency_overrides[onboarding_router.get_onboarding_cognito_admin_client] = lambda: cognito
+
+    requester_token = make_token(sub="requester-queue-1", email="requester-queue-1@example.com", groups=[])
+    submit = _submit_registration(requester_token, tenant_name="Queue Freight")
+    assert submit.status_code == 200
+    registration_id = submit.json()["registration"]["registration_id"]
+
+    approver_token = make_token(sub="approver-queue-1", email="approver@example.com", groups=["Admin"])
+    pending = client.get("/onboarding/registrations/pending", headers=auth_header(approver_token))
+    assert pending.status_code == 200
+    pending_body = pending.json()
+    pending_ids = [item["registration_id"] for item in pending_body["items"]]
+    assert registration_id in pending_ids
+
+    decision = client.post(
+        "/onboarding/review/decision/by-registration",
+        json={"registration_id": registration_id, "decision": "approve"},
+        headers=auth_header(approver_token),
+    )
+    assert decision.status_code == 200
+    body = decision.json()
+    assert body["idempotent"] is False
+    assert body["registration"]["status"] == "Approved"
+    assert body["registration"]["org_id"]
+    assert len(cognito.calls) == 1
+
+
+def test_pending_queue_and_decision_by_registration_require_allowlisted_approver():
+    notifier = FakeNotifier()
+    app.dependency_overrides[onboarding_router.get_onboarding_notifier] = lambda: notifier
+
+    requester_token = make_token(sub="requester-queue-2", email="requester-queue-2@example.com", groups=[])
+    submit = _submit_registration(requester_token, tenant_name="Queue Reject Freight")
+    assert submit.status_code == 200
+    registration_id = submit.json()["registration"]["registration_id"]
+
+    outsider_token = make_token(sub="outsider-queue-1", email="outsider@example.com", groups=["Admin"])
+    pending = client.get("/onboarding/registrations/pending", headers=auth_header(outsider_token))
+    assert pending.status_code == 403
+
+    decision = client.post(
+        "/onboarding/review/decision/by-registration",
+        json={"registration_id": registration_id, "decision": "reject"},
+        headers=auth_header(outsider_token),
+    )
+    assert decision.status_code == 403
+
+
 def test_reject_flow_persists_decision_and_sends_notification():
     notifier = FakeNotifier()
     app.dependency_overrides[onboarding_router.get_onboarding_notifier] = lambda: notifier

@@ -11,6 +11,9 @@
     claims: document.getElementById("review-claims-view"),
     message: document.getElementById("review-message"),
     linkMode: document.getElementById("review-link-mode"),
+    queue: document.getElementById("review-queue"),
+    pendingSelect: document.getElementById("review-pending-select"),
+    loadPending: document.getElementById("review-load-pending"),
     tokenManual: document.getElementById("review-token-manual"),
     reviewToken: document.getElementById("review-token"),
     loadButton: document.getElementById("review-load"),
@@ -32,6 +35,8 @@
   let loadedReview = null;
   let sessionClaims = null;
   let tokenLoadedFromLink = false;
+  let pendingRegistrations = [];
+  let selectedPendingRegistrationId = "";
 
   function claimsFromSessionUser(user) {
     if (!user || typeof user !== "object") {
@@ -65,6 +70,127 @@
     return !!loadedReview.decision_allowed && String(loadedReview.registration.status || "") === "Pending";
   }
 
+  function findPendingById(registrationId) {
+    if (!registrationId) {
+      return null;
+    }
+    for (let index = 0; index < pendingRegistrations.length; index += 1) {
+      const item = pendingRegistrations[index];
+      if (item && item.registration_id === registrationId) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  function registrationOptionLabel(registration) {
+    if (!registration) {
+      return "";
+    }
+    const tenant = registration.tenant_name || "Unknown Tenant";
+    const requester = registration.requester_email || registration.identity_sub || "unknown";
+    return tenant + " - " + requester;
+  }
+
+  function renderPendingOptions() {
+    if (!el.pendingSelect) {
+      return;
+    }
+    while (el.pendingSelect.firstChild) {
+      el.pendingSelect.removeChild(el.pendingSelect.firstChild);
+    }
+    if (!pendingRegistrations.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No pending requests";
+      el.pendingSelect.appendChild(option);
+      el.pendingSelect.disabled = true;
+      return;
+    }
+    el.pendingSelect.disabled = false;
+    for (let index = 0; index < pendingRegistrations.length; index += 1) {
+      const registration = pendingRegistrations[index];
+      const option = document.createElement("option");
+      option.value = registration.registration_id || "";
+      option.textContent = registrationOptionLabel(registration);
+      option.selected = option.value === selectedPendingRegistrationId;
+      el.pendingSelect.appendChild(option);
+    }
+  }
+
+  function selectPendingRegistration(registrationId) {
+    const registration = findPendingById(registrationId);
+    if (!registration) {
+      selectedPendingRegistrationId = "";
+      if (!reviewTokenValue()) {
+        renderSummary(null);
+      }
+      return;
+    }
+    selectedPendingRegistrationId = registration.registration_id || "";
+    if (el.pendingSelect) {
+      el.pendingSelect.value = selectedPendingRegistrationId;
+    }
+    if (!reviewTokenValue()) {
+      renderSummary({
+        registration,
+        token_expires_at:
+          registration.review_token_expires_at ||
+          registration.updated_at ||
+          registration.submitted_at ||
+          new Date().toISOString(),
+        decision_allowed: String(registration.status || "") === "Pending",
+      });
+    }
+  }
+
+  async function loadPendingRegistrations(options) {
+    const opts = options || {};
+    if (!sessionClaims) {
+      pendingRegistrations = [];
+      selectedPendingRegistrationId = "";
+      renderPendingOptions();
+      syncGateState();
+      return;
+    }
+    try {
+      const payload = await C.requestJson(apiBase, "/onboarding/registrations/pending");
+      const items = payload && Array.isArray(payload.items) ? payload.items : [];
+      pendingRegistrations = items;
+      if (items.length && !selectedPendingRegistrationId) {
+        selectedPendingRegistrationId = items[0].registration_id || "";
+      }
+      if (selectedPendingRegistrationId && !findPendingById(selectedPendingRegistrationId)) {
+        selectedPendingRegistrationId = items.length ? items[0].registration_id || "" : "";
+      }
+      renderPendingOptions();
+      if (!reviewTokenValue()) {
+        if (selectedPendingRegistrationId) {
+          selectPendingRegistration(selectedPendingRegistrationId);
+        } else {
+          renderSummary(null);
+        }
+      }
+      if (opts.notify === true) {
+        C.showMessage(
+          el.message,
+          items.length
+            ? "Loaded " + String(items.length) + " pending request(s)."
+            : "No pending registration requests right now.",
+          "success"
+        );
+      }
+    } catch (error) {
+      pendingRegistrations = [];
+      selectedPendingRegistrationId = "";
+      renderPendingOptions();
+      if (opts.notify === true) {
+        C.showMessage(el.message, error.message, "error");
+      }
+    }
+    syncGateState();
+  }
+
   function updateTokenEntryMode() {
     const hasToken = !!reviewTokenValue();
     if (el.linkMode) {
@@ -72,6 +198,8 @@
         el.linkMode.textContent = "Secure token loaded from your email link.";
       } else if (hasToken) {
         el.linkMode.textContent = "Review token loaded.";
+      } else if (sessionClaims) {
+        el.linkMode.textContent = "No signed link loaded. Use the pending requests queue below.";
       } else {
         el.linkMode.textContent = "Open a signed review link from email to load request details.";
       }
@@ -85,7 +213,8 @@
   function syncGateState() {
     const authenticated = !!sessionClaims;
     const hasToken = !!reviewTokenValue();
-    const canDecide = authenticated && hasToken && decisionAllowed();
+    const queueSelection = selectedPendingRegistrationId ? findPendingById(selectedPendingRegistrationId) : null;
+    const canDecide = authenticated && (hasToken ? decisionAllowed() : !!queueSelection && decisionAllowed());
 
     el.approve.disabled = !canDecide;
     el.reject.disabled = !canDecide;
@@ -109,6 +238,15 @@
         el.sessionHelp.textContent = "Sign in as an allowlisted App Dev user before applying a decision.";
       }
     }
+    if (el.queue) {
+      el.queue.hidden = !authenticated || hasToken;
+    }
+    if (el.loadPending) {
+      el.loadPending.disabled = !authenticated;
+    }
+    if (el.pendingSelect) {
+      el.pendingSelect.disabled = !authenticated || !pendingRegistrations.length;
+    }
     if (el.approverEmail) {
       const email = sessionClaims && sessionClaims.email ? String(sessionClaims.email) : "";
       if (authenticated && email) {
@@ -122,8 +260,12 @@
     if (el.decisionGate) {
       if (!authenticated) {
         el.decisionGate.textContent = "Sign in to review before approving or rejecting.";
+      } else if (!hasToken && !pendingRegistrations.length) {
+        el.decisionGate.textContent = "No pending requests in queue. Open a signed review link from email if needed.";
+      } else if (!hasToken && !queueSelection) {
+        el.decisionGate.textContent = "Select a pending request from the approver queue.";
       } else if (!hasToken) {
-        el.decisionGate.textContent = "Open a signed review link from email, then resolve token details.";
+        el.decisionGate.textContent = "Queue mode active. Approve or reject the selected pending request.";
       } else if (!loadedReview) {
         el.decisionGate.textContent = "Resolve token details first.";
       } else if (!decisionAllowed()) {
@@ -150,9 +292,13 @@
   function renderSummary(reviewPayload) {
     loadedReview = reviewPayload || null;
     if (!reviewPayload || !reviewPayload.registration) {
-      el.summarySurface.innerHTML = reviewTokenValue()
-        ? "Token loaded. Resolve to view registration details."
-        : "Open your signed review email link to load registration details.";
+      if (reviewTokenValue()) {
+        el.summarySurface.innerHTML = "Token loaded. Resolve to view registration details.";
+      } else if (sessionClaims && pendingRegistrations.length) {
+        el.summarySurface.innerHTML = "Select a pending request from the queue to review details.";
+      } else {
+        el.summarySurface.innerHTML = "Open your signed review email link to load registration details.";
+      }
       syncGateState();
       return;
     }
@@ -256,6 +402,9 @@
         { method: "GET" }
       );
       localStorage.setItem(reviewTokenStorageKey, signedToken);
+      if (result && result.registration && result.registration.registration_id) {
+        selectedPendingRegistrationId = result.registration.registration_id;
+      }
       renderSummary(result);
       C.showMessage(el.message, "Review token resolved.", "success");
     } catch (error) {
@@ -266,23 +415,33 @@
 
   async function applyDecision(decision) {
     const signedToken = reviewTokenValue();
-    if (!signedToken) {
-      C.showMessage(el.message, "Review token is required.", "error");
-      return;
-    }
     if (!sessionClaims) {
       C.showMessage(el.message, "Sign in as an approver first.", "error");
       return;
     }
+    const queueSelection = selectedPendingRegistrationId ? findPendingById(selectedPendingRegistrationId) : null;
+    if (!signedToken && !queueSelection) {
+      C.showMessage(el.message, "Select a pending request or open a signed review link first.", "error");
+      return;
+    }
     try {
-      const response = await C.requestJson(apiBase, "/onboarding/review/decision", {
-        method: "POST",
-        json: {
-          token: signedToken,
-          decision: decision,
-          reason: el.reason.value.trim() || null,
-        },
-      });
+      const response = signedToken
+        ? await C.requestJson(apiBase, "/onboarding/review/decision", {
+            method: "POST",
+            json: {
+              token: signedToken,
+              decision: decision,
+              reason: el.reason.value.trim() || null,
+            },
+          })
+        : await C.requestJson(apiBase, "/onboarding/review/decision/by-registration", {
+            method: "POST",
+            json: {
+              registration_id: queueSelection.registration_id,
+              decision: decision,
+              reason: el.reason.value.trim() || null,
+            },
+          });
       renderSummary({
         registration: response.registration,
         token_expires_at:
@@ -291,6 +450,9 @@
             : new Date(Date.now() + 60000).toISOString(),
         decision_allowed: false,
       });
+      if (!signedToken) {
+        await loadPendingRegistrations();
+      }
       C.showMessage(el.message, response.message || "Decision applied.", "success");
     } catch (error) {
       C.showMessage(el.message, error.message, "error");
@@ -362,6 +524,9 @@
       tokenLoadedFromLink = !!reviewTokenValue();
       updateTokenEntryMode();
       await restoreWebSession();
+      if (!reviewTokenValue()) {
+        await loadPendingRegistrations();
+      }
       C.showMessage(el.message, "Sign-in complete.", "success");
       return;
     }
@@ -390,6 +555,9 @@
       });
     }
     sessionClaims = null;
+    pendingRegistrations = [];
+    selectedPendingRegistrationId = "";
+    renderPendingOptions();
     renderClaims();
     C.showMessage(el.message, "Session cleared.", "success");
     if (logoutUrl) {
@@ -423,6 +591,7 @@
     if (el.authDebug) {
       el.authDebug.hidden = !debugAuth;
     }
+    renderPendingOptions();
     renderSummary(null);
     updateTokenEntryMode();
     renderClaims();
@@ -432,6 +601,8 @@
     await restoreWebSession();
     if (reviewTokenValue()) {
       await resolveToken();
+    } else if (sessionClaims) {
+      await loadPendingRegistrations();
     } else {
       renderSummary(null);
     }
@@ -442,6 +613,16 @@
     resolveToken().catch(function (error) {
       C.showMessage(el.message, error.message, "error");
     });
+  });
+  el.loadPending.addEventListener("click", function () {
+    loadPendingRegistrations({ notify: true }).catch(function (error) {
+      C.showMessage(el.message, error.message, "error");
+    });
+  });
+  el.pendingSelect.addEventListener("change", function () {
+    selectedPendingRegistrationId = el.pendingSelect.value || "";
+    selectPendingRegistration(selectedPendingRegistrationId);
+    syncGateState();
   });
   el.reviewToken.addEventListener("input", function () {
     tokenLoadedFromLink = false;

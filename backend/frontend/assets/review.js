@@ -1,6 +1,7 @@
 (function () {
   const C = window.DiscraCommon;
   const storageKey = "discra_review_auth";
+  const reviewTokenStorageKey = "discra_review_token";
   const apiBase = C.deriveApiBase("/ui/review");
   const query = new URLSearchParams(window.location.search || "");
   const debugAuth = query.get("debug_auth") === "1";
@@ -200,12 +201,33 @@
     return {
       domain: el.cognitoDomain.value.trim(),
       clientId: el.cognitoClientId.value.trim(),
-      redirectUri: window.location.origin + window.location.pathname + window.location.search,
+      redirectUri: window.location.origin + window.location.pathname,
       storageKey,
     };
   }
 
+  function persistReviewTokenForAuthRoundtrip() {
+    const value = reviewTokenValue();
+    if (!value) {
+      localStorage.removeItem(reviewTokenStorageKey);
+      return;
+    }
+    localStorage.setItem(reviewTokenStorageKey, value);
+  }
+
+  function restoreReviewTokenAfterAuthRoundtrip() {
+    if (reviewTokenValue()) {
+      return;
+    }
+    const stored = (localStorage.getItem(reviewTokenStorageKey) || "").trim();
+    if (!stored) {
+      return;
+    }
+    el.reviewToken.value = stored;
+  }
+
   async function launchHostedLogin() {
+    persistReviewTokenForAuthRoundtrip();
     const loginUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!loginUrl) {
       C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
@@ -228,6 +250,7 @@
       }
     }
     if (result.status === "success") {
+      restoreReviewTokenAfterAuthRoundtrip();
       await restoreWebSession();
       C.showMessage(el.message, "Sign-in complete.", "success");
       return;
@@ -238,7 +261,7 @@
   }
 
   async function launchHostedLogout() {
-    const logoutUri = window.location.origin + window.location.pathname + window.location.search;
+    const logoutUri = window.location.origin + window.location.pathname;
     let logoutUrl = "";
     try {
       const result = await C.logoutAuthSession(apiBase, {
@@ -267,10 +290,12 @@
   function preloadReviewTokenFromQuery() {
     const params = new URLSearchParams(window.location.search || "");
     const value = params.get("token");
-    if (!value) {
+    if (value) {
+      el.reviewToken.value = value;
+      localStorage.setItem(reviewTokenStorageKey, value);
       return;
     }
-    el.reviewToken.value = value;
+    restoreReviewTokenAfterAuthRoundtrip();
   }
 
   async function bootstrap() {

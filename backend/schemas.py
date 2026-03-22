@@ -224,7 +224,7 @@ class BillingPortalResponse(BaseModel):
 
 
 class BillingInvitationCreateRequest(BaseModel):
-    user_id: str = Field(..., min_length=1, max_length=128)
+    user_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     email: Optional[str] = Field(default=None, min_length=3, max_length=320)
     role: SeatRole
 

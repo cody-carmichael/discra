@@ -451,3 +451,34 @@ def test_webhook_requires_signature_when_secret_configured(monkeypatch):
     )
     assert webhook.status_code == 400
     assert "Stripe-Signature" in webhook.json()["detail"]
+
+
+def test_email_first_invitation_creates_with_email_as_user_id():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 5, "driver_seat_limit": 5},
+        headers=_auth_header(admin_token),
+    )
+
+    invite = client.post(
+        "/billing/invitations",
+        json={"email": "newuser@example.com", "role": "Dispatcher"},
+        headers=_auth_header(admin_token),
+    )
+    assert invite.status_code == 200
+    body = invite.json()
+    assert body["user_id"] == "newuser@example.com"
+    assert body["email"] == "newuser@example.com"
+    assert body["role"] == "Dispatcher"
+    assert body["status"] == "Pending"
+
+
+def test_invitation_requires_email_or_user_id():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    invite = client.post(
+        "/billing/invitations",
+        json={"role": "Dispatcher"},
+        headers=_auth_header(admin_token),
+    )
+    assert invite.status_code == 422

@@ -69,15 +69,22 @@
     auditMessage: document.getElementById("audit-message"),
     refreshBilling: document.getElementById("refresh-billing"),
     billingStatus: document.getElementById("billing-status"),
-    billingSummary: document.getElementById("billing-summary"),
-    billingSeatsForm: document.getElementById("billing-seats-form"),
     billingCheckoutForm: document.getElementById("billing-checkout-form"),
     billingPortalForm: document.getElementById("billing-portal-form"),
     billingInviteForm: document.getElementById("billing-invite-form"),
-    billingActivateForm: document.getElementById("billing-activate-form"),
     refreshInvitations: document.getElementById("refresh-invitations"),
     billingInvitations: document.getElementById("billing-invitations"),
     billingMessage: document.getElementById("billing-message"),
+    seatDispatcherUsage: document.getElementById("seat-dispatcher-usage"),
+    seatDispatcherDetail: document.getElementById("seat-dispatcher-detail"),
+    seatDriverUsage: document.getElementById("seat-driver-usage"),
+    seatDriverDetail: document.getElementById("seat-driver-detail"),
+    seatAvailableTotal: document.getElementById("seat-available-total"),
+    seatAvailableDetail: document.getElementById("seat-available-detail"),
+    seatPendingTotal: document.getElementById("seat-pending-total"),
+    openPurchaseModal: document.getElementById("open-purchase-modal"),
+    closePurchaseModal: document.getElementById("close-purchase-modal"),
+    purchaseModal: document.getElementById("purchase-modal"),
     mapContainer: document.getElementById("driver-map"),
     cognitoDomain: document.getElementById("cognito-domain"),
     cognitoClientId: document.getElementById("cognito-client-id"),
@@ -400,9 +407,6 @@
   function setBillingInteractiveState(enabled) {
     el.refreshBilling.disabled = !enabled;
     el.refreshInvitations.disabled = !enabled;
-    el.billingSeatsForm.querySelectorAll("input, button").forEach(function (element) {
-      element.disabled = !enabled;
-    });
     el.billingCheckoutForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
     });
@@ -412,9 +416,7 @@
     el.billingInviteForm.querySelectorAll("input, select, button").forEach(function (element) {
       element.disabled = !enabled;
     });
-    el.billingActivateForm.querySelectorAll("input, button").forEach(function (element) {
-      element.disabled = !enabled;
-    });
+    el.openPurchaseModal.disabled = !enabled;
   }
 
   function _readOrderFilters() {
@@ -917,7 +919,7 @@
       setInteractiveState(false);
       setBillingInteractiveState(false);
       el.billingStatus.innerHTML = "No billing provider status loaded.";
-      el.billingSummary.innerHTML = "No billing summary loaded.";
+      _resetSeatCards();
       el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
       el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
       el.auditLogsView.innerHTML = "No audit logs loaded.";
@@ -1913,50 +1915,41 @@
       : "<span class=\"pill pill-no\">Disabled</span>";
   }
 
+  function _resetSeatCards() {
+    el.seatDispatcherUsage.textContent = "0 / 0";
+    el.seatDispatcherDetail.textContent = "0 pending";
+    el.seatDriverUsage.textContent = "0 / 0";
+    el.seatDriverDetail.textContent = "0 pending";
+    el.seatAvailableTotal.textContent = "0";
+    el.seatAvailableDetail.textContent = "ready to assign";
+    el.seatPendingTotal.textContent = "0";
+  }
+
   function renderBillingSummary(summary) {
     if (!summary || typeof summary !== "object") {
-      el.billingSummary.innerHTML = "No billing summary loaded.";
+      _resetSeatCards();
       return;
     }
-    const dispatcher = summary.dispatcher_seats || {};
-    const driver = summary.driver_seats || {};
-    el.billingSummary.innerHTML =
-      "<div class=\"panel-title-row\"><h3>Seat Summary</h3></div>" +
-      "<div class=\"metric-grid\">" +
-      "<div class=\"metric-item\"><span>Dispatcher Used</span><strong>" +
-      C.escapeHtml(String(dispatcher.used || 0)) +
-      " / " +
-      C.escapeHtml(String(dispatcher.total || 0)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Dispatcher Pending</span><strong>" +
-      C.escapeHtml(String(dispatcher.pending || 0)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Driver Used</span><strong>" +
-      C.escapeHtml(String(driver.used || 0)) +
-      " / " +
-      C.escapeHtml(String(driver.total || 0)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Driver Pending</span><strong>" +
-      C.escapeHtml(String(driver.pending || 0)) +
-      "</strong></div>" +
-      "</div>" +
-      "<div class=\"kv-grid\">" +
-      "<div class=\"kv-item\"><span class=\"kv-label\">Plan</span><span class=\"kv-value\">" +
-      C.escapeHtml(summary.plan_name || "-") +
-      "</span></div>" +
-      "<div class=\"kv-item\"><span class=\"kv-label\">Status</span><span class=\"kv-value\">" +
-      C.escapeHtml(summary.status || "-") +
-      "</span></div>" +
-      "<div class=\"kv-item\"><span class=\"kv-label\">Stripe Customer</span><span class=\"kv-value\">" +
-      C.escapeHtml(summary.stripe_customer_id || "-") +
-      "</span></div>" +
-      "<div class=\"kv-item\"><span class=\"kv-label\">Stripe Subscription</span><span class=\"kv-value\">" +
-      C.escapeHtml(summary.stripe_subscription_id || "-") +
-      "</span></div>" +
-      "</div>" +
-      "<p class=\"panel-help\">Updated " +
-      C.escapeHtml(C.formatTimestamp(summary.updated_at)) +
-      ".</p>";
+    var dispatcher = summary.dispatcher_seats || {};
+    var driver = summary.driver_seats || {};
+    var dispUsed = dispatcher.used || 0;
+    var dispTotal = dispatcher.total || 0;
+    var dispPending = dispatcher.pending || 0;
+    var drvUsed = driver.used || 0;
+    var drvTotal = driver.total || 0;
+    var drvPending = driver.pending || 0;
+    var dispAvail = dispatcher.available || 0;
+    var drvAvail = driver.available || 0;
+    var totalAvail = dispAvail + drvAvail;
+    var totalPending = dispPending + drvPending;
+
+    el.seatDispatcherUsage.textContent = dispUsed + " / " + dispTotal;
+    el.seatDispatcherDetail.textContent = dispPending + " pending";
+    el.seatDriverUsage.textContent = drvUsed + " / " + drvTotal;
+    el.seatDriverDetail.textContent = drvPending + " pending";
+    el.seatAvailableTotal.textContent = String(totalAvail);
+    el.seatAvailableDetail.textContent = dispAvail + " dispatcher, " + drvAvail + " driver";
+    el.seatPendingTotal.textContent = String(totalPending);
   }
 
   function renderBillingStatus(statusPayload) {
@@ -1975,15 +1968,6 @@
       "</span></div>" +
       "<div class=\"kv-item\"><span class=\"kv-label\">Webhook Verification</span><span class=\"kv-value\">" +
       _pillFromBoolean(!!statusPayload.webhook_signature_verification_enabled) +
-      "</span></div>" +
-      "<div class=\"kv-item\"><span class=\"kv-label\">Secret Key</span><span class=\"kv-value\">" +
-      _pillFromBoolean(!!statusPayload.stripe_secret_key_configured) +
-      "</span></div>" +
-      "<div class=\"kv-item\"><span class=\"kv-label\">Dispatcher Price</span><span class=\"kv-value\">" +
-      _pillFromBoolean(!!statusPayload.stripe_dispatcher_price_id_configured) +
-      "</span></div>" +
-      "<div class=\"kv-item\"><span class=\"kv-label\">Driver Price</span><span class=\"kv-value\">" +
-      _pillFromBoolean(!!statusPayload.stripe_driver_price_id_configured) +
       "</span></div>" +
       "</div>";
   }
@@ -2072,39 +2056,6 @@
     }
   }
 
-  async function updateBillingSeats(event) {
-    event.preventDefault();
-    if (!requireAdmin(el.billingMessage)) {
-      return;
-    }
-    const formData = new FormData(el.billingSeatsForm);
-    const dispatcherLimit = C.toIntOrNull(formData.get("dispatcher_seat_limit"));
-    const driverLimit = C.toIntOrNull(formData.get("driver_seat_limit"));
-    if (dispatcherLimit === null && driverLimit === null) {
-      C.showMessage(el.billingMessage, "Provide at least one seat limit value.", "error");
-      return;
-    }
-    const payload = {};
-    if (dispatcherLimit !== null) {
-      payload.dispatcher_seat_limit = dispatcherLimit;
-    }
-    if (driverLimit !== null) {
-      payload.driver_seat_limit = driverLimit;
-    }
-    try {
-      const response = await C.requestJson(apiBase, "/billing/seats", {
-        method: "POST",
-        token,
-        json: payload,
-      });
-      renderBillingSummary(response.summary);
-      setLastSyncStamp();
-      C.showMessage(el.billingMessage, "Seat limits updated.", "success");
-    } catch (error) {
-      C.showMessage(el.billingMessage, error.message, "error");
-    }
-  }
-
   async function startBillingCheckout(event) {
     event.preventDefault();
     if (!requireAdmin(el.billingMessage)) {
@@ -2137,10 +2088,11 @@
         token,
         json: payload,
       });
+      el.purchaseModal.hidden = true;
       if (response.mode === "subscription_update" && response.summary) {
         renderBillingSummary(response.summary);
         setLastSyncStamp();
-        C.showMessage(el.billingMessage, "Stripe subscription updated.", "success");
+        C.showMessage(el.billingMessage, "Seat limits updated via Stripe.", "success");
         return;
       }
       if (response.mode === "checkout_session" && response.checkout_url) {
@@ -2182,53 +2134,29 @@
     if (!requireAdmin(el.billingMessage)) {
       return;
     }
-    const formData = new FormData(el.billingInviteForm);
-    const userId = String(formData.get("user_id") || "").trim();
-    const role = String(formData.get("role") || "").trim();
-    if (!userId) {
-      C.showMessage(el.billingMessage, "User ID is required.", "error");
+    var formData = new FormData(el.billingInviteForm);
+    var email = String(formData.get("email") || "").trim();
+    var role = String(formData.get("role") || "").trim();
+    var userId = String(formData.get("user_id") || "").trim();
+    if (!email && !userId) {
+      C.showMessage(el.billingMessage, "Email address is required.", "error");
       return;
     }
-    const payload = {
-      user_id: userId,
+    var payload = {
+      email: email || undefined,
       role: role || "Dispatcher",
     };
-    const email = String(formData.get("email") || "").trim();
-    if (email) {
-      payload.email = email;
+    if (userId) {
+      payload.user_id = userId;
     }
     try {
-      const invitation = await C.requestJson(apiBase, "/billing/invitations", {
+      var invitation = await C.requestJson(apiBase, "/billing/invitations", {
         method: "POST",
         token,
         json: payload,
       });
-      C.showMessage(el.billingMessage, "Invitation created: " + invitation.invitation_id, "success");
+      C.showMessage(el.billingMessage, "Invitation sent to " + C.escapeHtml(email || userId) + ".", "success");
       el.billingInviteForm.reset();
-      await Promise.all([refreshBillingSummary(), refreshBillingInvitations(), refreshAssignableDrivers()]);
-    } catch (error) {
-      C.showMessage(el.billingMessage, error.message, "error");
-    }
-  }
-
-  async function activateBillingInvitation(event) {
-    event.preventDefault();
-    if (!requireAdmin(el.billingMessage)) {
-      return;
-    }
-    const formData = new FormData(el.billingActivateForm);
-    const invitationId = String(formData.get("invitation_id") || "").trim();
-    if (!invitationId) {
-      C.showMessage(el.billingMessage, "Invitation ID is required.", "error");
-      return;
-    }
-    try {
-      const userRecord = await C.requestJson(apiBase, "/billing/invitations/" + invitationId + "/activate", {
-        method: "POST",
-        token,
-      });
-      C.showMessage(el.billingMessage, "Invitation activated for " + (userRecord.user_id || "user"), "success");
-      el.billingActivateForm.reset();
       await Promise.all([refreshBillingSummary(), refreshBillingInvitations(), refreshAssignableDrivers()]);
     } catch (error) {
       C.showMessage(el.billingMessage, error.message, "error");
@@ -2699,12 +2627,21 @@
   el.optimizeForm.addEventListener("submit", optimizeRoute);
   el.refreshBilling.addEventListener("click", refreshBillingSummary);
   el.refreshInvitations.addEventListener("click", refreshBillingInvitations);
-  el.billingSeatsForm.addEventListener("submit", updateBillingSeats);
   el.billingCheckoutForm.addEventListener("submit", startBillingCheckout);
   el.billingPortalForm.addEventListener("submit", startBillingPortal);
   el.billingInviteForm.addEventListener("submit", createBillingInvitation);
-  el.billingActivateForm.addEventListener("submit", activateBillingInvitation);
   el.billingInvitations.addEventListener("click", onInvitationActionClick);
+  el.openPurchaseModal.addEventListener("click", function () {
+    el.purchaseModal.hidden = false;
+  });
+  el.closePurchaseModal.addEventListener("click", function () {
+    el.purchaseModal.hidden = true;
+  });
+  el.purchaseModal.addEventListener("click", function (event) {
+    if (event.target === el.purchaseModal) {
+      el.purchaseModal.hidden = true;
+    }
+  });
   if (el.devAuthActions) {
     el.devAuthActions.addEventListener("click", function (event) {
       onDevAuthActionClick(event).catch(function (error) {

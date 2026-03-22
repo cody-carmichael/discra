@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Discra API - Tracer Bullet Step 1 (dev)
+Globals:
+  Function:
+    Runtime: java21
+    MemorySize: 512
+    Timeout: 10
+    Tracing: Active
+    Architectures:
+    - x86_64
+  Api:
+    Cors:
+      AllowOrigins: '''*'''
+      AllowMethods: '''GET,OPTIONS'''
+      AllowHeaders: '''content-type'''
+Resources:
+  DiscraApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: dev
+      Tags:
+        App: Discra
+        Env: dev
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: discra-api-health-dev
+      CodeUri: HealthFunction
+      Handler: com.discra.api.HealthHandler::handleRequest
+      Events:
+        HealthGet:
+          Type: HttpApi
+          Properties:
+            ApiId:
+              Ref: DiscraApi
+            Path: /health
+            Method: GET
+      Tags:
+        App: Discra
+        Env: dev
+    Metadata:
+      SamResourceId: HealthFunction
+Outputs:
+  ApiId:
+    Description: HTTP API ID
+    Value:
+      Ref: DiscraApi
+  ApiEndpoint:
+    Description: Base URL for the HTTP API (no stage suffix)
+    Value:
+      Fn::GetAtt:
+      - DiscraApi
+      - ApiEndpoint
+  HealthUrl:
+    Description: Full URL for GET /health
+    Value:
+      Fn::Sub:
+      - ${Endpoint}/dev/health
+      - Endpoint:
+          Fn::GetAtt:
+          - DiscraApi
+          - ApiEndpoint

@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Discra API - Tracer Bullet Step 1 (dev)
+
+Globals:
+  Function:
+    Runtime: java21
+    MemorySize: 512
+    Timeout: 10
+    Tracing: Active
+	RetentionInDays: 14
+	Tags:
+	      App: Discra
+	      Env: dev
+	      Owner: Cody
+    Architectures: [ x86_64 ]
+  Api:
+    Cors:
+      AllowOrigins: "'*'"
+      AllowMethods: "'GET,OPTIONS'"
+      AllowHeaders: "'content-type'"
+
+Resources:
+  DiscraApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: dev
+      Tags: { App: Discra, Env: dev }
+
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: discra-api-health-dev
+      CodeUri: .
+      Handler: com.discra.api.HealthHandler::handleRequest
+      Events:
+        HealthGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DiscraApi
+            Path: /health
+            Method: GET
+      Tags: { App: Discra, Env: dev }
+
+	  VersionFunction:
+	    Type: AWS::Serverless::Function
+	    Properties:
+	      CodeUri: .
+	      Handler: com.discra.api.VersionHandler::handleRequest
+	      Events:
+	        VersionGet:
+	          Type: HttpApi
+	          Properties:
+	            ApiId: !Ref DiscraApi
+	            Path: /version
+	            Method: GET
+	      Tags: { App: Discra, Env: dev }
+
+
+Outputs:
+  ApiId:
+    Description: HTTP API ID
+    Value: !Ref DiscraApi
+
+  ApiEndpoint:
+    Description: Base URL for the HTTP API (no stage suffix)
+    Value: !GetAtt DiscraApi.ApiEndpoint
+
+  HealthUrl:
+    Description: Full URL for GET /health
+    Value: !Sub
+      - "${Endpoint}/dev/health"
+      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }

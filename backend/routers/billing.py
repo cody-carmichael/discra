@@ -632,11 +632,21 @@ async def create_invitation(
     billing_store=Depends(get_billing_store),
     audit_store=Depends(get_audit_log_store),
 ):
+    effective_user_id = payload.user_id
+    effective_email = payload.email
+    if not effective_user_id and not effective_email:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide at least an email address or a user ID",
+        )
+    if not effective_user_id:
+        effective_user_id = effective_email
+
     subscription = get_or_default_subscription(user["org_id"], billing_store)
     usage = calculate_seat_usage(user["org_id"], identity_repo, billing_store)
     existing = find_pending_invitation(
         org_id=user["org_id"],
-        user_id=payload.user_id,
+        user_id=effective_user_id,
         role=payload.role,
         billing_store=billing_store,
     )
@@ -653,8 +663,8 @@ async def create_invitation(
 
     invitation = new_invitation(
         org_id=user["org_id"],
-        user_id=payload.user_id,
-        email=payload.email,
+        user_id=effective_user_id,
+        email=effective_email,
         role=payload.role,
     )
     saved = billing_store.upsert_invitation(invitation)

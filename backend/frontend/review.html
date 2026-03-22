@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=20260322c">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322d">
 </head>
 <body class="theme-admin">
   <div class="app-shell app-shell-compact">
@@ -36,15 +36,7 @@
           </label>
           <button id="review-load-pending" class="btn btn-ghost" type="button">Refresh Pending</button>
         </div>
-        <details id="review-token-manual" class="auth-config" hidden>
-          <summary>Use Manual Token (Advanced)</summary>
-          <label class="field">
-            <span>Signed Review Token</span>
-            <textarea id="review-token" rows="3" placeholder="token=..."></textarea>
-          </label>
-          <button id="review-load" class="btn btn-ghost" type="button">Resolve Token</button>
-        </details>
-        <div id="review-summary-surface" class="data-surface">Paste a token to load registration details.</div>
+        <div id="review-summary-surface" class="data-surface">Open a signed review email link or use the pending queue after sign-in.</div>
       </section>
 
       <section class="panel">
@@ -93,7 +85,7 @@
     </main>
   </div>
 
-  <script src="assets/common.js?v=20260322c"></script>
-  <script src="assets/review.js?v=20260322c"></script>
+  <script src="assets/common.js?v=20260322d"></script>
+  <script src="assets/review.js?v=20260322d"></script>
 </body>
 </html>

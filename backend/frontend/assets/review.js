@@ -14,9 +14,6 @@
     queue: document.getElementById("review-queue"),
     pendingSelect: document.getElementById("review-pending-select"),
     loadPending: document.getElementById("review-load-pending"),
-    tokenManual: document.getElementById("review-token-manual"),
-    reviewToken: document.getElementById("review-token"),
-    loadButton: document.getElementById("review-load"),
     summarySurface: document.getElementById("review-summary-surface"),
     sessionHelp: document.getElementById("review-session-help"),
     approverEmail: document.getElementById("review-approver-email"),
@@ -35,6 +32,7 @@
   let loadedReview = null;
   let sessionClaims = null;
   let tokenLoadedFromLink = false;
+  let activeReviewToken = "";
   let pendingRegistrations = [];
   let selectedPendingRegistrationId = "";
 
@@ -56,7 +54,13 @@
   }
 
   function reviewTokenValue() {
-    return (el.reviewToken.value || "").trim();
+    return activeReviewToken.trim();
+  }
+
+  function setReviewToken(value, fromLink) {
+    const normalized = (value || "").trim();
+    activeReviewToken = normalized;
+    tokenLoadedFromLink = !!fromLink && !!normalized;
   }
 
   function hostedUiConfigured() {
@@ -197,16 +201,12 @@
       if (hasToken && tokenLoadedFromLink) {
         el.linkMode.textContent = "Secure token loaded from your email link.";
       } else if (hasToken) {
-        el.linkMode.textContent = "Review token loaded.";
+        el.linkMode.textContent = "Secure review context loaded.";
       } else if (sessionClaims) {
         el.linkMode.textContent = "No signed link loaded. Use the pending requests queue below.";
       } else {
-        el.linkMode.textContent = "Open a signed review link from email to load request details.";
+        el.linkMode.textContent = "Open a signed review link from email or sign in to review pending requests.";
       }
-    }
-    if (el.tokenManual) {
-      el.tokenManual.hidden = false;
-      el.tokenManual.open = !hasToken || !tokenLoadedFromLink;
     }
   }
 
@@ -267,7 +267,7 @@
       } else if (!hasToken) {
         el.decisionGate.textContent = "Queue mode active. Approve or reject the selected pending request.";
       } else if (!loadedReview) {
-        el.decisionGate.textContent = "Resolve token details first.";
+        el.decisionGate.textContent = "Loading signed review details. If this persists, reopen the review email link.";
       } else if (!decisionAllowed()) {
         el.decisionGate.textContent = "Decision is already final for this request.";
       } else {
@@ -293,11 +293,11 @@
     loadedReview = reviewPayload || null;
     if (!reviewPayload || !reviewPayload.registration) {
       if (reviewTokenValue()) {
-        el.summarySurface.innerHTML = "Token loaded. Resolve to view registration details.";
+        el.summarySurface.innerHTML = "Loading review details from your signed link.";
       } else if (sessionClaims && pendingRegistrations.length) {
         el.summarySurface.innerHTML = "Select a pending request from the queue to review details.";
       } else {
-        el.summarySurface.innerHTML = "Open your signed review email link to load registration details.";
+        el.summarySurface.innerHTML = "Open your signed review email link or use the pending queue after sign-in.";
       }
       syncGateState();
       return;
@@ -485,7 +485,7 @@
     if (!stored) {
       return;
     }
-    el.reviewToken.value = stored;
+    setReviewToken(stored, true);
   }
 
   async function launchHostedLogin() {
@@ -521,7 +521,9 @@
     }
     if (result.status === "success") {
       restoreReviewTokenAfterAuthRoundtrip();
-      tokenLoadedFromLink = !!reviewTokenValue();
+      if (reviewTokenValue()) {
+        setReviewToken(reviewTokenValue(), true);
+      }
       updateTokenEntryMode();
       await restoreWebSession();
       if (!reviewTokenValue()) {
@@ -569,21 +571,22 @@
     const params = new URLSearchParams(window.location.search || "");
     const value = params.get("token");
     if (value) {
-      el.reviewToken.value = value;
-      localStorage.setItem(reviewTokenStorageKey, value);
-      tokenLoadedFromLink = true;
+      setReviewToken(value, true);
+      localStorage.setItem(reviewTokenStorageKey, reviewTokenValue());
       updateTokenEntryMode();
       return;
     }
     const callbackRoundtrip = params.has("code") || params.has("state");
     if (!callbackRoundtrip) {
       localStorage.removeItem(reviewTokenStorageKey);
-      tokenLoadedFromLink = false;
+      setReviewToken("", false);
       updateTokenEntryMode();
       return;
     }
     restoreReviewTokenAfterAuthRoundtrip();
-    tokenLoadedFromLink = !!reviewTokenValue();
+    if (!reviewTokenValue()) {
+      setReviewToken("", false);
+    }
     updateTokenEntryMode();
   }
 
@@ -609,53 +612,58 @@
     syncGateState();
   }
 
-  el.loadButton.addEventListener("click", function () {
-    resolveToken().catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  if (el.loadPending) {
+    el.loadPending.addEventListener("click", function () {
+      loadPendingRegistrations({ notify: true }).catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
     });
-  });
-  el.loadPending.addEventListener("click", function () {
-    loadPendingRegistrations({ notify: true }).catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  }
+  if (el.pendingSelect) {
+    el.pendingSelect.addEventListener("change", function () {
+      selectedPendingRegistrationId = el.pendingSelect.value || "";
+      selectPendingRegistration(selectedPendingRegistrationId);
+      syncGateState();
     });
-  });
-  el.pendingSelect.addEventListener("change", function () {
-    selectedPendingRegistrationId = el.pendingSelect.value || "";
-    selectPendingRegistration(selectedPendingRegistrationId);
-    syncGateState();
-  });
-  el.reviewToken.addEventListener("input", function () {
-    tokenLoadedFromLink = false;
-    loadedReview = null;
-    updateTokenEntryMode();
-    syncGateState();
-  });
-  el.cognitoDomain.addEventListener("input", function () {
-    syncGateState();
-  });
-  el.cognitoClientId.addEventListener("input", function () {
-    syncGateState();
-  });
-  el.approve.addEventListener("click", function () {
-    applyDecision("approve").catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  }
+  if (el.cognitoDomain) {
+    el.cognitoDomain.addEventListener("input", function () {
+      syncGateState();
     });
-  });
-  el.reject.addEventListener("click", function () {
-    applyDecision("reject").catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  }
+  if (el.cognitoClientId) {
+    el.cognitoClientId.addEventListener("input", function () {
+      syncGateState();
     });
-  });
-  el.loginHostedUi.addEventListener("click", function () {
-    launchHostedLogin().catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  }
+  if (el.approve) {
+    el.approve.addEventListener("click", function () {
+      applyDecision("approve").catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
     });
-  });
-  el.logoutHostedUi.addEventListener("click", function () {
-    launchHostedLogout().catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  }
+  if (el.reject) {
+    el.reject.addEventListener("click", function () {
+      applyDecision("reject").catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
     });
-  });
+  }
+  if (el.loginHostedUi) {
+    el.loginHostedUi.addEventListener("click", function () {
+      launchHostedLogin().catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
+    });
+  }
+  if (el.logoutHostedUi) {
+    el.logoutHostedUi.addEventListener("click", function () {
+      launchHostedLogout().catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
+    });
+  }
 
   bootstrap();
 })();

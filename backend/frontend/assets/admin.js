@@ -1,9 +1,11 @@
 (function () {
   const C = window.DiscraCommon;
-  const storageKey = "discra_admin_token";
+  const storageKey = "discra_admin_auth";
   const apiBase = C.deriveApiBase("/ui/admin");
   const defaultMapStyle = "https://demotiles.maplibre.org/style.json";
   const adminAllowedRoles = ["Admin", "Dispatcher"];
+  const query = new URLSearchParams(window.location.search || "");
+  const debugAuth = query.get("debug_auth") === "1";
 
   const el = {
     authState: document.getElementById("auth-state"),
@@ -66,6 +68,7 @@
     cognitoClientId: document.getElementById("cognito-client-id"),
     loginHostedUi: document.getElementById("login-hosted-ui"),
     logoutHostedUi: document.getElementById("logout-hosted-ui"),
+    authDebug: document.getElementById("admin-auth-debug"),
     devAuthPanel: document.getElementById("dev-auth-panel"),
     devAuthActions: document.getElementById("dev-auth-actions"),
     workspaceTabs: Array.from(document.querySelectorAll("[data-workspace-target]")),
@@ -78,7 +81,7 @@
     statsActiveDrivers: document.getElementById("stats-active-drivers"),
   };
 
-  let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
+  let token = "";
   let map = null;
   let mapMarkers = [];
   let driverRefreshTimer = null;
@@ -88,6 +91,7 @@
   let devAuthEnabled = false;
   let devAuthProfiles = [];
   let devSessionClaims = null;
+  let webSessionClaims = null;
   const autoDevBootstrapKey = storageKey + "_auto_dev_bootstrapped";
   let selectedOrderIds = new Set();
   let orderFilters = {
@@ -144,8 +148,25 @@
     };
   }
 
+  function _claimsFromWebSessionUser(user) {
+    if (!user || typeof user !== "object") {
+      return null;
+    }
+    const groups = Array.isArray(user.groups) ? user.groups : [];
+    return {
+      sub: user.sub || user.username || "",
+      username: user.username || user.sub || "",
+      email: user.email || null,
+      org_id: user.org_id || "",
+      "custom:org_id": user.org_id || "",
+      groups: groups,
+      "cognito:groups": groups,
+      _web_session: true,
+    };
+  }
+
   function _activeClaims() {
-    return devSessionClaims || C.decodeJwt(token);
+    return devSessionClaims || webSessionClaims || C.decodeJwt(token);
   }
 
   function formatDistanceMiles(meters) {
@@ -508,8 +529,8 @@
     }
   }
   function requireAuthorized(messageElement) {
-    if (!token && !devSessionClaims) {
-      C.showMessage(messageElement, "Set a JWT token or start a dev test session first.", "error");
+    if (!token && !devSessionClaims && !webSessionClaims) {
+      C.showMessage(messageElement, "Sign in to continue.", "error");
       return false;
     }
     if (!isAuthorizedRole) {
@@ -531,29 +552,35 @@
   }
 
   function setToken(nextToken) {
-    token = C.setStoredToken(storageKey, nextToken);
+    token = C.setStoredToken(storageKey + "_debug", nextToken);
     if (token) {
       devSessionClaims = null;
+      webSessionClaims = null;
     }
-    el.token.value = token;
+    if (el.token) {
+      el.token.value = token;
+    }
     renderClaims();
   }
 
   function renderClaims() {
     const claims = _activeClaims();
     if (!claims) {
-      el.authState.textContent = "No Token";
+      el.authState.textContent = "Not Signed In";
       el.authState.classList.add("status-idle");
       el.authState.classList.remove("status-live");
-      el.claims.textContent = "No token decoded yet.";
+      el.claims.textContent = "No active web session.";
       evaluateAuthorization(null);
       return;
     }
     const roles = C.tokenRoleSummary(claims);
-    const usingDevSession = !!claims._dev_session && !token;
+    const usingDevSession = !!claims._dev_session;
+    const usingWebSession = !!claims._web_session;
     el.authState.textContent = usingDevSession
       ? (roles ? "Dev Session: " + roles : "Dev Session")
-      : (roles ? "Roles: " + roles : "Token Loaded");
+      : usingWebSession
+        ? (roles ? "Signed In: " + roles : "Signed In")
+        : (roles ? "Roles: " + roles : "Session Active");
     el.authState.classList.remove("status-idle");
     el.authState.classList.add("status-live");
     el.claims.textContent = JSON.stringify(claims, null, 2);
@@ -643,7 +670,7 @@
   }
 
   async function maybeAutoBootstrapDevSession() {
-    if (!devAuthEnabled || token || devSessionClaims) {
+    if (!devAuthEnabled || token || devSessionClaims || webSessionClaims) {
       return false;
     }
     if (window.sessionStorage && window.sessionStorage.getItem(autoDevBootstrapKey) === "1") {
@@ -670,13 +697,30 @@
       const session = await C.getDevAuthSession(apiBase);
       if (session && session.active && session.user) {
         devSessionClaims = _claimsFromDevUser(session.user);
-        token = C.setStoredToken(storageKey, "");
-        el.token.value = token;
+        token = C.setStoredToken(storageKey + "_debug", "");
+        if (el.token) {
+          el.token.value = token;
+        }
         renderClaims();
       }
     } catch (error) {
       // Leave normal token auth available when dev session lookup fails.
     }
+  }
+
+  async function restoreWebAuthSession() {
+    try {
+      const session = await C.getAuthSession(apiBase);
+      if (session && session.active && session.user) {
+        webSessionClaims = _claimsFromWebSessionUser(session.user);
+      } else {
+        webSessionClaims = null;
+      }
+    } catch (error) {
+      webSessionClaims = null;
+    }
+    renderClaims();
+    return !!webSessionClaims;
   }
 
   async function loginDevAuthProfile(index) {
@@ -691,8 +735,11 @@
       email: profile.email || null,
     });
     devSessionClaims = _claimsFromDevUser((result && result.user) || profile);
-    token = C.setStoredToken(storageKey, "");
-    el.token.value = token;
+    webSessionClaims = null;
+    token = C.setStoredToken(storageKey + "_debug", "");
+    if (el.token) {
+      el.token.value = token;
+    }
     renderClaims();
     C.showMessage(el.authMessage, "Dev session ready for " + (profile.label || profile.user_id) + ".", "success");
   }
@@ -1873,33 +1920,47 @@
   async function launchHostedLogin() {
     const loginUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!loginUrl) {
-      C.showMessage(el.authMessage, "Hosted UI domain + client id are required.", "error");
+      C.showMessage(el.authMessage, "Secure sign-in is not configured yet. Please contact support.", "error");
       return;
     }
     window.location.assign(loginUrl);
   }
 
   async function finishHostedLoginCallback() {
-    const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
+    const result = await C.consumeHostedLoginCallback(apiBase, hostedFlowConfig());
     if (result.status === "success") {
       await logoutDevAuthSession(true);
-      setToken(result.token || "");
-      C.showMessage(el.authMessage, "Hosted UI login complete.", "success");
+      setToken("");
+      await restoreWebAuthSession();
+      C.showMessage(el.authMessage, "Sign-in complete.", "success");
       return;
     }
     if (result.status === "error") {
-      C.showMessage(el.authMessage, result.message || "Hosted UI login failed.", "error");
+      C.showMessage(el.authMessage, result.message || "Sign-in failed.", "error");
     }
   }
 
   async function launchHostedLogout() {
     const logoutUri = window.location.origin + window.location.pathname;
-    const logoutUrl = C.buildHostedLogoutUrl({
-      domain: el.cognitoDomain.value.trim(),
-      clientId: el.cognitoClientId.value.trim(),
-      logoutUri,
-    });
+    let logoutUrl = "";
+    try {
+      const result = await C.logoutAuthSession(apiBase, {
+        domain: el.cognitoDomain.value.trim(),
+        client_id: el.cognitoClientId.value.trim(),
+        logout_uri: logoutUri,
+      });
+      if (result && result.logout_url) {
+        logoutUrl = result.logout_url;
+      }
+    } catch (error) {
+      logoutUrl = C.buildHostedLogoutUrl({
+        domain: el.cognitoDomain.value.trim(),
+        clientId: el.cognitoClientId.value.trim(),
+        logoutUri,
+      });
+    }
     await logoutDevAuthSession(true);
+    webSessionClaims = null;
     setToken("");
     renderOrders([]);
     renderDriverList([]);
@@ -1918,10 +1979,15 @@
   }
 
   async function bootstrap() {
-    el.token.value = token;
+    if (el.token) {
+      el.token.value = token;
+    }
     setInteractiveState(false);
     setBillingInteractiveState(false);
     initWorkspaceTabs();
+    if (el.authDebug) {
+      el.authDebug.hidden = !debugAuth;
+    }
     renderClaims();
     const params = new URLSearchParams(window.location.search);
     const billingState = params.get("billing");
@@ -1938,8 +2004,9 @@
     }
     registerServiceWorker();
     await loadUiConfig();
-    await restoreDevAuthSession();
     await finishHostedLoginCallback();
+    await restoreWebAuthSession();
+    await restoreDevAuthSession();
     await maybeAutoBootstrapDevSession();
     _writeOrderFilters();
     _writeAuditFilters();

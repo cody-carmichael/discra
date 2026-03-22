@@ -17,6 +17,7 @@ ROLE_DISPATCHER = "Dispatcher"
 ROLE_DRIVER = "Driver"
 ALLOWED_ROLES = {ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER}
 DEV_AUTH_COOKIE_NAME = "discra_dev_session"
+WEB_AUTH_COOKIE_NAME = "discra_web_session"
 
 
 def _as_bool(value: Optional[str], default: bool = False) -> bool:
@@ -50,6 +51,22 @@ def is_dev_auth_enabled() -> bool:
 
 def dev_auth_cookie_name() -> str:
     return DEV_AUTH_COOKIE_NAME
+
+
+def web_auth_cookie_name() -> str:
+    value = (os.environ.get("WEB_AUTH_COOKIE_NAME") or "").strip()
+    return value or WEB_AUTH_COOKIE_NAME
+
+
+def web_auth_ttl_seconds() -> int:
+    raw_value = (os.environ.get("WEB_AUTH_TTL_SECONDS") or "").strip()
+    if not raw_value:
+        return 43200
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return 43200
+    return max(300, min(parsed, 604800))
 
 
 def dev_auth_default_org_id() -> str:
@@ -249,6 +266,13 @@ def _get_bearer_token(request: Request) -> Optional[str]:
     return parts[1]
 
 
+def _get_web_auth_token(request: Request) -> Optional[str]:
+    value = (request.cookies.get(web_auth_cookie_name()) or "").strip()
+    if not value:
+        return None
+    return value
+
+
 def _extract_claims_from_request_context(request: Request) -> Optional[Dict[str, Any]]:
     event = request.scope.get("aws.event")
     if not isinstance(event, dict):
@@ -350,6 +374,26 @@ def _claims_to_user(claims: Dict[str, Any]) -> Dict[str, Any]:
     return identity
 
 
+def _resolve_claims(request: Request, *, allow_missing: bool = False) -> Optional[Dict[str, Any]]:
+    claims = _extract_claims_from_request_context(request)
+    if claims is None:
+        claims = _extract_dev_auth_claims(request)
+    if claims is not None:
+        return claims
+
+    bearer_token = _get_bearer_token(request)
+    if bearer_token:
+        return _decode_jwt(bearer_token)
+
+    cookie_token = _get_web_auth_token(request)
+    if cookie_token:
+        return _decode_jwt(cookie_token)
+
+    if allow_missing:
+        return None
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authentication session")
+
+
 def get_dev_auth_user(request: Request) -> Optional[Dict[str, Any]]:
     claims = _extract_dev_auth_claims(request)
     if claims is None:
@@ -358,26 +402,19 @@ def get_dev_auth_user(request: Request) -> Optional[Dict[str, Any]]:
 
 
 async def get_current_user(request: Request) -> Dict[str, Any]:
-    claims = _extract_claims_from_request_context(request)
-    if claims is None:
-        claims = _extract_dev_auth_claims(request)
-    if claims is None:
-        token = _get_bearer_token(request)
-        if not token:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
-        claims = _decode_jwt(token)
+    claims = _resolve_claims(request)
     return _claims_to_user(claims)
 
 
 async def get_authenticated_identity(request: Request) -> Dict[str, Any]:
-    claims = _extract_claims_from_request_context(request)
+    claims = _resolve_claims(request)
+    return _claims_to_identity(claims)
+
+
+async def get_optional_authenticated_identity(request: Request) -> Optional[Dict[str, Any]]:
+    claims = _resolve_claims(request, allow_missing=True)
     if claims is None:
-        claims = _extract_dev_auth_claims(request)
-    if claims is None:
-        token = _get_bearer_token(request)
-        if not token:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
-        claims = _decode_jwt(token)
+        return None
     return _claims_to_identity(claims)
 
 

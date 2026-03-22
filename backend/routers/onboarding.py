@@ -27,11 +27,13 @@ try:
     from backend.repositories import get_identity_repository
     from backend.schemas import (
         AuditLogRecord,
+        OnboardingPendingRegistrationsResponse,
         OnboardingRegistrationMeResponse,
         OnboardingRegistrationRecord,
         OnboardingRegistrationStatus,
         OnboardingRegistrationUpsertRequest,
         OnboardingReviewDecision,
+        OnboardingReviewDecisionByRegistrationRequest,
         OnboardingReviewDecisionRequest,
         OnboardingReviewDecisionResponse,
         OnboardingReviewResolveResponse,
@@ -62,11 +64,13 @@ except ModuleNotFoundError:  # local run from backend/ directory
     from repositories import get_identity_repository
     from schemas import (
         AuditLogRecord,
+        OnboardingPendingRegistrationsResponse,
         OnboardingRegistrationMeResponse,
         OnboardingRegistrationRecord,
         OnboardingRegistrationStatus,
         OnboardingRegistrationUpsertRequest,
         OnboardingReviewDecision,
+        OnboardingReviewDecisionByRegistrationRequest,
         OnboardingReviewDecisionRequest,
         OnboardingReviewDecisionResponse,
         OnboardingReviewResolveResponse,
@@ -222,6 +226,180 @@ def _token_is_current(token_issued_at: datetime, registration: OnboardingRegistr
     return int(token_issued_at.timestamp()) == int(registration.review_token_issued_at.timestamp())
 
 
+def _apply_review_decision_for_registration(
+    *,
+    decision: OnboardingReviewDecision,
+    decision_reason: Optional[str],
+    decision_source: str,
+    request: Request,
+    identity,
+    approver_email: str,
+    registration: OnboardingRegistrationRecord,
+    repo: OnboardingRepository,
+    cognito_admin: OnboardingCognitoAdminClient,
+    notifier: OnboardingNotifier,
+    identity_repo,
+) -> OnboardingReviewDecisionResponse:
+    if registration.status != OnboardingRegistrationStatus.PENDING:
+        _audit_event(
+            request=request,
+            action="onboarding.review.decision.idempotent",
+            target_id=registration.registration_id,
+            actor_id=identity.get("sub"),
+            actor_roles=identity.get("groups") or [],
+            details={
+                "requested_decision": decision.value,
+                "current_status": registration.status.value,
+                "approver_email": approver_email,
+                "decision_source": decision_source,
+            },
+            org_id=registration.org_id,
+        )
+        return OnboardingReviewDecisionResponse(
+            registration=registration,
+            idempotent=True,
+            message=f"Registration already {registration.status.value}",
+        )
+
+    now = utc_now()
+
+    if decision == OnboardingReviewDecision.APPROVE:
+        org_id = registration.org_id or generate_org_id(registration.tenant_name, registration.registration_id)
+        existing_org = identity_repo.get_org(org_id)
+        if not existing_org:
+            identity_repo.upsert_org(
+                OrganizationRecord(
+                    org_id=org_id,
+                    name=registration.tenant_name,
+                    created_by=registration.identity_sub,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
+        existing_user = identity_repo.get_user(org_id, registration.identity_sub)
+        user_record = UserRecord(
+            org_id=org_id,
+            user_id=registration.identity_sub,
+            username=registration.identity_username or registration.identity_sub,
+            email=registration.requester_email or (existing_user.email if existing_user else None),
+            roles=_roles_with_admin(existing_user.roles if existing_user else []),
+            is_active=True,
+            created_at=existing_user.created_at if existing_user else now,
+            updated_at=now,
+        )
+        identity_repo.upsert_user(user_record)
+
+        cognito_username = registration.identity_username or registration.identity_sub
+        try:
+            cognito_admin.ensure_admin_access(username=cognito_username, org_id=org_id, role_name=ROLE_ADMIN)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=http_status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to apply Cognito admin updates: {exc}",
+            ) from exc
+
+        updated = OnboardingRegistrationRecord(
+            registration_id=registration.registration_id,
+            identity_sub=registration.identity_sub,
+            identity_username=registration.identity_username,
+            requester_email=registration.requester_email,
+            tenant_name=registration.tenant_name,
+            contact_name=registration.contact_name,
+            notes=registration.notes,
+            requested_role=registration.requested_role,
+            status=OnboardingRegistrationStatus.APPROVED,
+            org_id=org_id,
+            created_at=registration.created_at,
+            updated_at=now,
+            submitted_at=registration.submitted_at,
+            decided_at=now,
+            decided_by_email=approver_email,
+            decision_reason=decision_reason,
+            review_token_issued_at=registration.review_token_issued_at,
+            review_token_expires_at=registration.review_token_expires_at,
+        )
+        saved = repo.upsert_registration(updated)
+        try:
+            _send_requester_decision_email(
+                notifier=notifier,
+                registration=saved,
+                decision=OnboardingReviewDecision.APPROVE,
+                reason=decision_reason,
+            )
+        except Exception:
+            pass
+
+        _audit_event(
+            request=request,
+            action="onboarding.registration.approved",
+            target_id=saved.registration_id,
+            actor_id=identity.get("sub"),
+            actor_roles=identity.get("groups") or [],
+            details={
+                "approver_email": approver_email,
+                "org_id": org_id,
+                "decision_reason": decision_reason,
+                "decision_source": decision_source,
+            },
+            org_id=org_id,
+        )
+        return OnboardingReviewDecisionResponse(
+            registration=saved,
+            idempotent=False,
+            message="Registration approved",
+        )
+
+    updated = OnboardingRegistrationRecord(
+        registration_id=registration.registration_id,
+        identity_sub=registration.identity_sub,
+        identity_username=registration.identity_username,
+        requester_email=registration.requester_email,
+        tenant_name=registration.tenant_name,
+        contact_name=registration.contact_name,
+        notes=registration.notes,
+        requested_role=registration.requested_role,
+        status=OnboardingRegistrationStatus.REJECTED,
+        org_id=None,
+        created_at=registration.created_at,
+        updated_at=now,
+        submitted_at=registration.submitted_at,
+        decided_at=now,
+        decided_by_email=approver_email,
+        decision_reason=decision_reason,
+        review_token_issued_at=registration.review_token_issued_at,
+        review_token_expires_at=registration.review_token_expires_at,
+    )
+    saved = repo.upsert_registration(updated)
+    try:
+        _send_requester_decision_email(
+            notifier=notifier,
+            registration=saved,
+            decision=OnboardingReviewDecision.REJECT,
+            reason=decision_reason,
+        )
+    except Exception:
+        pass
+
+    _audit_event(
+        request=request,
+        action="onboarding.registration.rejected",
+        target_id=saved.registration_id,
+        actor_id=identity.get("sub"),
+        actor_roles=identity.get("groups") or [],
+        details={
+            "approver_email": approver_email,
+            "decision_reason": decision_reason,
+            "decision_source": decision_source,
+        },
+    )
+    return OnboardingReviewDecisionResponse(
+        registration=saved,
+        idempotent=False,
+        message="Registration rejected",
+    )
+
+
 @router.post("/onboarding/registrations", response_model=OnboardingRegistrationMeResponse)
 async def create_or_update_registration(
     payload: OnboardingRegistrationUpsertRequest,
@@ -341,6 +519,16 @@ async def get_registration_for_current_identity(
     )
 
 
+@router.get("/onboarding/registrations/pending", response_model=OnboardingPendingRegistrationsResponse)
+async def list_pending_registrations_for_approver(
+    identity=Depends(get_authenticated_identity),
+    repo: OnboardingRepository = Depends(get_onboarding_repository),
+):
+    _ensure_approver_identity(identity)
+    items = repo.list_by_status(OnboardingRegistrationStatus.PENDING, limit=100)
+    return OnboardingPendingRegistrationsResponse(items=items)
+
+
 @router.get("/onboarding/review", response_model=OnboardingReviewResolveResponse)
 async def resolve_review_link(
     token: str = Query(..., min_length=10),
@@ -394,160 +582,46 @@ async def apply_review_decision(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Review token has been replaced by a newer link",
         )
-
-    if registration.status != OnboardingRegistrationStatus.PENDING:
-        _audit_event(
-            request=request,
-            action="onboarding.review.decision.idempotent",
-            target_id=registration.registration_id,
-            actor_id=identity.get("sub"),
-            actor_roles=identity.get("groups") or [],
-            details={
-                "requested_decision": payload.decision.value,
-                "current_status": registration.status.value,
-                "approver_email": approver_email,
-            },
-            org_id=registration.org_id,
-        )
-        return OnboardingReviewDecisionResponse(
-            registration=registration,
-            idempotent=True,
-            message=f"Registration already {registration.status.value}",
-        )
-
-    now = utc_now()
-    decision_reason = payload.reason.strip() if payload.reason else None
-
-    if payload.decision == OnboardingReviewDecision.APPROVE:
-        org_id = registration.org_id or generate_org_id(registration.tenant_name, registration.registration_id)
-        existing_org = identity_repo.get_org(org_id)
-        if not existing_org:
-            identity_repo.upsert_org(
-                OrganizationRecord(
-                    org_id=org_id,
-                    name=registration.tenant_name,
-                    created_by=registration.identity_sub,
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-
-        existing_user = identity_repo.get_user(org_id, registration.identity_sub)
-        user_record = UserRecord(
-            org_id=org_id,
-            user_id=registration.identity_sub,
-            username=registration.identity_username or registration.identity_sub,
-            email=registration.requester_email or (existing_user.email if existing_user else None),
-            roles=_roles_with_admin(existing_user.roles if existing_user else []),
-            is_active=True,
-            created_at=existing_user.created_at if existing_user else now,
-            updated_at=now,
-        )
-        identity_repo.upsert_user(user_record)
-
-        cognito_username = registration.identity_username or registration.identity_sub
-        try:
-            cognito_admin.ensure_admin_access(username=cognito_username, org_id=org_id, role_name=ROLE_ADMIN)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=http_status.HTTP_502_BAD_GATEWAY,
-                detail=f"Failed to apply Cognito admin updates: {exc}",
-            ) from exc
-
-        updated = OnboardingRegistrationRecord(
-            registration_id=registration.registration_id,
-            identity_sub=registration.identity_sub,
-            identity_username=registration.identity_username,
-            requester_email=registration.requester_email,
-            tenant_name=registration.tenant_name,
-            contact_name=registration.contact_name,
-            notes=registration.notes,
-            requested_role=registration.requested_role,
-            status=OnboardingRegistrationStatus.APPROVED,
-            org_id=org_id,
-            created_at=registration.created_at,
-            updated_at=now,
-            submitted_at=registration.submitted_at,
-            decided_at=now,
-            decided_by_email=approver_email,
-            decision_reason=decision_reason,
-            review_token_issued_at=registration.review_token_issued_at,
-            review_token_expires_at=registration.review_token_expires_at,
-        )
-        saved = repo.upsert_registration(updated)
-        try:
-            _send_requester_decision_email(
-                notifier=notifier,
-                registration=saved,
-                decision=OnboardingReviewDecision.APPROVE,
-                reason=decision_reason,
-            )
-        except Exception:
-            pass
-
-        _audit_event(
-            request=request,
-            action="onboarding.registration.approved",
-            target_id=saved.registration_id,
-            actor_id=identity.get("sub"),
-            actor_roles=identity.get("groups") or [],
-            details={
-                "approver_email": approver_email,
-                "org_id": org_id,
-                "decision_reason": decision_reason,
-            },
-            org_id=org_id,
-        )
-        return OnboardingReviewDecisionResponse(
-            registration=saved,
-            idempotent=False,
-            message="Registration approved",
-        )
-
-    updated = OnboardingRegistrationRecord(
-        registration_id=registration.registration_id,
-        identity_sub=registration.identity_sub,
-        identity_username=registration.identity_username,
-        requester_email=registration.requester_email,
-        tenant_name=registration.tenant_name,
-        contact_name=registration.contact_name,
-        notes=registration.notes,
-        requested_role=registration.requested_role,
-        status=OnboardingRegistrationStatus.REJECTED,
-        org_id=None,
-        created_at=registration.created_at,
-        updated_at=now,
-        submitted_at=registration.submitted_at,
-        decided_at=now,
-        decided_by_email=approver_email,
-        decision_reason=decision_reason,
-        review_token_issued_at=registration.review_token_issued_at,
-        review_token_expires_at=registration.review_token_expires_at,
-    )
-    saved = repo.upsert_registration(updated)
-    try:
-        _send_requester_decision_email(
-            notifier=notifier,
-            registration=saved,
-            decision=OnboardingReviewDecision.REJECT,
-            reason=decision_reason,
-        )
-    except Exception:
-        pass
-
-    _audit_event(
+    return _apply_review_decision_for_registration(
+        decision=payload.decision,
+        decision_reason=payload.reason.strip() if payload.reason else None,
+        decision_source="signed_token",
         request=request,
-        action="onboarding.registration.rejected",
-        target_id=saved.registration_id,
-        actor_id=identity.get("sub"),
-        actor_roles=identity.get("groups") or [],
-        details={
-            "approver_email": approver_email,
-            "decision_reason": decision_reason,
-        },
+        identity=identity,
+        approver_email=approver_email,
+        registration=registration,
+        repo=repo,
+        cognito_admin=cognito_admin,
+        notifier=notifier,
+        identity_repo=identity_repo,
     )
-    return OnboardingReviewDecisionResponse(
-        registration=saved,
-        idempotent=False,
-        message="Registration rejected",
+
+
+@router.post("/onboarding/review/decision/by-registration", response_model=OnboardingReviewDecisionResponse)
+async def apply_review_decision_by_registration(
+    payload: OnboardingReviewDecisionByRegistrationRequest,
+    request: Request,
+    identity=Depends(get_authenticated_identity),
+    repo: OnboardingRepository = Depends(get_onboarding_repository),
+    cognito_admin: OnboardingCognitoAdminClient = Depends(get_onboarding_cognito_admin_client),
+    notifier: OnboardingNotifier = Depends(get_onboarding_notifier),
+    identity_repo=Depends(get_identity_repository),
+):
+    approver_email = _ensure_approver_identity(identity)
+    registration_id = payload.registration_id.strip()
+    registration = repo.get_registration(registration_id)
+    if registration is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Registration not found")
+    return _apply_review_decision_for_registration(
+        decision=payload.decision,
+        decision_reason=payload.reason.strip() if payload.reason else None,
+        decision_source="approver_queue",
+        request=request,
+        identity=identity,
+        approver_email=approver_email,
+        registration=registration,
+        repo=repo,
+        cognito_admin=cognito_admin,
+        notifier=notifier,
+        identity_repo=identity_repo,
     )

@@ -136,9 +136,15 @@ function Invoke-AwsCli {
         [switch]$IgnoreErrors
     )
 
-    $output = & aws @Arguments 2>&1
-    $exitCode = $LASTEXITCODE
-    $outputText = ($output | Out-String).Trim()
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & aws @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    $outputText = (($output | ForEach-Object { "$_" }) | Out-String).Trim()
     if ($exitCode -ne 0 -and -not $IgnoreErrors) {
         throw "AWS CLI command failed (exit $exitCode): aws $($Arguments -join ' ')`n$outputText"
     }
@@ -152,7 +158,20 @@ function New-SecretValue {
     param([int]$Bytes = 24)
 
     $buffer = New-Object byte[] $Bytes
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($buffer)
+    $rngType = [System.Security.Cryptography.RandomNumberGenerator]
+    $fillMethod = $rngType.GetMethod("Fill", [type[]]@([byte[]]))
+    if ($fillMethod) {
+        $fillMethod.Invoke($null, @($buffer)) | Out-Null
+    } else {
+        $rng = $rngType::Create()
+        try {
+            $rng.GetBytes($buffer)
+        } finally {
+            if ($rng) {
+                $rng.Dispose()
+            }
+        }
+    }
     return [Convert]::ToBase64String($buffer).TrimEnd("=")
 }
 
@@ -319,7 +338,9 @@ $lines = @()
 foreach ($key in $deployParameters.Keys) {
     $value = [string]$deployParameters[$key]
     $cleanValue = $value.Replace("`r", "").Replace("`n", "")
-    $lines += "$key=$cleanValue"
+    if ($cleanValue -ne "") {
+        $lines += "$key=$cleanValue"
+    }
 }
 
 Set-Content -Path $OutFile -Value $lines -Encoding UTF8

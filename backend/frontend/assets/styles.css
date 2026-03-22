@@ -21,6 +21,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -282,6 +286,15 @@ textarea {
 
 .btn:active {
   transform: translateY(0);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.56;
+  cursor: not-allowed;
+  pointer-events: none;
+  filter: none;
+  transform: none;
 }
 
 .btn-primary {
@@ -550,6 +563,10 @@ td small {
   background: var(--panel-2);
   padding: 0.78rem;
   color: var(--text);
+}
+
+.register-gate-surface {
+  background: linear-gradient(135deg, #f7fbfd, #edf5f9);
 }
 
 .metric-grid {

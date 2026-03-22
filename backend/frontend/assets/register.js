@@ -1,6 +1,6 @@
 (function () {
   const C = window.DiscraCommon;
-  const storageKey = "discra_register_token";
+  const storageKey = "discra_register_auth";
   const apiBase = C.deriveApiBase("/ui/register");
   const query = new URLSearchParams(window.location.search || "");
   const debugAuth = query.get("debug_auth") === "1";
@@ -9,12 +9,15 @@
     authState: document.getElementById("register-auth-state"),
     message: document.getElementById("register-message"),
     form: document.getElementById("register-form"),
+    tenantPanel: document.getElementById("register-tenant-panel"),
+    gateSurface: document.getElementById("register-gate-surface"),
     tenantName: document.getElementById("register-tenant-name"),
     contactName: document.getElementById("register-contact-name"),
     notes: document.getElementById("register-notes"),
     emailView: document.getElementById("register-email-view"),
     statusSurface: document.getElementById("register-status-surface"),
     refreshStatus: document.getElementById("register-refresh-status"),
+    accountHint: document.getElementById("register-account-hint"),
     cognitoDomain: document.getElementById("register-cognito-domain"),
     cognitoClientId: document.getElementById("register-cognito-client-id"),
     signupHostedUi: document.getElementById("register-signup-hosted-ui"),
@@ -24,13 +27,8 @@
     authDebug: document.getElementById("register-auth-debug"),
   };
 
-  let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
   let currentRegistration = null;
-  let uiConfig = null;
-
-  function activeClaims() {
-    return C.decodeJwt(token);
-  }
+  let sessionClaims = null;
 
   function hostedFlowConfig() {
     return {
@@ -46,6 +44,23 @@
     return Boolean(config.domain && config.clientId);
   }
 
+  function claimsFromSessionUser(user) {
+    if (!user || typeof user !== "object") {
+      return null;
+    }
+    const groups = Array.isArray(user.groups) ? user.groups : [];
+    return {
+      sub: user.sub || user.username || "",
+      username: user.username || user.sub || "",
+      email: user.email || "",
+      org_id: user.org_id || "",
+      "custom:org_id": user.org_id || "",
+      groups: groups,
+      "cognito:groups": groups,
+      _web_session: true,
+    };
+  }
+
   function statusLabel(status) {
     if (!status) {
       return "";
@@ -59,23 +74,73 @@
     return '<span class="table-status">Pending</span>';
   }
 
+  function isSubmissionLocked(registration) {
+    if (!registration || !registration.status) {
+      return false;
+    }
+    const normalized = String(registration.status).trim().toLowerCase();
+    return normalized === "pending" || normalized === "approved";
+  }
+
+  function syncSubmitButtonState() {
+    const submitButton = el.form.querySelector('button[type="submit"]');
+    if (!submitButton) {
+      return;
+    }
+    const authenticated = !!sessionClaims;
+    const locked = isSubmissionLocked(currentRegistration);
+    submitButton.disabled = !authenticated || locked;
+    submitButton.textContent = locked ? "Registration Submitted" : "Submit Registration";
+    submitButton.setAttribute("aria-disabled", submitButton.disabled ? "true" : "false");
+  }
+
   function applyUiAvailability() {
     const authReady = hostedUiConfigured();
-    const claims = activeClaims();
-    const submitButton = el.form.querySelector('button[type="submit"]');
-    el.signupHostedUi.disabled = !authReady;
-    el.loginHostedUi.disabled = !authReady;
-    el.logoutHostedUi.disabled = !authReady && !token;
-    if (submitButton) {
-      submitButton.disabled = !claims;
+    const authenticated = !!sessionClaims;
+
+    el.signupHostedUi.hidden = authenticated;
+    el.loginHostedUi.hidden = authenticated;
+    el.logoutHostedUi.hidden = !authenticated;
+    el.signupHostedUi.style.display = authenticated ? "none" : "";
+    el.loginHostedUi.style.display = authenticated ? "none" : "";
+    el.logoutHostedUi.style.display = authenticated ? "" : "none";
+    el.signupHostedUi.disabled = !authReady || authenticated;
+    el.loginHostedUi.disabled = !authReady || authenticated;
+    el.logoutHostedUi.disabled = !authenticated;
+    syncSubmitButtonState();
+    el.refreshStatus.disabled = !authenticated;
+    if (el.accountHint) {
+      if (authenticated) {
+        el.accountHint.innerHTML =
+          "You are signed in. Complete your tenant details below and submit for App Dev approval.";
+      } else {
+        el.accountHint.innerHTML =
+          "You will be redirected to secure authentication. <strong>Create Account</strong> opens sign-up directly.";
+      }
     }
-    el.refreshStatus.disabled = !claims;
+    if (el.tenantPanel) {
+      el.tenantPanel.hidden = !authenticated;
+    }
+    if (el.gateSurface) {
+      el.gateSurface.hidden = authenticated;
+      if (!authenticated && !authReady) {
+        el.gateSurface.innerHTML =
+          "<strong>Account sign-in is unavailable right now.</strong> Please contact support. " +
+          "Cognito Hosted UI domain/client are not configured for this environment.";
+      } else if (!authenticated) {
+        el.gateSurface.innerHTML =
+          "<strong>Next step locked:</strong> Sign in first, then the tenant registration form will appear automatically.";
+      } else {
+        el.gateSurface.textContent = "";
+      }
+    }
   }
 
   function renderRegistration(registration) {
     currentRegistration = registration || null;
     if (!registration) {
       el.statusSurface.innerHTML = "No registration found for this user yet.";
+      syncSubmitButtonState();
       return;
     }
     const decidedAt = registration.decided_at ? C.formatTimestamp(registration.decided_at) : "-";
@@ -115,22 +180,23 @@
     if (!el.notes.value.trim()) {
       el.notes.value = registration.notes || "";
     }
+    syncSubmitButtonState();
   }
 
   function renderClaims() {
-    const claims = activeClaims();
+    const claims = sessionClaims;
     if (!claims) {
       el.authState.textContent = "Not Signed In";
       el.authState.classList.add("status-idle");
       el.authState.classList.remove("status-live");
       el.emailView.value = "";
+      renderRegistration(null);
       if (el.claims) {
-        el.claims.textContent = "No token decoded yet.";
+        el.claims.textContent = "No active web session.";
       }
       applyUiAvailability();
       return;
     }
-
     const email = claims.email ? String(claims.email) : "";
     el.authState.textContent = email ? "Signed In" : "Session Active";
     el.authState.classList.remove("status-idle");
@@ -142,14 +208,24 @@
     applyUiAvailability();
   }
 
-  function setToken(nextToken) {
-    token = C.setStoredToken(storageKey, nextToken);
+  async function restoreWebSession() {
+    try {
+      const session = await C.getAuthSession(apiBase);
+      if (session && session.active && session.user) {
+        sessionClaims = claimsFromSessionUser(session.user);
+      } else {
+        sessionClaims = null;
+      }
+    } catch (error) {
+      sessionClaims = null;
+    }
     renderClaims();
+    return !!sessionClaims;
   }
 
   async function loadUiConfig() {
     try {
-      uiConfig = await C.requestJson(apiBase, "/ui/config");
+      const uiConfig = await C.requestJson(apiBase, "/ui/config");
       if (uiConfig && uiConfig.cognito_domain) {
         el.cognitoDomain.value = uiConfig.cognito_domain;
       }
@@ -157,11 +233,7 @@
         el.cognitoClientId.value = uiConfig.cognito_client_id;
       }
       if (!hostedUiConfigured()) {
-        C.showMessage(
-          el.message,
-          "Secure sign-in is not configured yet. Please contact support.",
-          "error"
-        );
+        C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
       }
     } catch (error) {
       C.showMessage(el.message, error.message, "error");
@@ -170,13 +242,13 @@
   }
 
   async function refreshStatus() {
-    if (!token) {
+    if (!sessionClaims) {
       C.showMessage(el.message, "Sign in first to check registration status.", "error");
       renderRegistration(null);
       return;
     }
     try {
-      const payload = await C.requestJson(apiBase, "/onboarding/registrations/me", { token: token });
+      const payload = await C.requestJson(apiBase, "/onboarding/registrations/me");
       renderRegistration(payload && payload.exists ? payload.registration : null);
       if (payload && payload.exists && payload.registration) {
         C.showMessage(el.message, "Registration status loaded.", "success");
@@ -190,8 +262,12 @@
 
   async function submitRegistration(event) {
     event.preventDefault();
-    if (!token) {
+    if (!sessionClaims) {
       C.showMessage(el.message, "Sign in is required before submitting registration.", "error");
+      return;
+    }
+    if (isSubmissionLocked(currentRegistration)) {
+      C.showMessage(el.message, "Registration has already been submitted.", "error");
       return;
     }
     const tenantName = el.tenantName.value.trim();
@@ -207,7 +283,6 @@
     try {
       const result = await C.requestJson(apiBase, "/onboarding/registrations", {
         method: "POST",
-        token: token,
         json: payload,
       });
       renderRegistration(result && result.registration ? result.registration : null);
@@ -218,6 +293,10 @@
   }
 
   async function launchHostedLogin() {
+    if (sessionClaims) {
+      C.showMessage(el.message, "You are already signed in. Continue with tenant registration below.", "success");
+      return;
+    }
     if (!hostedUiConfigured()) {
       C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
       return;
@@ -231,6 +310,10 @@
   }
 
   async function launchHostedSignup() {
+    if (sessionClaims) {
+      C.showMessage(el.message, "You are already signed in. Sign out first to create a different account.", "error");
+      return;
+    }
     if (!hostedUiConfigured()) {
       C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
       return;
@@ -256,9 +339,20 @@
   }
 
   async function finishHostedLoginCallback() {
-    const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
+    const config = hostedFlowConfig();
+    let result = { status: "none" };
+    if (typeof C.consumeHostedLoginCallback === "function") {
+      // Support both callback helper signatures:
+      // - legacy: consumeHostedLoginCallback(config)
+      // - current: consumeHostedLoginCallback(apiBase, config)
+      if (C.consumeHostedLoginCallback.length <= 1) {
+        result = await C.consumeHostedLoginCallback(config);
+      } else {
+        result = await C.consumeHostedLoginCallback(apiBase, config);
+      }
+    }
     if (result.status === "success") {
-      setToken(result.token || "");
+      await restoreWebSession();
       C.showMessage(el.message, "Sign-in complete.", "success");
       await refreshStatus();
       return;
@@ -270,12 +364,25 @@
 
   async function launchHostedLogout() {
     const logoutUri = window.location.origin + window.location.pathname;
-    const logoutUrl = C.buildHostedLogoutUrl({
-      domain: el.cognitoDomain.value.trim(),
-      clientId: el.cognitoClientId.value.trim(),
-      logoutUri,
-    });
-    setToken("");
+    let logoutUrl = "";
+    try {
+      const result = await C.logoutAuthSession(apiBase, {
+        domain: el.cognitoDomain.value.trim(),
+        client_id: el.cognitoClientId.value.trim(),
+        logout_uri: logoutUri,
+      });
+      if (result && result.logout_url) {
+        logoutUrl = result.logout_url;
+      }
+    } catch (error) {
+      logoutUrl = C.buildHostedLogoutUrl({
+        domain: el.cognitoDomain.value.trim(),
+        clientId: el.cognitoClientId.value.trim(),
+        logoutUri,
+      });
+    }
+    sessionClaims = null;
+    renderClaims();
     renderRegistration(null);
     C.showMessage(el.message, "Signed out.", "success");
     if (logoutUrl) {
@@ -289,8 +396,9 @@
     }
     renderClaims();
     await loadUiConfig();
+    await restoreWebSession();
     await finishHostedLoginCallback();
-    if (token) {
+    if (sessionClaims) {
       await refreshStatus();
     }
     if (currentRegistration && currentRegistration.status === "Approved") {

@@ -5,6 +5,9 @@ import os
 import time
 import uuid
 from pathlib import Path
+from urllib import error as urllib_error
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
@@ -21,8 +24,11 @@ try:
         dev_auth_default_org_id,
         dev_auth_ttl_seconds,
         get_dev_auth_user,
+        get_optional_authenticated_identity,
         is_dev_auth_enabled,
         normalize_dev_auth_role,
+        web_auth_cookie_name,
+        web_auth_ttl_seconds,
     )
     from backend.routers import (
         billing_router,
@@ -44,8 +50,11 @@ except ModuleNotFoundError:  # local run from backend/ directory
         dev_auth_default_org_id,
         dev_auth_ttl_seconds,
         get_dev_auth_user,
+        get_optional_authenticated_identity,
         is_dev_auth_enabled,
         normalize_dev_auth_role,
+        web_auth_cookie_name,
+        web_auth_ttl_seconds,
     )
     from routers import (
         billing_router,
@@ -130,6 +139,80 @@ def _ui_config_payload(*, admin_redirect_path: str, driver_redirect_path: str, r
         "dev_auth_enabled": dev_auth_enabled,
         "dev_auth_profiles": _dev_auth_profiles() if dev_auth_enabled else [],
     }
+
+
+def _as_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _cookie_secure(request: Request) -> bool:
+    if _as_bool(os.environ.get("FORCE_SECURE_COOKIES"), default=False):
+        return True
+    return request.url.scheme == "https"
+
+
+def _normalize_hosted_domain(value: str) -> str:
+    return value.replace("https://", "").replace("http://", "").rstrip("/")
+
+
+def _exchange_hosted_code_for_token(
+    *,
+    domain: str,
+    client_id: str,
+    code: str,
+    redirect_uri: str,
+    code_verifier: str,
+) -> dict:
+    form = urllib_parse.urlencode(
+        {
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "code_verifier": code_verifier,
+        }
+    ).encode("utf-8")
+    token_url = f"https://{_normalize_hosted_domain(domain)}/oauth2/token"
+    req = urllib_request.Request(
+        token_url,
+        data=form,
+        method="POST",
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=15) as response:
+            raw_body = response.read().decode("utf-8")
+    except urllib_error.HTTPError as exc:
+        body_text = exc.read().decode("utf-8", errors="ignore")
+        detail = "Hosted login token exchange failed."
+        if body_text:
+            try:
+                payload = json.loads(body_text)
+                detail = payload.get("error_description") or payload.get("error") or detail
+            except Exception:
+                detail = detail
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Hosted login token exchange failed.",
+        ) from exc
+
+    try:
+        payload = json.loads(raw_body) if raw_body else {}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Hosted login returned an invalid response.",
+        ) from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Hosted login returned an invalid response.",
+        )
+    return payload
 
 
 def create_app() -> FastAPI:
@@ -316,6 +399,114 @@ def create_app() -> FastAPI:
             review_redirect_path="/dev/backend/ui/review",
         )
 
+    @app.get("/ui/auth/session", include_in_schema=False)
+    @app.get("/backend/ui/auth/session", include_in_schema=False)
+    @app.get("/dev/backend/ui/auth/session", include_in_schema=False)
+    async def ui_auth_session(request: Request, response: Response):
+        try:
+            identity = await get_optional_authenticated_identity(request)
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+                response.delete_cookie(key=web_auth_cookie_name(), path="/")
+                return {"active": False}
+            raise
+        return {
+            "active": identity is not None,
+            "user": _user_response_payload(identity),
+        }
+
+    @app.post("/ui/auth/hosted-login/callback", include_in_schema=False)
+    @app.post("/backend/ui/auth/hosted-login/callback", include_in_schema=False)
+    @app.post("/dev/backend/ui/auth/hosted-login/callback", include_in_schema=False)
+    async def ui_auth_hosted_login_callback(request: Request, response: Response):
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+
+        code = str(payload.get("code") or "").strip()
+        state = str(payload.get("state") or "").strip()
+        expected_state = str(payload.get("expected_state") or "").strip()
+        code_verifier = str(payload.get("code_verifier") or "").strip()
+        redirect_uri = str(payload.get("redirect_uri") or "").strip()
+        domain = str(payload.get("domain") or "").strip() or str(os.environ.get("COGNITO_HOSTED_UI_DOMAIN") or "").strip()
+        client_id = (
+            str(payload.get("client_id") or "").strip()
+            or str(os.environ.get("FRONTEND_COGNITO_CLIENT_ID") or "").strip()
+            or str(os.environ.get("COGNITO_AUDIENCE") or "").strip()
+        )
+
+        if not code:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing authorization code")
+        if not state or not expected_state or state != expected_state:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Hosted login state check failed.")
+        if not code_verifier:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Hosted login verifier is missing.")
+        if not redirect_uri:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Hosted login redirect URI is missing.")
+        if not domain or not client_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Hosted login domain/client config is missing.",
+            )
+
+        token_payload = _exchange_hosted_code_for_token(
+            domain=domain,
+            client_id=client_id,
+            code=code,
+            redirect_uri=redirect_uri,
+            code_verifier=code_verifier,
+        )
+        token = (token_payload.get("id_token") or token_payload.get("access_token") or "").strip()
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Hosted login response did not include a token.",
+            )
+
+        response.set_cookie(
+            key=web_auth_cookie_name(),
+            value=token,
+            max_age=web_auth_ttl_seconds(),
+            httponly=True,
+            secure=_cookie_secure(request),
+            samesite="lax",
+            path="/",
+        )
+        return {"ok": True}
+
+    @app.post("/ui/auth/logout", include_in_schema=False)
+    @app.post("/backend/ui/auth/logout", include_in_schema=False)
+    @app.post("/dev/backend/ui/auth/logout", include_in_schema=False)
+    async def ui_auth_logout(request: Request, response: Response):
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+
+        domain = str(payload.get("domain") or "").strip() or str(os.environ.get("COGNITO_HOSTED_UI_DOMAIN") or "").strip()
+        client_id = (
+            str(payload.get("client_id") or "").strip()
+            or str(os.environ.get("FRONTEND_COGNITO_CLIENT_ID") or "").strip()
+            or str(os.environ.get("COGNITO_AUDIENCE") or "").strip()
+        )
+        logout_uri = str(payload.get("logout_uri") or "").strip()
+
+        response.delete_cookie(key=web_auth_cookie_name(), path="/")
+
+        logout_url = ""
+        if domain and client_id and logout_uri:
+            normalized_domain = _normalize_hosted_domain(domain)
+            if normalized_domain:
+                target = f"https://{normalized_domain}/logout"
+                url = urllib_parse.urlencode({"client_id": client_id, "logout_uri": logout_uri})
+                logout_url = f"{target}?{url}"
+        return {"ok": True, "logout_url": logout_url}
+
     @app.get("/ui/dev-auth/session", include_in_schema=False)
     @app.get("/backend/ui/dev-auth/session", include_in_schema=False)
     @app.get("/dev/backend/ui/dev-auth/session", include_in_schema=False)
@@ -359,7 +550,7 @@ def create_app() -> FastAPI:
             value=cookie_value,
             max_age=dev_auth_ttl_seconds(),
             httponly=True,
-            secure=request.url.scheme == "https",
+            secure=_cookie_secure(request),
             samesite="lax",
             path="/",
         )

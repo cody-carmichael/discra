@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/styles.css?v=20260321a">
   <link rel="manifest" href="assets/driver-manifest.json">
 </head>
 <body class="theme-driver">
@@ -19,7 +19,7 @@
         <p class="subtitle">Stay focused on live stops, location sharing, and POD completion.</p>
       </div>
       <nav class="top-actions">
-        <span id="driver-auth-state" class="status-pill status-idle">No Token</span>
+        <span id="driver-auth-state" class="status-pill status-idle">Not Signed In</span>
         <a class="btn btn-ghost" href="register">Registration</a>
         <a class="btn btn-ghost" href="admin">Admin View</a>
       </nav>
@@ -52,21 +52,11 @@
       <section class="panel">
         <details class="session-details">
           <summary>Session And Auth Settings</summary>
-          <p class="panel-help">Use Hosted UI or a driver JWT when setting up a test or pilot session.</p>
+          <p class="panel-help">Use secure Hosted UI sign-in. Tokens are managed automatically in a protected web session cookie.</p>
 
           <div id="driver-dev-auth-panel" class="dev-auth-panel" hidden>
             <p class="panel-help">Quick test sign-in (no token required)</p>
             <div id="driver-dev-auth-actions" class="row"></div>
-          </div>
-
-          <label class="field">
-            <span>JWT Token</span>
-            <textarea id="driver-jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
-          </label>
-
-          <div class="row">
-            <button id="driver-save-token" class="btn btn-primary" type="button">Save Token</button>
-            <button id="driver-clear-token" class="btn btn-ghost" type="button">Clear</button>
           </div>
 
           <details class="auth-config">
@@ -85,14 +75,25 @@
             </div>
           </details>
 
-          <pre id="driver-claims-view" class="claims-view">No token decoded yet.</pre>
+          <details id="driver-auth-debug" class="auth-config" hidden>
+            <summary>Debug Token Override</summary>
+            <label class="field">
+              <span>JWT Token</span>
+              <textarea id="driver-jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
+            </label>
+            <div class="row">
+              <button id="driver-save-token" class="btn btn-primary" type="button">Save Token</button>
+              <button id="driver-clear-token" class="btn btn-ghost" type="button">Clear</button>
+            </div>
+            <pre id="driver-claims-view" class="claims-view">No active web session.</pre>
+          </details>
           <p id="driver-auth-message" class="message"></p>
         </details>
       </section>
     </main>
   </div>
 
-  <script src="assets/common.js"></script>
-  <script src="assets/driver.js"></script>
+  <script src="assets/common.js?v=20260321a"></script>
+  <script src="assets/driver.js?v=20260321a"></script>
 </body>
 </html>

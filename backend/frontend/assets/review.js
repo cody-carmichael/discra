@@ -1,36 +1,282 @@
 (function () {
   const C = window.DiscraCommon;
-  const storageKey = "discra_review_token";
+  const storageKey = "discra_review_auth";
+  const reviewTokenStorageKey = "discra_review_token";
   const apiBase = C.deriveApiBase("/ui/review");
+  const query = new URLSearchParams(window.location.search || "");
+  const debugAuth = query.get("debug_auth") === "1";
 
   const el = {
     authState: document.getElementById("review-auth-state"),
-    token: document.getElementById("review-jwt-token"),
-    saveToken: document.getElementById("review-save-token"),
-    clearToken: document.getElementById("review-clear-token"),
     claims: document.getElementById("review-claims-view"),
     message: document.getElementById("review-message"),
-    reviewToken: document.getElementById("review-token"),
-    loadButton: document.getElementById("review-load"),
+    linkMode: document.getElementById("review-link-mode"),
+    queue: document.getElementById("review-queue"),
+    pendingSelect: document.getElementById("review-pending-select"),
+    loadPending: document.getElementById("review-load-pending"),
     summarySurface: document.getElementById("review-summary-surface"),
+    sessionHelp: document.getElementById("review-session-help"),
+    approverEmail: document.getElementById("review-approver-email"),
     reason: document.getElementById("review-reason"),
+    decisionGate: document.getElementById("review-decision-gate"),
     approve: document.getElementById("review-approve"),
     reject: document.getElementById("review-reject"),
     cognitoDomain: document.getElementById("review-cognito-domain"),
     cognitoClientId: document.getElementById("review-cognito-client-id"),
     loginHostedUi: document.getElementById("review-login-hosted-ui"),
     logoutHostedUi: document.getElementById("review-logout-hosted-ui"),
+    authConfig: document.getElementById("review-auth-config"),
+    authDebug: document.getElementById("review-auth-debug"),
   };
 
-  let token = C.pullTokenFromHash(storageKey) || C.getStoredToken(storageKey);
   let loadedReview = null;
+  let sessionClaims = null;
+  let tokenLoadedFromLink = false;
+  let activeReviewToken = "";
+  let pendingRegistrations = [];
+  let selectedPendingRegistrationId = "";
 
-  function activeClaims() {
-    return C.decodeJwt(token);
+  function claimsFromSessionUser(user) {
+    if (!user || typeof user !== "object") {
+      return null;
+    }
+    const groups = Array.isArray(user.groups) ? user.groups : [];
+    return {
+      sub: user.sub || user.username || "",
+      username: user.username || user.sub || "",
+      email: user.email || "",
+      org_id: user.org_id || "",
+      "custom:org_id": user.org_id || "",
+      groups: groups,
+      "cognito:groups": groups,
+      _web_session: true,
+    };
   }
 
   function reviewTokenValue() {
-    return (el.reviewToken.value || "").trim();
+    return activeReviewToken.trim();
+  }
+
+  function setReviewToken(value, fromLink) {
+    const normalized = (value || "").trim();
+    activeReviewToken = normalized;
+    tokenLoadedFromLink = !!fromLink && !!normalized;
+  }
+
+  function hostedUiConfigured() {
+    return Boolean(el.cognitoDomain.value.trim() && el.cognitoClientId.value.trim());
+  }
+
+  function decisionAllowed() {
+    if (!loadedReview || !loadedReview.registration) {
+      return false;
+    }
+    return !!loadedReview.decision_allowed && String(loadedReview.registration.status || "") === "Pending";
+  }
+
+  function findPendingById(registrationId) {
+    if (!registrationId) {
+      return null;
+    }
+    for (let index = 0; index < pendingRegistrations.length; index += 1) {
+      const item = pendingRegistrations[index];
+      if (item && item.registration_id === registrationId) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  function registrationOptionLabel(registration) {
+    if (!registration) {
+      return "";
+    }
+    const tenant = registration.tenant_name || "Unknown Tenant";
+    const requester = registration.requester_email || registration.identity_sub || "unknown";
+    return tenant + " - " + requester;
+  }
+
+  function renderPendingOptions() {
+    if (!el.pendingSelect) {
+      return;
+    }
+    while (el.pendingSelect.firstChild) {
+      el.pendingSelect.removeChild(el.pendingSelect.firstChild);
+    }
+    if (!pendingRegistrations.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No pending requests";
+      el.pendingSelect.appendChild(option);
+      el.pendingSelect.disabled = true;
+      return;
+    }
+    el.pendingSelect.disabled = false;
+    for (let index = 0; index < pendingRegistrations.length; index += 1) {
+      const registration = pendingRegistrations[index];
+      const option = document.createElement("option");
+      option.value = registration.registration_id || "";
+      option.textContent = registrationOptionLabel(registration);
+      option.selected = option.value === selectedPendingRegistrationId;
+      el.pendingSelect.appendChild(option);
+    }
+  }
+
+  function selectPendingRegistration(registrationId) {
+    const registration = findPendingById(registrationId);
+    if (!registration) {
+      selectedPendingRegistrationId = "";
+      if (!reviewTokenValue()) {
+        renderSummary(null);
+      }
+      return;
+    }
+    selectedPendingRegistrationId = registration.registration_id || "";
+    if (el.pendingSelect) {
+      el.pendingSelect.value = selectedPendingRegistrationId;
+    }
+    if (!reviewTokenValue()) {
+      renderSummary({
+        registration,
+        token_expires_at:
+          registration.review_token_expires_at ||
+          registration.updated_at ||
+          registration.submitted_at ||
+          new Date().toISOString(),
+        decision_allowed: String(registration.status || "") === "Pending",
+      });
+    }
+  }
+
+  async function loadPendingRegistrations(options) {
+    const opts = options || {};
+    if (!sessionClaims) {
+      pendingRegistrations = [];
+      selectedPendingRegistrationId = "";
+      renderPendingOptions();
+      syncGateState();
+      return;
+    }
+    try {
+      const payload = await C.requestJson(apiBase, "/onboarding/registrations/pending");
+      const items = payload && Array.isArray(payload.items) ? payload.items : [];
+      pendingRegistrations = items;
+      if (items.length && !selectedPendingRegistrationId) {
+        selectedPendingRegistrationId = items[0].registration_id || "";
+      }
+      if (selectedPendingRegistrationId && !findPendingById(selectedPendingRegistrationId)) {
+        selectedPendingRegistrationId = items.length ? items[0].registration_id || "" : "";
+      }
+      renderPendingOptions();
+      if (!reviewTokenValue()) {
+        if (selectedPendingRegistrationId) {
+          selectPendingRegistration(selectedPendingRegistrationId);
+        } else {
+          renderSummary(null);
+        }
+      }
+      if (opts.notify === true) {
+        C.showMessage(
+          el.message,
+          items.length
+            ? "Loaded " + String(items.length) + " pending request(s)."
+            : "No pending registration requests right now.",
+          "success"
+        );
+      }
+    } catch (error) {
+      pendingRegistrations = [];
+      selectedPendingRegistrationId = "";
+      renderPendingOptions();
+      if (opts.notify === true) {
+        C.showMessage(el.message, error.message, "error");
+      }
+    }
+    syncGateState();
+  }
+
+  function updateTokenEntryMode() {
+    const hasToken = !!reviewTokenValue();
+    if (el.linkMode) {
+      if (hasToken && tokenLoadedFromLink) {
+        el.linkMode.textContent = "Secure token loaded from your email link.";
+      } else if (hasToken) {
+        el.linkMode.textContent = "Secure review context loaded.";
+      } else if (sessionClaims) {
+        el.linkMode.textContent = "No signed link loaded. Use the pending requests queue below.";
+      } else {
+        el.linkMode.textContent = "Open a signed review link from email or sign in to review pending requests.";
+      }
+    }
+  }
+
+  function syncGateState() {
+    const authenticated = !!sessionClaims;
+    const hasToken = !!reviewTokenValue();
+    const queueSelection = selectedPendingRegistrationId ? findPendingById(selectedPendingRegistrationId) : null;
+    const canDecide = authenticated && (hasToken ? decisionAllowed() : !!queueSelection && decisionAllowed());
+
+    el.approve.disabled = !canDecide;
+    el.reject.disabled = !canDecide;
+    if (el.reason) {
+      el.reason.disabled = !authenticated;
+    }
+
+    if (el.loginHostedUi) {
+      el.loginHostedUi.hidden = authenticated;
+      el.loginHostedUi.disabled = authenticated || !hostedUiConfigured();
+    }
+    if (el.logoutHostedUi) {
+      el.logoutHostedUi.hidden = !authenticated;
+      el.logoutHostedUi.disabled = !authenticated;
+    }
+
+    if (el.sessionHelp) {
+      if (authenticated) {
+        el.sessionHelp.textContent = "Approver session active. You can now review and apply a decision.";
+      } else {
+        el.sessionHelp.textContent = "Sign in as an allowlisted App Dev user before applying a decision.";
+      }
+    }
+    if (el.queue) {
+      el.queue.hidden = !authenticated || hasToken;
+    }
+    if (el.loadPending) {
+      el.loadPending.disabled = !authenticated;
+    }
+    if (el.pendingSelect) {
+      el.pendingSelect.disabled = !authenticated || !pendingRegistrations.length;
+    }
+    if (el.approverEmail) {
+      const email = sessionClaims && sessionClaims.email ? String(sessionClaims.email) : "";
+      if (authenticated && email) {
+        el.approverEmail.hidden = false;
+        el.approverEmail.innerHTML = "<strong>Signed in as:</strong> " + C.escapeHtml(email);
+      } else {
+        el.approverEmail.hidden = true;
+        el.approverEmail.textContent = "";
+      }
+    }
+    if (el.decisionGate) {
+      if (!authenticated) {
+        el.decisionGate.textContent = "Sign in to review before approving or rejecting.";
+      } else if (!hasToken && !pendingRegistrations.length) {
+        el.decisionGate.textContent = "No pending requests in queue. Open a signed review link from email if needed.";
+      } else if (!hasToken && !queueSelection) {
+        el.decisionGate.textContent = "Select a pending request from the approver queue.";
+      } else if (!hasToken) {
+        el.decisionGate.textContent = "Queue mode active. Approve or reject the selected pending request.";
+      } else if (!loadedReview) {
+        el.decisionGate.textContent = "Loading signed review details. If this persists, reopen the review email link.";
+      } else if (!decisionAllowed()) {
+        el.decisionGate.textContent = "Decision is already final for this request.";
+      } else {
+        el.decisionGate.textContent = "Ready. Apply approve or reject for this tenant request.";
+      }
+    }
+    if (el.authConfig) {
+      el.authConfig.hidden = hostedUiConfigured();
+    }
   }
 
   function statusLabel(status) {
@@ -46,7 +292,14 @@
   function renderSummary(reviewPayload) {
     loadedReview = reviewPayload || null;
     if (!reviewPayload || !reviewPayload.registration) {
-      el.summarySurface.innerHTML = "Paste a token to load registration details.";
+      if (reviewTokenValue()) {
+        el.summarySurface.innerHTML = "Loading review details from your signed link.";
+      } else if (sessionClaims && pendingRegistrations.length) {
+        el.summarySurface.innerHTML = "Select a pending request from the queue to review details.";
+      } else {
+        el.summarySurface.innerHTML = "Open your signed review email link or use the pending queue after sign-in.";
+      }
+      syncGateState();
       return;
     }
     const registration = reviewPayload.registration;
@@ -80,30 +333,40 @@
       ) +
       "</p>";
     el.summarySurface.innerHTML = '<div class="kv-grid">' + rows + "</div>" + footer;
-    el.approve.disabled = !decisionAllowed;
-    el.reject.disabled = !decisionAllowed;
+    syncGateState();
   }
 
   function renderClaims() {
-    const claims = activeClaims();
+    const claims = sessionClaims;
     if (!claims) {
-      el.authState.textContent = "No Token";
+      el.authState.textContent = "Not Signed In";
       el.authState.classList.add("status-idle");
       el.authState.classList.remove("status-live");
-      el.claims.textContent = "No token decoded yet.";
+      el.claims.textContent = "No active web session.";
+      syncGateState();
       return;
     }
-    const roles = C.tokenRoleSummary(claims);
-    el.authState.textContent = roles ? "Roles: " + roles : "Token Loaded";
+    const email = claims.email ? String(claims.email) : "";
+    el.authState.textContent = email ? "Signed In" : "Signed In";
     el.authState.classList.remove("status-idle");
     el.authState.classList.add("status-live");
     el.claims.textContent = JSON.stringify(claims, null, 2);
+    syncGateState();
   }
 
-  function setToken(nextToken) {
-    token = C.setStoredToken(storageKey, nextToken);
-    el.token.value = token;
+  async function restoreWebSession() {
+    try {
+      const session = await C.getAuthSession(apiBase);
+      if (session && session.active && session.user) {
+        sessionClaims = claimsFromSessionUser(session.user);
+      } else {
+        sessionClaims = null;
+      }
+    } catch (error) {
+      sessionClaims = null;
+    }
     renderClaims();
+    return !!sessionClaims;
   }
 
   async function loadUiConfig() {
@@ -115,13 +378,18 @@
       if (config && config.cognito_client_id) {
         el.cognitoClientId.value = config.cognito_client_id;
       }
+      if (!hostedUiConfigured()) {
+        C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
+      }
     } catch (error) {
       C.showMessage(el.message, error.message, "error");
     }
+    syncGateState();
   }
 
   async function resolveToken() {
     const signedToken = reviewTokenValue();
+    updateTokenEntryMode();
     if (!signedToken) {
       C.showMessage(el.message, "Review token is required.", "error");
       renderSummary(null);
@@ -133,6 +401,10 @@
         "/onboarding/review?token=" + encodeURIComponent(signedToken),
         { method: "GET" }
       );
+      localStorage.setItem(reviewTokenStorageKey, signedToken);
+      if (result && result.registration && result.registration.registration_id) {
+        selectedPendingRegistrationId = result.registration.registration_id;
+      }
       renderSummary(result);
       C.showMessage(el.message, "Review token resolved.", "success");
     } catch (error) {
@@ -143,24 +415,33 @@
 
   async function applyDecision(decision) {
     const signedToken = reviewTokenValue();
-    if (!signedToken) {
-      C.showMessage(el.message, "Review token is required.", "error");
+    if (!sessionClaims) {
+      C.showMessage(el.message, "Sign in as an approver first.", "error");
       return;
     }
-    if (!token) {
-      C.showMessage(el.message, "Approver JWT token is required.", "error");
+    const queueSelection = selectedPendingRegistrationId ? findPendingById(selectedPendingRegistrationId) : null;
+    if (!signedToken && !queueSelection) {
+      C.showMessage(el.message, "Select a pending request or open a signed review link first.", "error");
       return;
     }
     try {
-      const response = await C.requestJson(apiBase, "/onboarding/review/decision", {
-        method: "POST",
-        token: token,
-        json: {
-          token: signedToken,
-          decision: decision,
-          reason: el.reason.value.trim() || null,
-        },
-      });
+      const response = signedToken
+        ? await C.requestJson(apiBase, "/onboarding/review/decision", {
+            method: "POST",
+            json: {
+              token: signedToken,
+              decision: decision,
+              reason: el.reason.value.trim() || null,
+            },
+          })
+        : await C.requestJson(apiBase, "/onboarding/review/decision/by-registration", {
+            method: "POST",
+            json: {
+              registration_id: queueSelection.registration_id,
+              decision: decision,
+              reason: el.reason.value.trim() || null,
+            },
+          });
       renderSummary({
         registration: response.registration,
         token_expires_at:
@@ -169,6 +450,9 @@
             : new Date(Date.now() + 60000).toISOString(),
         decision_allowed: false,
       });
+      if (!signedToken) {
+        await loadPendingRegistrations();
+      }
       C.showMessage(el.message, response.message || "Decision applied.", "success");
     } catch (error) {
       C.showMessage(el.message, error.message, "error");
@@ -179,40 +463,104 @@
     return {
       domain: el.cognitoDomain.value.trim(),
       clientId: el.cognitoClientId.value.trim(),
-      redirectUri: window.location.origin + window.location.pathname + window.location.search,
+      redirectUri: window.location.origin + window.location.pathname,
       storageKey,
     };
   }
 
+  function persistReviewTokenForAuthRoundtrip() {
+    const value = reviewTokenValue();
+    if (!value) {
+      localStorage.removeItem(reviewTokenStorageKey);
+      return;
+    }
+    localStorage.setItem(reviewTokenStorageKey, value);
+  }
+
+  function restoreReviewTokenAfterAuthRoundtrip() {
+    if (reviewTokenValue()) {
+      return;
+    }
+    const stored = (localStorage.getItem(reviewTokenStorageKey) || "").trim();
+    if (!stored) {
+      return;
+    }
+    setReviewToken(stored, true);
+  }
+
   async function launchHostedLogin() {
+    if (sessionClaims) {
+      C.showMessage(el.message, "Approver session already active.", "success");
+      return;
+    }
+    if (!hostedUiConfigured()) {
+      C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
+      return;
+    }
+    persistReviewTokenForAuthRoundtrip();
     const loginUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!loginUrl) {
-      C.showMessage(el.message, "Hosted UI domain + client id are required.", "error");
+      C.showMessage(el.message, "Secure sign-in is not configured yet. Please contact support.", "error");
       return;
     }
     window.location.assign(loginUrl);
   }
 
   async function finishHostedLoginCallback() {
-    const result = await C.consumeHostedLoginCallback(hostedFlowConfig());
+    const config = hostedFlowConfig();
+    let result = { status: "none" };
+    if (typeof C.consumeHostedLoginCallback === "function") {
+      // Support both callback helper signatures:
+      // - legacy: consumeHostedLoginCallback(config)
+      // - current: consumeHostedLoginCallback(apiBase, config)
+      if (C.consumeHostedLoginCallback.length <= 1) {
+        result = await C.consumeHostedLoginCallback(config);
+      } else {
+        result = await C.consumeHostedLoginCallback(apiBase, config);
+      }
+    }
     if (result.status === "success") {
-      setToken(result.token || "");
-      C.showMessage(el.message, "Hosted UI login complete.", "success");
+      restoreReviewTokenAfterAuthRoundtrip();
+      if (reviewTokenValue()) {
+        setReviewToken(reviewTokenValue(), true);
+      }
+      updateTokenEntryMode();
+      await restoreWebSession();
+      if (!reviewTokenValue()) {
+        await loadPendingRegistrations();
+      }
+      C.showMessage(el.message, "Sign-in complete.", "success");
       return;
     }
     if (result.status === "error") {
-      C.showMessage(el.message, result.message || "Hosted UI login failed.", "error");
+      C.showMessage(el.message, result.message || "Sign-in failed.", "error");
     }
   }
 
   async function launchHostedLogout() {
-    const logoutUri = window.location.origin + window.location.pathname + window.location.search;
-    const logoutUrl = C.buildHostedLogoutUrl({
-      domain: el.cognitoDomain.value.trim(),
-      clientId: el.cognitoClientId.value.trim(),
-      logoutUri,
-    });
-    setToken("");
+    const logoutUri = window.location.origin + window.location.pathname;
+    let logoutUrl = "";
+    try {
+      const result = await C.logoutAuthSession(apiBase, {
+        domain: el.cognitoDomain.value.trim(),
+        client_id: el.cognitoClientId.value.trim(),
+        logout_uri: logoutUri,
+      });
+      if (result && result.logout_url) {
+        logoutUrl = result.logout_url;
+      }
+    } catch (error) {
+      logoutUrl = C.buildHostedLogoutUrl({
+        domain: el.cognitoDomain.value.trim(),
+        clientId: el.cognitoClientId.value.trim(),
+        logoutUri,
+      });
+    }
+    sessionClaims = null;
+    pendingRegistrations = [];
+    selectedPendingRegistrationId = "";
+    renderPendingOptions();
+    renderClaims();
     C.showMessage(el.message, "Session cleared.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
@@ -222,56 +570,100 @@
   function preloadReviewTokenFromQuery() {
     const params = new URLSearchParams(window.location.search || "");
     const value = params.get("token");
-    if (!value) {
+    if (value) {
+      setReviewToken(value, true);
+      localStorage.setItem(reviewTokenStorageKey, reviewTokenValue());
+      updateTokenEntryMode();
       return;
     }
-    el.reviewToken.value = value;
+    const callbackRoundtrip = params.has("code") || params.has("state");
+    if (!callbackRoundtrip) {
+      localStorage.removeItem(reviewTokenStorageKey);
+      setReviewToken("", false);
+      updateTokenEntryMode();
+      return;
+    }
+    restoreReviewTokenAfterAuthRoundtrip();
+    if (!reviewTokenValue()) {
+      setReviewToken("", false);
+    }
+    updateTokenEntryMode();
   }
 
   async function bootstrap() {
-    el.token.value = token;
+    if (el.authDebug) {
+      el.authDebug.hidden = !debugAuth;
+    }
+    renderPendingOptions();
+    renderSummary(null);
+    updateTokenEntryMode();
     renderClaims();
     preloadReviewTokenFromQuery();
     await loadUiConfig();
     await finishHostedLoginCallback();
+    await restoreWebSession();
     if (reviewTokenValue()) {
       await resolveToken();
+    } else if (sessionClaims) {
+      await loadPendingRegistrations();
+    } else {
+      renderSummary(null);
     }
+    syncGateState();
   }
 
-  el.saveToken.addEventListener("click", function () {
-    setToken(el.token.value);
-    C.showMessage(el.message, token ? "Token saved." : "Token cleared.", "success");
-  });
-  el.clearToken.addEventListener("click", function () {
-    setToken("");
-    C.showMessage(el.message, "Session cleared.", "success");
-  });
-  el.loadButton.addEventListener("click", function () {
-    resolveToken().catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  if (el.loadPending) {
+    el.loadPending.addEventListener("click", function () {
+      loadPendingRegistrations({ notify: true }).catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
     });
-  });
-  el.approve.addEventListener("click", function () {
-    applyDecision("approve").catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  }
+  if (el.pendingSelect) {
+    el.pendingSelect.addEventListener("change", function () {
+      selectedPendingRegistrationId = el.pendingSelect.value || "";
+      selectPendingRegistration(selectedPendingRegistrationId);
+      syncGateState();
     });
-  });
-  el.reject.addEventListener("click", function () {
-    applyDecision("reject").catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  }
+  if (el.cognitoDomain) {
+    el.cognitoDomain.addEventListener("input", function () {
+      syncGateState();
     });
-  });
-  el.loginHostedUi.addEventListener("click", function () {
-    launchHostedLogin().catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  }
+  if (el.cognitoClientId) {
+    el.cognitoClientId.addEventListener("input", function () {
+      syncGateState();
     });
-  });
-  el.logoutHostedUi.addEventListener("click", function () {
-    launchHostedLogout().catch(function (error) {
-      C.showMessage(el.message, error.message, "error");
+  }
+  if (el.approve) {
+    el.approve.addEventListener("click", function () {
+      applyDecision("approve").catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
     });
-  });
+  }
+  if (el.reject) {
+    el.reject.addEventListener("click", function () {
+      applyDecision("reject").catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
+    });
+  }
+  if (el.loginHostedUi) {
+    el.loginHostedUi.addEventListener("click", function () {
+      launchHostedLogin().catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
+    });
+  }
+  if (el.logoutHostedUi) {
+    el.logoutHostedUi.addEventListener("click", function () {
+      launchHostedLogout().catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
+    });
+  }
 
   bootstrap();
 })();

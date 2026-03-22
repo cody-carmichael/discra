@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css">
+  <link rel="stylesheet" href="assets/styles.css?v=20260321c">
 </head>
 <body class="theme-admin">
   <div class="app-shell app-shell-compact">
@@ -15,7 +15,7 @@
       <div>
         <p class="eyebrow">Discra Onboarding</p>
         <h1>Register Your Tenant</h1>
-        <p class="subtitle">Create your account, submit your tenant request, and track approval status.</p>
+        <p class="subtitle">Step 1: create your account and sign in. Step 2: submit your tenant request for approval.</p>
       </div>
       <nav class="top-actions">
         <span id="register-auth-state" class="status-pill status-idle">Not Signed In</span>
@@ -28,17 +28,20 @@
         <div class="panel-title-row">
           <h2>Account Access</h2>
         </div>
-        <p class="panel-help">New here? create your account. Already have access? sign in to continue. You do not need to paste tokens.</p>
+        <p class="panel-help">New here? create your account first. Already have access? sign in to continue. Tokens are handled automatically.</p>
         <div class="row">
           <button id="register-signup-hosted-ui" class="btn btn-primary" type="button">Create Account</button>
           <button id="register-login-hosted-ui" class="btn btn-accent" type="button">Sign In</button>
-          <button id="register-logout-hosted-ui" class="btn btn-ghost" type="button">Sign Out</button>
+          <button id="register-logout-hosted-ui" class="btn btn-ghost" type="button" hidden disabled>Sign Out</button>
         </div>
-        <p class="panel-help">You will be redirected to secure authentication. <strong>Create Account</strong> opens sign-up directly.</p>
+        <p id="register-account-hint" class="panel-help">You will be redirected to secure authentication. <strong>Create Account</strong> opens sign-up directly.</p>
         <label class="field">
           <span>Signed-In Email</span>
           <input id="register-email-view" disabled placeholder="Sign in to continue">
         </label>
+        <div id="register-gate-surface" class="data-surface register-gate-surface">
+          <strong>Next step locked:</strong> Sign in first, then the tenant registration form will appear automatically.
+        </div>
         <details id="register-auth-debug" class="auth-config" hidden>
           <summary>Advanced Connection Settings</summary>
           <label class="field">
@@ -49,11 +52,11 @@
             <span>Client ID</span>
             <input id="register-cognito-client-id" placeholder="app client id">
           </label>
-          <pre id="register-claims-view" class="claims-view">No token decoded yet.</pre>
+          <pre id="register-claims-view" class="claims-view">No active web session.</pre>
         </details>
       </section>
 
-      <section class="panel">
+      <section id="register-tenant-panel" class="panel" hidden>
         <div class="panel-title-row">
           <h2>Tenant Registration</h2>
           <button id="register-refresh-status" class="btn btn-ghost" type="button">Refresh Status</button>
@@ -82,7 +85,7 @@
     </main>
   </div>
 
-  <script src="assets/common.js"></script>
-  <script src="assets/register.js"></script>
+  <script src="assets/common.js?v=20260321c"></script>
+  <script src="assets/register.js?v=20260321c"></script>
 </body>
 </html>

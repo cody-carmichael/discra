@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/styles.css?v=20260322h">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322i">
 </head>
 <body class="theme-admin">
 
@@ -225,7 +225,7 @@
     <!-- ===== PLANNING (existing, wrapped) ===== -->
     <section class="workspace-panel" data-workspace-panel="planning">
       <div class="workspace-contained">
-        <div class="planning-grid">
+        <div class="planning-centered">
           <section class="panel">
             <div class="panel-title-row">
               <h2>Create Order</h2>
@@ -242,10 +242,8 @@
               <label class="field"><span>Delivery City</span><input name="delivery_city" required></label>
               <label class="field"><span>Delivery State</span><input name="delivery_state" required></label>
               <label class="field"><span>Delivery Zip</span><input name="delivery_zip" required></label>
-              <label class="field"><span>Dimensions</span><input name="dimensions" placeholder="e.g. 12x8x5 in" required></label>
-              <label class="field"><span>Weight</span><input name="weight" type="number" step="any" min="0.01" required></label>
-              <label class="field"><span>Time Window Start</span><input name="time_window_start" type="datetime-local"></label>
-              <label class="field"><span>Time Window End</span><input name="time_window_end" type="datetime-local"></label>
+              <label class="field"><span>Dimensions <small>(optional)</small></span><input name="dimensions" placeholder="e.g. 12x8x5 in"></label>
+              <label class="field"><span>Weight <small>(optional)</small></span><input name="weight" type="number" step="any" min="0.01" placeholder="lbs"></label>
               <label class="field"><span>Pick Up Deadline</span><input name="pickup_deadline" type="datetime-local"></label>
               <label class="field"><span>Drop Off Deadline</span><input name="dropoff_deadline" type="datetime-local"></label>
               <label class="field"><span>Phone</span><input name="phone"></label>
@@ -256,7 +254,6 @@
             </form>
             <p id="create-order-message" class="message"></p>
           </section>
-
         </div>
       </div>
     </section>
@@ -458,7 +455,7 @@
   <span id="assigned-queue-count" hidden>0</span>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260322h"></script>
-  <script src="assets/admin.js?v=20260322h"></script>
+  <script src="assets/common.js?v=20260322i"></script>
+  <script src="assets/admin.js?v=20260322i"></script>
 </body>
 </html>

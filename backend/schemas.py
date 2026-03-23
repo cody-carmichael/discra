@@ -24,8 +24,8 @@ class OrderCreate(BaseModel):
     delivery_city: str = Field(..., min_length=1, max_length=100)
     delivery_state: str = Field(..., min_length=1, max_length=50)
     delivery_zip: str = Field(..., min_length=1, max_length=20)
-    dimensions: str = Field(..., min_length=1, max_length=120)
-    weight: float = Field(..., gt=0)
+    dimensions: Optional[str] = Field(default=None, max_length=120)
+    weight: Optional[float] = Field(default=None, gt=0)
     time_window_start: Optional[datetime] = None
     time_window_end: Optional[datetime] = None
     pickup_deadline: Optional[datetime] = None
@@ -69,8 +69,8 @@ class Order(BaseModel):
     delivery_city: str
     delivery_state: str
     delivery_zip: str
-    dimensions: str
-    weight: float
+    dimensions: Optional[str] = None
+    weight: Optional[float] = None
     time_window_start: Optional[datetime] = None
     time_window_end: Optional[datetime] = None
     pickup_deadline: Optional[datetime] = None
@@ -270,8 +270,8 @@ class WebhookOrderInput(BaseModel):
     delivery_city: str = Field(..., min_length=1, max_length=100)
     delivery_state: str = Field(..., min_length=1, max_length=50)
     delivery_zip: str = Field(..., min_length=1, max_length=20)
-    dimensions: str = Field(..., min_length=1, max_length=120)
-    weight: float = Field(..., gt=0)
+    dimensions: Optional[str] = Field(default=None, max_length=120)
+    weight: Optional[float] = Field(default=None, gt=0)
     time_window_start: Optional[datetime] = None
     time_window_end: Optional[datetime] = None
     pickup_deadline: Optional[datetime] = None

@@ -434,6 +434,11 @@ textarea {
   gap: 1rem;
 }
 
+.planning-centered {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(140px, 1fr));

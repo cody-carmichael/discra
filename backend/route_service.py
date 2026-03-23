@@ -1,7 +1,9 @@
+import json
 import math
 import os
+import urllib.request
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 try:
@@ -114,6 +116,89 @@ class AmazonLocationRouteMatrixProvider(RouteMatrixProvider):
         )
 
 
+@dataclass
+class OrsDirectionsResult:
+    """Result from an ORS directions call with route geometry."""
+    coordinates: List[List[float]] = field(default_factory=list)  # [[lng, lat], ...]
+    distance_meters: float = 0.0
+    duration_seconds: float = 0.0
+    bbox: Optional[List[float]] = None
+
+
+class OpenRouteServiceProvider(RouteMatrixProvider):
+    """Uses the OpenRouteService /v2/matrix and /v2/directions APIs."""
+
+    _BASE_URL = "https://api.openrouteservice.org"
+
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    def _ors_request(self, path: str, body: dict) -> dict:
+        data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            self._BASE_URL + path,
+            data=data,
+            headers={
+                "Authorization": self.api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def calculate_matrix(self, points: List[List[float]]) -> RouteMatrixResult:
+        """Call ORS /v2/matrix/driving-car for an NxN time/distance matrix."""
+        body = {
+            "locations": points,
+            "metrics": ["distance", "duration"],
+            "units": "m",
+        }
+        result = self._ors_request("/v2/matrix/driving-car", body)
+        return RouteMatrixResult(
+            source="openrouteservice",
+            distance_meters=result.get("distances", []),
+            duration_seconds=result.get("durations", []),
+        )
+
+    def get_directions(
+        self,
+        coordinates: List[List[float]],
+    ) -> OrsDirectionsResult:
+        """Call ORS /v2/directions/driving-car for a route with geometry.
+
+        coordinates: list of [lng, lat] pairs in order of visit.
+        """
+        body = {
+            "coordinates": coordinates,
+            "geometry": True,
+            "format": "geojson",
+        }
+        result = self._ors_request("/v2/directions/driving-car/geojson", body)
+        features = result.get("features", [])
+        if not features:
+            return OrsDirectionsResult()
+
+        feature = features[0]
+        geometry = feature.get("geometry", {})
+        props = feature.get("properties", {}).get("summary", {})
+        return OrsDirectionsResult(
+            coordinates=geometry.get("coordinates", []),
+            distance_meters=props.get("distance", 0.0),
+            duration_seconds=props.get("duration", 0.0),
+            bbox=result.get("bbox"),
+        )
+
+
+def get_ors_provider() -> Optional[OpenRouteServiceProvider]:
+    """Return an ORS provider if API key is configured, else None."""
+    api_key = os.environ.get("ORS_API_KEY", "").strip()
+    if not api_key:
+        return None
+    return OpenRouteServiceProvider(api_key=api_key)
+
+
 _IN_MEMORY_ROUTE_MATRIX_PROVIDER = InMemoryRouteMatrixProvider()
 
 
@@ -121,6 +206,11 @@ def get_route_matrix_provider() -> RouteMatrixProvider:
     force_memory = _as_bool(os.environ.get("USE_IN_MEMORY_ROUTE_MATRIX"), default=False)
     if force_memory:
         return _IN_MEMORY_ROUTE_MATRIX_PROVIDER
+
+    # Prefer ORS when configured.
+    ors = get_ors_provider()
+    if ors is not None:
+        return ors
 
     calculator_name = os.environ.get("LOCATION_ROUTE_CALCULATOR_NAME", "").strip()
     if calculator_name:

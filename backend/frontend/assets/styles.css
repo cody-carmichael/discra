@@ -2275,6 +2275,14 @@ body.theme-admin .billing-seat-cards .stat-card small {
   border-color: #f39c12;
 }
 
+.map-stat-chip-route {
+  border-color: #e63946;
+}
+.map-stat-chip-route .map-stat-chip-value {
+  color: #e63946;
+  font-size: 0.72rem;
+}
+
 .map-stat-chip-label {
   font-size: 0.64rem;
   color: var(--text-muted);
@@ -2504,3 +2512,27 @@ body.theme-admin .billing-seat-cards .stat-card small {
     display: none;
   }
 }
+
+/* Photon address autocomplete dropdown */
+.autocomplete-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--surface-card, #141b24);
+  border: 1px solid var(--border, #1e293b);
+  border-radius: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.autocomplete-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border, #1e293b);
+}
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:hover { background: rgba(255,255,255,0.05); }
+.autocomplete-item strong { color: var(--text-primary, #e2e8f0); }
+.autocomplete-item small { color: var(--text-secondary, #94a3b8); }

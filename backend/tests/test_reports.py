@@ -27,12 +27,18 @@ def make_token(sub: str, org_id: str, groups):
     return f"{header.decode()}.{body.decode()}."
 
 
-def make_order_payload(customer_name: str, reference_number: int):
+def make_order_payload(customer_name: str, reference_id: str):
     return {
         "customer_name": customer_name,
-        "reference_number": reference_number,
-        "pick_up_address": "Warehouse A",
-        "delivery": f"{reference_number} Main St",
+        "reference_id": reference_id,
+        "pick_up_street": "Warehouse A",
+        "pick_up_city": "Test City",
+        "pick_up_state": "TS",
+        "pick_up_zip": "00000",
+        "delivery_street": f"{reference_id} Main St",
+        "delivery_city": "Dest City",
+        "delivery_state": "DS",
+        "delivery_zip": "99999",
         "dimensions": "12x8x5 in",
         "weight": 4.5,
         "num_packages": 1,
@@ -55,9 +61,9 @@ def test_dispatch_summary_reports_orders_and_active_drivers():
     driver_1 = make_token("driver-1", org_id, ["Driver"])
     driver_2 = make_token("driver-2", org_id, ["Driver"])
 
-    order_1 = client.post("/orders/", json=make_order_payload("Order 1", 1101), headers={"Authorization": f"Bearer {admin_token}"})
-    order_2 = client.post("/orders/", json=make_order_payload("Order 2", 1102), headers={"Authorization": f"Bearer {admin_token}"})
-    order_3 = client.post("/orders/", json=make_order_payload("Order 3", 1103), headers={"Authorization": f"Bearer {admin_token}"})
+    order_1 = client.post("/orders/", json=make_order_payload("Order 1", "1101"), headers={"Authorization": f"Bearer {admin_token}"})
+    order_2 = client.post("/orders/", json=make_order_payload("Order 2", "1102"), headers={"Authorization": f"Bearer {admin_token}"})
+    order_3 = client.post("/orders/", json=make_order_payload("Order 3", "1103"), headers={"Authorization": f"Bearer {admin_token}"})
     assert order_1.status_code == 200
     assert order_2.status_code == 200
     assert order_3.status_code == 200

@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/styles.css?v=20260322f">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322h">
 </head>
 <body class="theme-admin">
 
@@ -84,6 +84,10 @@
               <span class="map-stat-chip-label">Due Soon</span>
               <strong class="map-stat-chip-value stat-warning" id="stats-upcoming-due">0</strong>
             </button>
+            <div class="map-stat-chip map-stat-chip-route" id="route-stats-chip" style="display:none">
+              <span class="map-stat-chip-label">Route</span>
+              <strong class="map-stat-chip-value" id="route-stats"></strong>
+            </div>
           </div>
 
           <div id="driver-map" class="dispatch-map-container"></div>
@@ -178,7 +182,7 @@
                 <option value="pickup_deadline">Pickup Deadline</option>
                 <option value="created_at">Created At</option>
                 <option value="customer_name">Customer</option>
-                <option value="reference_number">Reference Number</option>
+                <option value="reference_id">Reference ID</option>
                 <option value="status">Status</option>
                 <option value="assigned_to">Assigned Driver</option>
               </select>
@@ -202,7 +206,7 @@
                 <tr>
                   <th><input id="select-all-orders" type="checkbox" aria-label="Select all orders"></th>
                   <th><button class="table-sort" type="button" data-order-sort-field="customer_name">Order</button></th>
-                  <th><button class="table-sort" type="button" data-order-sort-field="pick_up_address">Stops</button></th>
+                  <th><button class="table-sort" type="button" data-order-sort-field="pick_up_street">Stops</button></th>
                   <th><button class="table-sort" type="button" data-order-sort-field="pickup_deadline">Deadlines</button></th>
                   <th><button class="table-sort" type="button" data-order-sort-field="time_window_end">Window</button></th>
                   <th><button class="table-sort" type="button" data-order-sort-field="assigned_to">Assignment</button></th>
@@ -229,9 +233,15 @@
             <p class="panel-help">Capture complete order details, then move to optimization and assignment.</p>
             <form id="create-order-form" class="form-grid">
               <label class="field"><span>Customer Name</span><input name="customer_name" required></label>
-              <label class="field"><span>Reference Number</span><input name="reference_number" type="number" min="1" required></label>
-              <label class="field"><span>Pick Up Address</span><input name="pick_up_address" required></label>
-              <label class="field"><span>Delivery</span><input name="delivery" required></label>
+              <label class="field"><span>Reference ID</span><input name="reference_id" type="text" required></label>
+              <label class="field field-span-2"><span>Pick Up Street</span><input name="pick_up_street" required></label>
+              <label class="field"><span>Pick Up City</span><input name="pick_up_city" required></label>
+              <label class="field"><span>Pick Up State</span><input name="pick_up_state" required></label>
+              <label class="field"><span>Pick Up Zip</span><input name="pick_up_zip" required></label>
+              <label class="field field-span-2"><span>Delivery Street</span><input name="delivery_street" required></label>
+              <label class="field"><span>Delivery City</span><input name="delivery_city" required></label>
+              <label class="field"><span>Delivery State</span><input name="delivery_state" required></label>
+              <label class="field"><span>Delivery Zip</span><input name="delivery_zip" required></label>
               <label class="field"><span>Dimensions</span><input name="dimensions" placeholder="e.g. 12x8x5 in" required></label>
               <label class="field"><span>Weight</span><input name="weight" type="number" step="any" min="0.01" required></label>
               <label class="field"><span>Time Window Start</span><input name="time_window_start" type="datetime-local"></label>
@@ -247,24 +257,6 @@
             <p id="create-order-message" class="message"></p>
           </section>
 
-          <section class="panel">
-            <div class="panel-title-row">
-              <h2>Route Optimization</h2>
-            </div>
-            <p class="panel-help">Optimize assigned stops for one driver, then export route guidance.</p>
-            <form id="optimize-form" class="form-grid">
-              <label class="field"><span>Driver ID</span><input name="driver_id" required></label>
-              <label class="field"><span>Start Latitude (optional)</span><input name="start_lat" type="number" step="any"></label>
-              <label class="field"><span>Start Longitude (optional)</span><input name="start_lng" type="number" step="any"></label>
-              <label class="field field-span-2">
-                <span>Stops JSON override (optional)</span>
-                <textarea name="stops_json" rows="4" placeholder='[{"order_id":"id","lat":37.77,"lng":-122.42}]'></textarea>
-              </label>
-              <button class="btn btn-accent field-span-2" type="submit">Optimize Stops</button>
-            </form>
-            <div id="route-result" class="data-surface">No route computed yet.</div>
-            <p id="route-message" class="message"></p>
-          </section>
         </div>
       </div>
     </section>
@@ -466,7 +458,7 @@
   <span id="assigned-queue-count" hidden>0</span>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260322f"></script>
-  <script src="assets/admin.js?v=20260322f"></script>
+  <script src="assets/common.js?v=20260322h"></script>
+  <script src="assets/admin.js?v=20260322h"></script>
 </body>
 </html>

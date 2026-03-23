@@ -52,9 +52,9 @@
     refreshDrivers: document.getElementById("refresh-drivers"),
     driversMessage: document.getElementById("drivers-message"),
     driverList: document.getElementById("driver-list"),
-    optimizeForm: document.getElementById("optimize-form"),
-    routeResult: document.getElementById("route-result"),
-    routeMessage: document.getElementById("route-message"),
+    optimizeForm: document.getElementById("optimize-form"),  // removed from DOM
+    routeResult: document.getElementById("route-result"),    // removed from DOM
+    routeMessage: document.getElementById("route-message"),  // removed from DOM
     refreshDispatchSummary: document.getElementById("refresh-dispatch-summary"),
     dispatchSummaryForm: document.getElementById("dispatch-summary-form"),
     dispatchActiveMinutes: document.getElementById("dispatch-active-minutes"),
@@ -112,6 +112,8 @@
   let map = null;
   let mapMarkers = [];
   let mapStyleUrl = defaultMapStyle;
+  let activeRouteSourceId = "route-line-source";
+  let activeRouteLayerId = "route-line-layer";
   let driverRefreshTimer = null;
   let allOrders = [];
   let lastOrders = [];
@@ -242,8 +244,8 @@
       var badgeClass = isUnassigned ? "badge-unassigned" : _statusBadgeClass(order.status);
       var driverLabel = isUnassigned ? "Unassigned" : C.escapeHtml(order.assigned_to);
       var dotClass = isUnassigned ? "dispatch-driver-dot unassigned" : "dispatch-driver-dot";
-      var pickup = C.escapeHtml(order.pick_up_address || "-");
-      var delivery = C.escapeHtml(order.delivery || "-");
+      var pickup = C.escapeHtml([order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-");
+      var delivery = C.escapeHtml([order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-");
       if (pickup.length > 32) pickup = pickup.substring(0, 30) + "...";
       if (delivery.length > 32) delivery = delivery.substring(0, 30) + "...";
 
@@ -540,9 +542,11 @@
       });
     }
     el.refreshDrivers.disabled = !enabled;
-    el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
-      element.disabled = !enabled;
-    });
+    if (el.optimizeForm) {
+      el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
+        element.disabled = !enabled;
+      });
+    }
     el.refreshDispatchSummary.disabled = !enabled;
     el.dispatchSummaryForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
@@ -643,8 +647,8 @@
     if (field === "created_at") {
       return _parseDateOrNull(order.created_at);
     }
-    if (field === "reference_number") {
-      return Number.isFinite(order.reference_number) ? order.reference_number : Number.parseInt(order.reference_number || "0", 10) || 0;
+    if (field === "reference_id") {
+      return (order.reference_id || "").toLowerCase();
     }
     const raw = order[field];
     if (raw === null || raw === undefined) {
@@ -676,14 +680,16 @@
     if (!search) {
       return true;
     }
-    const ref = order.reference_number === null || order.reference_number === undefined ? "" : String(order.reference_number);
+    const ref = order.reference_id || "";
+    const pickupFull = [order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(" ");
+    const deliveryFull = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(" ");
     const haystack = [
       order.id,
       order.external_order_id,
       order.customer_name,
       ref,
-      order.pick_up_address,
-      order.delivery,
+      pickupFull,
+      deliveryFull,
       order.assigned_to,
       order.status,
       order.pickup_deadline,
@@ -843,7 +849,7 @@
               "<p>Order: " +
               C.escapeHtml(order.id) +
               "<br>Dropoff: " +
-              C.escapeHtml(order.delivery || "-") +
+              C.escapeHtml([order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-") +
               "<br>" +
               C.escapeHtml(_formatOrderDeadlines(order)) +
               "</p>" +
@@ -923,6 +929,7 @@
     renderDriverList(lastDriverLocations);
     renderDriverMarkers(lastDriverLocations, { focusDriverId: safeDriverId, keepCurrentViewport: !!(options && options.keepViewport) });
     renderAssignmentQueues(allOrders);
+    fetchAndDrawRoute(safeDriverId);
     if (!(options && options.silent) && safeDriverId) {
       C.showMessage(el.assignmentMessage || el.ordersMessage, "Selected driver " + safeDriverId + ".", "success");
     }
@@ -1073,7 +1080,7 @@
       el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
       el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
       el.auditLogsView.innerHTML = "No audit logs loaded.";
-      el.routeResult.innerHTML = "No route computed yet.";
+      if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
       return;
     }
     isAuthorizedRole = hasAllowedRole(claims);
@@ -1370,9 +1377,15 @@
     const dropoffDeadline = dropoffDeadlineDate && !Number.isNaN(dropoffDeadlineDate.getTime()) ? dropoffDeadlineDate.toISOString() : null;
     const payload = {
       customer_name: formData.get("customer_name"),
-      reference_number: C.toIntOrNull(formData.get("reference_number")),
-      pick_up_address: formData.get("pick_up_address"),
-      delivery: formData.get("delivery"),
+      reference_id: formData.get("reference_id"),
+      pick_up_street: formData.get("pick_up_street"),
+      pick_up_city: formData.get("pick_up_city"),
+      pick_up_state: formData.get("pick_up_state"),
+      pick_up_zip: formData.get("pick_up_zip"),
+      delivery_street: formData.get("delivery_street"),
+      delivery_city: formData.get("delivery_city"),
+      delivery_state: formData.get("delivery_state"),
+      delivery_zip: formData.get("delivery_zip"),
       dimensions: formData.get("dimensions"),
       weight: C.toNumberOrNull(formData.get("weight")),
       time_window_start: timeWindowStart,
@@ -1386,6 +1399,73 @@
     };
     return payload;
   }
+
+  // --- Photon address autocomplete ---
+  var autocompleteTimeout = null;
+  function setupAddressAutocomplete(streetInput, cityInput, stateInput, zipInput) {
+    if (!streetInput) return;
+    var dropdown = document.createElement("div");
+    dropdown.className = "autocomplete-dropdown";
+    dropdown.style.display = "none";
+    streetInput.parentElement.style.position = "relative";
+    streetInput.parentElement.appendChild(dropdown);
+
+    streetInput.addEventListener("input", function () {
+      clearTimeout(autocompleteTimeout);
+      var query = streetInput.value.trim();
+      if (query.length < 3) { dropdown.style.display = "none"; return; }
+      autocompleteTimeout = setTimeout(function () {
+        fetch("https://photon.komoot.io/api/?q=" + encodeURIComponent(query) + "&limit=5")
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            dropdown.innerHTML = "";
+            if (!data.features || data.features.length === 0) { dropdown.style.display = "none"; return; }
+            data.features.forEach(function (f) {
+              var props = f.properties;
+              var item = document.createElement("div");
+              item.className = "autocomplete-item";
+              var parts = [props.housenumber, props.street].filter(Boolean).join(" ");
+              var line2 = [props.city || props.town || props.village, props.state, props.postcode].filter(Boolean).join(", ");
+              item.innerHTML = "<strong>" + C.escapeHtml(parts || props.name || "") + "</strong><br><small>" + C.escapeHtml(line2) + "</small>";
+              item.addEventListener("click", function () {
+                streetInput.value = parts || props.name || "";
+                if (cityInput) cityInput.value = props.city || props.town || props.village || "";
+                if (stateInput) stateInput.value = props.state || "";
+                if (zipInput) zipInput.value = props.postcode || "";
+                dropdown.style.display = "none";
+              });
+              dropdown.appendChild(item);
+            });
+            dropdown.style.display = "block";
+          })
+          .catch(function () { dropdown.style.display = "none"; });
+      }, 300);
+    });
+
+    document.addEventListener("click", function (e) {
+      if (!streetInput.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = "none";
+      }
+    });
+  }
+
+  // Wire up autocomplete for pick-up and delivery street fields
+  (function () {
+    var form = el.createForm;
+    if (!form) return;
+    setupAddressAutocomplete(
+      form.querySelector("[name='pick_up_street']"),
+      form.querySelector("[name='pick_up_city']"),
+      form.querySelector("[name='pick_up_state']"),
+      form.querySelector("[name='pick_up_zip']")
+    );
+    setupAddressAutocomplete(
+      form.querySelector("[name='delivery_street']"),
+      form.querySelector("[name='delivery_city']"),
+      form.querySelector("[name='delivery_state']"),
+      form.querySelector("[name='delivery_zip']")
+    );
+  })();
 
   async function createOrder(event) {
     event.preventDefault();
@@ -1451,15 +1531,15 @@
         "></td>" +
         "<td>" +
         C.escapeHtml(order.customer_name) +
-        "<br><small>Ref #" +
-        C.escapeHtml(order.reference_number || "-") +
+        "<br><small>Ref " +
+        C.escapeHtml(order.reference_id || "-") +
         "</small><br>" +
         orderCell(order) +
         "</td>" +
         "<td><small>Pick Up</small><br>" +
-        C.escapeHtml(order.pick_up_address || "-") +
+        C.escapeHtml([order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-") +
         "<br><small>Delivery</small><br>" +
-        C.escapeHtml(order.delivery || "-") +
+        C.escapeHtml([order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-") +
         "<br><small>Dim: " +
         C.escapeHtml(order.dimensions || "-") +
         " | Wt: " +
@@ -1546,12 +1626,12 @@
         "<p class=\"mobile-order-meta\">" +
         "Order: " +
         C.escapeHtml(order.id) +
-        "<br>Ref #: " +
-        C.escapeHtml(order.reference_number || "-") +
+        "<br>Ref: " +
+        C.escapeHtml(order.reference_id || "-") +
         "<br>Pick Up: " +
-        C.escapeHtml(order.pick_up_address || "-") +
+        C.escapeHtml([order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-") +
         "<br>Delivery: " +
-        C.escapeHtml(order.delivery || "-") +
+        C.escapeHtml([order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-") +
         "<br>Window: " +
         C.escapeHtml(C.formatTimestamp(order.time_window_start)) +
         " -> " +
@@ -1756,6 +1836,83 @@
       zoom: 4,
     });
     return map;
+  }
+
+  // ── Route polyline drawing ──────────────────────────────────────────
+
+  function clearRouteLayer() {
+    var currentMap = ensureMap();
+    if (!currentMap) return;
+    if (currentMap.getLayer(activeRouteLayerId)) {
+      currentMap.removeLayer(activeRouteLayerId);
+    }
+    if (currentMap.getSource(activeRouteSourceId)) {
+      currentMap.removeSource(activeRouteSourceId);
+    }
+    var chipEl = document.getElementById("route-stats-chip");
+    if (chipEl) chipEl.style.display = "none";
+  }
+
+  function drawRoutePolyline(coordinates) {
+    var currentMap = ensureMap();
+    if (!currentMap || !coordinates || coordinates.length < 2) return;
+    clearRouteLayer();
+
+    var geojson = {
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: coordinates },
+    };
+
+    currentMap.addSource(activeRouteSourceId, { type: "geojson", data: geojson });
+    currentMap.addLayer({
+      id: activeRouteLayerId,
+      type: "line",
+      source: activeRouteSourceId,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": "#e63946",
+        "line-width": 4,
+        "line-opacity": 0.85,
+      },
+    });
+  }
+
+  function fetchAndDrawRoute(driverId) {
+    if (!driverId || !token) {
+      clearRouteLayer();
+      return;
+    }
+    C.apiFetch("/routes/directions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ driver_id: driverId }),
+    })
+      .then(function (resp) {
+        if (!resp.ok) {
+          clearRouteLayer();
+          return;
+        }
+        return resp.json();
+      })
+      .then(function (data) {
+        if (!data || !data.coordinates || data.coordinates.length < 2) {
+          clearRouteLayer();
+          return;
+        }
+        drawRoutePolyline(data.coordinates);
+        // Update route stats chip overlay on map.
+        var statsEl = document.getElementById("route-stats");
+        var chipEl = document.getElementById("route-stats-chip");
+        if (statsEl) {
+          var miles = (data.distance_meters / 1609.344).toFixed(1);
+          var mins = Math.round(data.duration_seconds / 60);
+          statsEl.textContent = data.ordered_stops.length + " stops · " + miles + " mi · ~" + mins + " min";
+          if (chipEl) chipEl.style.display = "";
+        }
+      })
+      .catch(function () {
+        clearRouteLayer();
+      });
   }
 
   function renderDriverMarkers(driverLocations, options) {
@@ -2358,100 +2515,7 @@
     }
   }
 
-  function renderRouteResult(result) {
-    if (!result || typeof result !== "object") {
-      el.routeResult.innerHTML = "No route computed yet.";
-      return;
-    }
-    const stops = Array.isArray(result.ordered_stops) ? result.ordered_stops : [];
-    const stopMarkup = stops.length
-      ? stops.map(function (stop) {
-          return (
-            "<li class=\"route-stop-item\">" +
-            "<div class=\"route-stop-head\">" +
-            "<strong>Stop " +
-            C.escapeHtml(String(stop.sequence || 0)) +
-            "</strong>" +
-            "<small>Order " +
-            C.escapeHtml(stop.order_id || "-") +
-            "</small>" +
-            "</div>" +
-            "<p>" +
-            C.escapeHtml(stop.address || (stop.lat + ", " + stop.lng)) +
-            "</p>" +
-            "<p>Leg: " +
-            C.escapeHtml(formatDistanceMiles(stop.distance_from_previous_meters)) +
-            " / " +
-            C.escapeHtml(formatDurationMinutes(stop.duration_from_previous_seconds)) +
-            "</p>" +
-            "</li>"
-          );
-        }).join("")
-      : "<li class=\"route-stop-item\"><p>No stops returned by optimizer.</p></li>";
-
-    el.routeResult.innerHTML =
-      "<div class=\"metric-grid\">" +
-      "<div class=\"metric-item\"><span>Stops</span><strong>" +
-      C.escapeHtml(String(stops.length)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Total Distance</span><strong>" +
-      C.escapeHtml(formatDistanceMiles(result.total_distance_meters)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Total Duration</span><strong>" +
-      C.escapeHtml(formatDurationMinutes(result.total_duration_seconds)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Matrix Source</span><strong>" +
-      C.escapeHtml(result.matrix_source || "-") +
-      "</strong></div>" +
-      "</div>" +
-      "<ul class=\"route-stop-list\">" +
-      stopMarkup +
-      "</ul>";
-  }
-
-  async function optimizeRoute(event) {
-    event.preventDefault();
-    if (!requireAuthorized(el.routeMessage)) {
-      return;
-    }
-    const formData = new FormData(el.optimizeForm);
-    const driverId = (formData.get("driver_id") || "").trim();
-    if (!driverId) {
-      C.showMessage(el.routeMessage, "Driver ID is required.", "error");
-      return;
-    }
-    const payload = {
-      driver_id: driverId,
-      start_lat: C.toNumberOrNull(formData.get("start_lat")),
-      start_lng: C.toNumberOrNull(formData.get("start_lng")),
-    };
-    const stopsJson = (formData.get("stops_json") || "").trim();
-    if (stopsJson) {
-      try {
-        const parsedStops = JSON.parse(stopsJson);
-        if (!Array.isArray(parsedStops)) {
-          throw new Error("Stops JSON must be an array.");
-        }
-        payload.stops = parsedStops;
-      } catch (error) {
-        C.showMessage(el.routeMessage, "Invalid stops JSON.", "error");
-        return;
-      }
-    }
-    try {
-      const result = await C.requestJson(apiBase, "/routes/optimize", {
-        method: "POST",
-        token,
-        json: payload,
-      });
-      const stopCount = Array.isArray(result && result.ordered_stops) ? result.ordered_stops.length : 0;
-      renderRouteResult(result);
-      setLastSyncStamp();
-      C.showMessage(el.routeMessage, "Route optimized with " + stopCount + " stops.", "success");
-    } catch (error) {
-      C.showMessage(el.routeMessage, error.message, "error");
-    }
-  }
+  // Route optimization UI removed (backend endpoint preserved)
 
   async function onOrderActionClick(event) {
     const target = event.target;
@@ -2643,7 +2707,7 @@
       renderBillingInvitations([]);
       el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
       el.auditLogsView.innerHTML = "No audit logs loaded.";
-      el.routeResult.innerHTML = "No route computed yet.";
+      if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
     }
   }
 
@@ -2676,7 +2740,7 @@
         renderDriverMarkers([]);
         renderAssignmentQueues([]);
         el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
-        el.routeResult.innerHTML = "No route computed yet.";
+        if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
         updateOrderStats([]);
         updateActiveDriverStat(0);
         C.showMessage(el.authMessage, "Session cleared.", "success");
@@ -2785,7 +2849,7 @@
       C.showMessage(el.auditMessage, error.message, "error");
     });
   });
-  el.optimizeForm.addEventListener("submit", optimizeRoute);
+  if (el.optimizeForm) { el.optimizeForm.addEventListener("submit", function(e) { e.preventDefault(); }); }
   el.refreshBilling.addEventListener("click", refreshBillingSummary);
   el.refreshInvitations.addEventListener("click", refreshBillingInvitations);
   el.billingCheckoutForm.addEventListener("submit", startBillingCheckout);

@@ -34,7 +34,7 @@ def _webhook_payload(
     customer_name: str,
     pick_up_address: str,
     delivery: str,
-    reference_number: int,
+    reference_id: str,
     time_window_start: Optional[str] = None,
     time_window_end: Optional[str] = None,
     pickup_deadline: Optional[str] = None,
@@ -43,9 +43,15 @@ def _webhook_payload(
     order_payload = {
         "external_order_id": external_order_id,
         "customer_name": customer_name,
-        "reference_number": reference_number,
-        "pick_up_address": pick_up_address,
-        "delivery": delivery,
+        "reference_id": reference_id,
+        "pick_up_street": pick_up_address,
+        "pick_up_city": "Test City",
+        "pick_up_state": "TS",
+        "pick_up_zip": "00000",
+        "delivery_street": delivery,
+        "delivery_city": "Dest City",
+        "delivery_state": "DS",
+        "delivery_zip": "99999",
         "dimensions": "12x8x6 in",
         "weight": 6.4,
         "num_packages": 1,
@@ -102,7 +108,7 @@ def _test_env(monkeypatch):
 
 
 def test_orders_webhook_rejects_missing_or_bad_token():
-    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 101)
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", "101")
 
     missing = client.post("/webhooks/orders", json=payload)
     assert missing.status_code == 401
@@ -117,7 +123,7 @@ def test_orders_webhook_rejects_missing_or_bad_token():
 
 def test_orders_webhook_requires_allowed_org_binding_configuration(monkeypatch):
     monkeypatch.delenv("ORDERS_WEBHOOK_ALLOWED_ORG_ID", raising=False)
-    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 101)
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", "101")
     response = client.post(
         "/webhooks/orders",
         json=payload,
@@ -128,7 +134,7 @@ def test_orders_webhook_requires_allowed_org_binding_configuration(monkeypatch):
 
 
 def test_orders_webhook_rejects_mismatched_org():
-    payload = _webhook_payload("org-2", "ext-1", "Alice", "Warehouse A", "100 Main", 102)
+    payload = _webhook_payload("org-2", "ext-1", "Alice", "Warehouse A", "100 Main", "102")
     response = client.post(
         "/webhooks/orders",
         json=payload,
@@ -140,7 +146,7 @@ def test_orders_webhook_rejects_mismatched_org():
 
 def test_orders_webhook_requires_signature_headers_when_hmac_secret_configured(monkeypatch):
     monkeypatch.setenv("ORDERS_WEBHOOK_HMAC_SECRET", "hmac-secret")
-    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 111)
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", "111")
     response = client.post(
         "/webhooks/orders",
         json=payload,
@@ -152,7 +158,7 @@ def test_orders_webhook_requires_signature_headers_when_hmac_secret_configured(m
 
 def test_orders_webhook_rejects_invalid_hmac_signature(monkeypatch):
     monkeypatch.setenv("ORDERS_WEBHOOK_HMAC_SECRET", "hmac-secret")
-    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 112)
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", "112")
     headers, raw_payload = _signed_orders_webhook_headers(payload, secret="wrong-secret")
     response = client.post("/webhooks/orders", content=raw_payload, headers=headers)
     assert response.status_code == 401
@@ -162,7 +168,7 @@ def test_orders_webhook_rejects_invalid_hmac_signature(monkeypatch):
 def test_orders_webhook_rejects_stale_hmac_timestamp(monkeypatch):
     monkeypatch.setenv("ORDERS_WEBHOOK_HMAC_SECRET", "hmac-secret")
     monkeypatch.setenv("ORDERS_WEBHOOK_MAX_SKEW_SECONDS", "10")
-    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 113)
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", "113")
     stale_timestamp = int(time.time()) - 120
     headers, raw_payload = _signed_orders_webhook_headers(
         payload,
@@ -176,7 +182,7 @@ def test_orders_webhook_rejects_stale_hmac_timestamp(monkeypatch):
 
 def test_orders_webhook_accepts_valid_hmac_signature(monkeypatch):
     monkeypatch.setenv("ORDERS_WEBHOOK_HMAC_SECRET", "hmac-secret")
-    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 114)
+    payload = _webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", "114")
     headers, raw_payload = _signed_orders_webhook_headers(
         payload,
         secret="hmac-secret",
@@ -195,9 +201,15 @@ def test_orders_webhook_creates_orders_visible_to_dispatchers():
             {
                 "external_order_id": "ext-1",
                 "customer_name": "Alice",
-                "reference_number": 201,
-                "pick_up_address": "Warehouse A",
-                "delivery": "100 Main",
+                "reference_id": "201",
+                "pick_up_street": "Warehouse A",
+                "pick_up_city": "Test City",
+                "pick_up_state": "TS",
+                "pick_up_zip": "00000",
+                "delivery_street": "100 Main",
+                "delivery_city": "Dest City",
+                "delivery_state": "DS",
+                "delivery_zip": "99999",
                 "dimensions": "12x8x6 in",
                 "weight": 6.4,
                 "num_packages": 2,
@@ -205,9 +217,15 @@ def test_orders_webhook_creates_orders_visible_to_dispatchers():
             {
                 "external_order_id": "ext-2",
                 "customer_name": "Bob",
-                "reference_number": 202,
-                "pick_up_address": "Warehouse B",
-                "delivery": "200 Main",
+                "reference_id": "202",
+                "pick_up_street": "Warehouse B",
+                "pick_up_city": "Test City",
+                "pick_up_state": "TS",
+                "pick_up_zip": "00000",
+                "delivery_street": "200 Main",
+                "delivery_city": "Dest City",
+                "delivery_state": "DS",
+                "delivery_zip": "99999",
                 "dimensions": "10x8x5 in",
                 "weight": 4.2,
                 "num_packages": 1,
@@ -244,7 +262,7 @@ def test_orders_webhook_persists_time_window_fields():
         "Alice",
         "Warehouse A",
         "100 Main",
-        221,
+        "221",
         time_window_start="2026-03-02T10:00:00Z",
         time_window_end="2026-03-02T12:30:00Z",
     )
@@ -274,7 +292,7 @@ def test_orders_webhook_rejects_invalid_time_window():
         "Alice",
         "Warehouse A",
         "100 Main",
-        222,
+        "222",
         time_window_start="2026-03-02T13:00:00Z",
         time_window_end="2026-03-02T12:30:00Z",
     )
@@ -293,7 +311,7 @@ def test_orders_webhook_persists_pickup_and_dropoff_deadlines():
         "Alice",
         "Warehouse A",
         "100 Main",
-        223,
+        "223",
         pickup_deadline="2026-03-02T09:30:00Z",
         dropoff_deadline="2026-03-02T14:15:00Z",
     )
@@ -323,7 +341,7 @@ def test_orders_webhook_rejects_invalid_dropoff_deadline():
         "Alice",
         "Warehouse A",
         "100 Main",
-        224,
+        "224",
         pickup_deadline="2026-03-02T14:30:00Z",
         dropoff_deadline="2026-03-02T13:30:00Z",
     )
@@ -343,9 +361,15 @@ def test_orders_webhook_rejects_duplicate_external_ids_in_single_payload():
             {
                 "external_order_id": "ext-1",
                 "customer_name": "Alice",
-                "reference_number": 251,
-                "pick_up_address": "Warehouse A",
-                "delivery": "100 Main",
+                "reference_id": "251",
+                "pick_up_street": "Warehouse A",
+                "pick_up_city": "Test City",
+                "pick_up_state": "TS",
+                "pick_up_zip": "00000",
+                "delivery_street": "100 Main",
+                "delivery_city": "Dest City",
+                "delivery_state": "DS",
+                "delivery_zip": "99999",
                 "dimensions": "12x8x6 in",
                 "weight": 6.4,
                 "num_packages": 1,
@@ -353,9 +377,15 @@ def test_orders_webhook_rejects_duplicate_external_ids_in_single_payload():
             {
                 "external_order_id": "ext-1",
                 "customer_name": "Bob",
-                "reference_number": 252,
-                "pick_up_address": "Warehouse B",
-                "delivery": "200 Main",
+                "reference_id": "252",
+                "pick_up_street": "Warehouse B",
+                "pick_up_city": "Test City",
+                "pick_up_state": "TS",
+                "pick_up_zip": "00000",
+                "delivery_street": "200 Main",
+                "delivery_city": "Dest City",
+                "delivery_state": "DS",
+                "delivery_zip": "99999",
                 "dimensions": "10x8x5 in",
                 "weight": 4.2,
                 "num_packages": 1,
@@ -374,7 +404,7 @@ def test_orders_webhook_rejects_duplicate_external_ids_in_single_payload():
 def test_orders_webhook_upserts_by_external_id_and_preserves_assignment():
     initial = client.post(
         "/webhooks/orders",
-        json=_webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 301),
+        json=_webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", "301"),
         headers={"x-orders-webhook-token": "orders-secret"},
     )
     assert initial.status_code == 200
@@ -390,7 +420,7 @@ def test_orders_webhook_upserts_by_external_id_and_preserves_assignment():
 
     update = client.post(
         "/webhooks/orders",
-        json=_webhook_payload("org-1", "ext-1", "Alice Updated", "Warehouse Z", "999 Main", 301),
+        json=_webhook_payload("org-1", "ext-1", "Alice Updated", "Warehouse Z", "999 Main", "301"),
         headers={"x-orders-webhook-token": "orders-secret"},
     )
     assert update.status_code == 200
@@ -405,8 +435,8 @@ def test_orders_webhook_upserts_by_external_id_and_preserves_assignment():
     assert order.status_code == 200
     body = order.json()
     assert body["customer_name"] == "Alice Updated"
-    assert body["delivery"] == "999 Main"
-    assert body["pick_up_address"] == "Warehouse Z"
+    assert body["delivery_street"] == "999 Main"
+    assert body["pick_up_street"] == "Warehouse Z"
     assert body["status"] == "Assigned"
     assert body["assigned_to"] == "driver-1"
 
@@ -414,12 +444,12 @@ def test_orders_webhook_upserts_by_external_id_and_preserves_assignment():
 def test_orders_webhook_supports_same_external_id_across_orgs():
     org1 = client.post(
         "/webhooks/orders",
-        json=_webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", 401),
+        json=_webhook_payload("org-1", "ext-1", "Alice", "Warehouse A", "100 Main", "401"),
         headers={"x-orders-webhook-token": "orders-secret"},
     )
     org2 = client.post(
         "/webhooks/orders",
-        json=_webhook_payload("org-2", "ext-1", "Bob", "Warehouse B", "200 Main", 501),
+        json=_webhook_payload("org-2", "ext-1", "Bob", "Warehouse B", "200 Main", "501"),
         headers={"x-orders-webhook-token": "orders-secret"},
     )
     assert org1.status_code == 200

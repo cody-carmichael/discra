@@ -1916,11 +1916,10 @@
 
   function _unassignedPinSvg() {
     return (
-      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">' +
-      '<path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 24 16 24s16-14 16-24C32 7.163 24.837 0 16 0z" fill="#e63946"/>' +
-      '<path d="M16 4C9.373 4 4 9.373 4 16c0 1.5.3 2.9.8 4.2L16 32l11.2-11.8c.5-1.3.8-2.7.8-4.2 0-6.627-5.373-12-12-12z" fill="#1a1a2e" stroke="#e63946" stroke-width="0.5"/>' +
-      '<rect x="14" y="9" width="4" height="10" rx="1.5" fill="#f5c542"/>' +
-      '<circle cx="16" cy="23" r="2.2" fill="#f5c542"/>' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">' +
+      '<circle cx="14" cy="14" r="13" fill="#f5c542" stroke="#1a1a2e" stroke-width="2"/>' +
+      '<rect x="12" y="6" width="4" height="10" rx="1.5" fill="#1a1a2e"/>' +
+      '<circle cx="14" cy="20" r="2.2" fill="#1a1a2e"/>' +
       '</svg>'
     );
   }
@@ -1961,13 +1960,15 @@
 
   function _placeOrderPin(order, coords, currentMap) {
     var pinEl = _createPinElement();
-    var popup = new window.maplibregl.Popup({ offset: 20 }).setHTML(
-      "<strong>" + C.escapeHtml(order.customer_name) + "</strong><br>" +
-      "<span style='color:#e63946;font-weight:600'>UNASSIGNED</span><br>" +
-      "<small>" + C.escapeHtml(order.delivery_street || "") + "</small><br>" +
-      "<small>Ref: " + C.escapeHtml(order.reference_id || "-") + "</small>"
+    var popup = new window.maplibregl.Popup({ offset: 15, className: "order-popup" }).setHTML(
+      "<div class='order-popup-content'>" +
+      "<strong class='order-popup-name'>" + C.escapeHtml(order.customer_name) + "</strong>" +
+      "<span class='order-popup-status'>UNASSIGNED</span>" +
+      "<span class='order-popup-address'>" + C.escapeHtml(order.delivery_street || "") + "</span>" +
+      "<span class='order-popup-ref'>Ref: " + C.escapeHtml(order.reference_id || "-") + "</span>" +
+      "</div>"
     );
-    var marker = new window.maplibregl.Marker({ element: pinEl, anchor: "bottom" })
+    var marker = new window.maplibregl.Marker({ element: pinEl, anchor: "center" })
       .setLngLat(coords)
       .setPopup(popup)
       .addTo(currentMap);

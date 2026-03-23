@@ -112,7 +112,7 @@ def test_optimize_rejects_driver_role():
 def test_optimize_assigned_orders_reports_geocode_failures():
     dispatcher_token = make_token("dispatcher-1", "org-1", ["Dispatcher"])
     driver_id = "driver-1"
-    set_in_memory_geocode_failure("Missing delivery address")
+    set_in_memory_geocode_failure("Missing delivery address, Dest City, DS, 99999")
 
     create = client.post(
         "/orders/",

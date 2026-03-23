@@ -135,7 +135,7 @@ def _ui_config_payload(*, admin_redirect_path: str, driver_redirect_path: str, r
         "onboarding_enabled": (os.environ.get("ENABLE_ONBOARDING_FLOW", "true").strip().lower() in {"1", "true", "yes", "on"}),
         "register_url_path": register_redirect_path,
         "review_url_path": review_redirect_path,
-        "map_style_url": os.environ.get("FRONTEND_MAP_STYLE_URL", "https://demotiles.maplibre.org/style.json"),
+        "map_style_url": os.environ.get("FRONTEND_MAP_STYLE_URL", "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"),
         "dev_auth_enabled": dev_auth_enabled,
         "dev_auth_profiles": _dev_auth_profiles() if dev_auth_enabled else [],
     }

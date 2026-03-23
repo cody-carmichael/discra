@@ -2,7 +2,7 @@
   const C = window.DiscraCommon;
   const storageKey = "discra_admin_auth";
   const apiBase = C.deriveApiBase("/ui/admin");
-  const defaultMapStyle = "https://demotiles.maplibre.org/style.json";
+  const defaultMapStyle = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
   const terminalStatuses = new Set(["Delivered", "Failed"]);
   const dueSoonMinutes = 120;
   const adminAllowedRoles = ["Admin", "Dispatcher"];
@@ -111,6 +111,7 @@
   let token = "";
   let map = null;
   let mapMarkers = [];
+  let orderMarkers = [];
   let mapStyleUrl = defaultMapStyle;
   let activeRouteSourceId = "route-line-source";
   let activeRouteLayerId = "route-line-layer";
@@ -1690,6 +1691,7 @@
       const orders = await C.requestJson(apiBase, _ordersPathFromFilters(), { token });
       allOrders = Array.isArray(orders) ? orders : [];
       updateOrderStats(allOrders);
+      renderOrderPins(allOrders);
       const filteredOrders = _applyOrderFiltersAndSort(allOrders);
       renderOrders(filteredOrders || []);
       setLastSyncStamp();
@@ -1905,6 +1907,85 @@
       .catch(function () {
         clearRouteLayer();
       });
+  }
+
+  // ── Order pins (unassigned orders on the map) ──────────────────────
+
+  var _orderGeoCache = {};
+
+  function _unassignedPinSvg() {
+    return (
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">' +
+      '<path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 24 16 24s16-14 16-24C32 7.163 24.837 0 16 0z" fill="#e63946"/>' +
+      '<path d="M16 4C9.373 4 4 9.373 4 16c0 1.5.3 2.9.8 4.2L16 32l11.2-11.8c.5-1.3.8-2.7.8-4.2 0-6.627-5.373-12-12-12z" fill="#1a1a2e" stroke="#e63946" stroke-width="0.5"/>' +
+      '<rect x="14" y="9" width="4" height="10" rx="1.5" fill="#f5c542"/>' +
+      '<circle cx="16" cy="23" r="2.2" fill="#f5c542"/>' +
+      '</svg>'
+    );
+  }
+
+  function _createPinElement() {
+    var el = document.createElement("div");
+    el.innerHTML = _unassignedPinSvg();
+    el.style.cursor = "pointer";
+    el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.5))";
+    return el;
+  }
+
+  function clearOrderMarkers() {
+    orderMarkers.forEach(function (m) { m.remove(); });
+    orderMarkers = [];
+  }
+
+  function _geocodeAndPin(order, currentMap) {
+    var address = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ");
+    if (!address) return;
+
+    if (_orderGeoCache[address]) {
+      _placeOrderPin(order, _orderGeoCache[address], currentMap);
+      return;
+    }
+
+    fetch("https://photon.komoot.io/api/?q=" + encodeURIComponent(address) + "&limit=1")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.features || !data.features.length) return;
+        var coords = data.features[0].geometry.coordinates; // [lng, lat]
+        _orderGeoCache[address] = coords;
+        _placeOrderPin(order, coords, currentMap);
+      })
+      .catch(function () { /* silently skip */ });
+  }
+
+  function _placeOrderPin(order, coords, currentMap) {
+    var pinEl = _createPinElement();
+    var popup = new window.maplibregl.Popup({ offset: 20 }).setHTML(
+      "<strong>" + C.escapeHtml(order.customer_name) + "</strong><br>" +
+      "<span style='color:#e63946;font-weight:600'>UNASSIGNED</span><br>" +
+      "<small>" + C.escapeHtml(order.delivery_street || "") + "</small><br>" +
+      "<small>Ref: " + C.escapeHtml(order.reference_id || "-") + "</small>"
+    );
+    var marker = new window.maplibregl.Marker({ element: pinEl, anchor: "bottom" })
+      .setLngLat(coords)
+      .setPopup(popup)
+      .addTo(currentMap);
+    orderMarkers.push(marker);
+  }
+
+  function renderOrderPins(orders) {
+    var currentMap = ensureMap();
+    if (!currentMap || !window.maplibregl) return;
+    clearOrderMarkers();
+
+    var unassigned = (orders || []).filter(function (o) {
+      return !o.assigned_to && o.status !== "Delivered" && o.status !== "Failed";
+    });
+    if (!unassigned.length) return;
+
+    // Stagger geocode requests to respect Photon rate limits (1 req/s max).
+    unassigned.forEach(function (order, i) {
+      setTimeout(function () { _geocodeAndPin(order, currentMap); }, i * 200);
+    });
   }
 
   function renderDriverMarkers(driverLocations, options) {

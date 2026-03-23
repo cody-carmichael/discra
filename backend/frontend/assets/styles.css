@@ -2062,6 +2062,11 @@ body.theme-admin .billing-seat-cards .stat-card small {
   transform: translateY(-1px);
 }
 
+.dispatch-order-card-active {
+  border-color: #e63946;
+  box-shadow: 0 0 0 1px #e63946, 0 4px 12px rgba(230, 57, 70, 0.2);
+}
+
 .dispatch-order-card.is-selected {
   border-color: #e63946;
   box-shadow: 0 0 0 1px #e63946, 0 0 16px rgba(230,57,70,0.25);

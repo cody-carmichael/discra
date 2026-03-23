@@ -1912,6 +1912,7 @@
   // ── Order pins (unassigned orders on the map) ──────────────────────
 
   var _orderGeoCache = {};
+  var _orderPinCoords = {};  // orderId → [lng, lat]
 
   function _unassignedPinSvg() {
     return (
@@ -1935,6 +1936,7 @@
   function clearOrderMarkers() {
     orderMarkers.forEach(function (m) { m.remove(); });
     orderMarkers = [];
+    _orderPinCoords = {};
   }
 
   function _geocodeAndPin(order, currentMap) {
@@ -1970,6 +1972,7 @@
       .setPopup(popup)
       .addTo(currentMap);
     orderMarkers.push(marker);
+    _orderPinCoords[order.id] = coords;
   }
 
   function renderOrderPins(orders) {
@@ -1986,6 +1989,53 @@
     unassigned.forEach(function (order, i) {
       setTimeout(function () { _geocodeAndPin(order, currentMap); }, i * 200);
     });
+  }
+
+  function flyToOrderPin(orderId) {
+    var currentMap = ensureMap();
+    if (!currentMap || !orderId) return;
+
+    // Highlight the active card in the left panel.
+    var cards = document.querySelectorAll("[data-dispatch-order-id]");
+    cards.forEach(function (c) {
+      c.classList.toggle("dispatch-order-card-active", c.getAttribute("data-dispatch-order-id") === orderId);
+    });
+
+    var coords = _orderPinCoords[orderId];
+    if (coords) {
+      currentMap.flyTo({ center: coords, zoom: 14, duration: 1200 });
+      // Open the popup for this order's marker.
+      orderMarkers.forEach(function (m) {
+        var lngLat = m.getLngLat();
+        if (Math.abs(lngLat.lng - coords[0]) < 0.0001 && Math.abs(lngLat.lat - coords[1]) < 0.0001) {
+          m.togglePopup();
+        }
+      });
+      return;
+    }
+
+    // If pin not yet geocoded, geocode now and fly.
+    var order = allOrders.find(function (o) { return o.id === orderId; });
+    if (!order) return;
+    var address = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ");
+    if (!address) return;
+
+    if (_orderGeoCache[address]) {
+      _orderPinCoords[orderId] = _orderGeoCache[address];
+      currentMap.flyTo({ center: _orderGeoCache[address], zoom: 14, duration: 1200 });
+      return;
+    }
+
+    fetch("https://photon.komoot.io/api/?q=" + encodeURIComponent(address) + "&limit=1")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.features || !data.features.length) return;
+        var c = data.features[0].geometry.coordinates;
+        _orderGeoCache[address] = c;
+        _orderPinCoords[orderId] = c;
+        currentMap.flyTo({ center: c, zoom: 14, duration: 1200 });
+      })
+      .catch(function () { /* silently skip */ });
   }
 
   function renderDriverMarkers(driverLocations, options) {
@@ -2988,25 +3038,36 @@
     el.dispatchOrderList.addEventListener("click", function (event) {
       var target = event.target;
       if (!(target instanceof HTMLElement)) return;
+
+      // Handle assign button clicks.
       var btn = target.closest("[data-queue-action]");
-      if (!btn) return;
-      var action = btn.getAttribute("data-queue-action");
-      var orderId = btn.getAttribute("data-order-id");
-      if (!action || !orderId) return;
-      if (!requireAuthorized(el.assignmentMessage || el.ordersMessage)) return;
-      if (action === "assign-selected") {
-        if (!selectedDriverId) {
-          C.showMessage(el.assignmentMessage || el.ordersMessage, "Select a driver first.", "error");
-          return;
+      if (btn) {
+        var action = btn.getAttribute("data-queue-action");
+        var orderId = btn.getAttribute("data-order-id");
+        if (!action || !orderId) return;
+        if (!requireAuthorized(el.assignmentMessage || el.ordersMessage)) return;
+        if (action === "assign-selected") {
+          if (!selectedDriverId) {
+            C.showMessage(el.assignmentMessage || el.ordersMessage, "Select a driver first.", "error");
+            return;
+          }
+          assignOrder(orderId, selectedDriverId)
+            .then(function () {
+              C.showMessage(el.assignmentMessage || el.ordersMessage, "Order assigned to " + selectedDriverId + ".", "success");
+              return refreshOrders();
+            })
+            .catch(function (error) {
+              C.showMessage(el.assignmentMessage || el.ordersMessage, error.message, "error");
+            });
         }
-        assignOrder(orderId, selectedDriverId)
-          .then(function () {
-            C.showMessage(el.assignmentMessage || el.ordersMessage, "Order assigned to " + selectedDriverId + ".", "success");
-            return refreshOrders();
-          })
-          .catch(function (error) {
-            C.showMessage(el.assignmentMessage || el.ordersMessage, error.message, "error");
-          });
+        return;
+      }
+
+      // Handle order card click → fly to pin on map.
+      var card = target.closest("[data-dispatch-order-id]");
+      if (card) {
+        var clickedOrderId = card.getAttribute("data-dispatch-order-id");
+        flyToOrderPin(clickedOrderId);
       }
     });
   }

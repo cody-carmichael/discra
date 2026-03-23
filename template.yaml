@@ -19,6 +19,11 @@ Parameters:
     Type: String
     Default: exampleclientid
     Description: Cognito App Client ID (JWT audience)
+  OrsApiKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: OpenRouteService API key for directions and matrix (free tier 2000 req/day)
   LocationRouteCalculatorName:
     Type: String
     Default: ""
@@ -484,6 +489,7 @@ Resources:
           DRIVER_LOCATION_TTL_SECONDS: "7200"
           LOCATION_ROUTE_CALCULATOR_NAME: !Ref LocationRouteCalculatorName
           LOCATION_PLACE_INDEX_NAME: !Ref LocationPlaceIndexName
+          ORS_API_KEY: !Ref OrsApiKey
           USE_IN_MEMORY_ROUTE_MATRIX: "false"
           ROUTE_OPTIMIZATION_TIMEOUT_SECONDS: "5"
           SEAT_SUBSCRIPTIONS_TABLE: !Ref SeatSubscriptionsTable

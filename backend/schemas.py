@@ -419,6 +419,21 @@ class RouteOptimizeResponse(BaseModel):
     ordered_stops: List[RouteOptimizedStop]
 
 
+class RouteDirectionsRequest(BaseModel):
+    driver_id: str
+    stops: Optional[List[RouteStopInput]] = None
+    start_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    start_lng: Optional[float] = Field(default=None, ge=-180, le=180)
+
+
+class RouteDirectionsResponse(BaseModel):
+    coordinates: List[List[float]]  # [[lng, lat], ...] polyline
+    distance_meters: float
+    duration_seconds: float
+    bbox: Optional[List[float]] = None
+    ordered_stops: List[RouteOptimizedStop]
+
+
 class DispatchSummaryResponse(BaseModel):
     org_id: str
     generated_at: datetime

@@ -2275,6 +2275,14 @@ body.theme-admin .billing-seat-cards .stat-card small {
   border-color: #f39c12;
 }
 
+.map-stat-chip-route {
+  border-color: #e63946;
+}
+.map-stat-chip-route .map-stat-chip-value {
+  color: #e63946;
+  font-size: 0.72rem;
+}
+
 .map-stat-chip-label {
   font-size: 0.64rem;
   color: var(--text-muted);

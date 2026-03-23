@@ -112,6 +112,8 @@
   let map = null;
   let mapMarkers = [];
   let mapStyleUrl = defaultMapStyle;
+  let activeRouteSourceId = "route-line-source";
+  let activeRouteLayerId = "route-line-layer";
   let driverRefreshTimer = null;
   let allOrders = [];
   let lastOrders = [];
@@ -927,6 +929,7 @@
     renderDriverList(lastDriverLocations);
     renderDriverMarkers(lastDriverLocations, { focusDriverId: safeDriverId, keepCurrentViewport: !!(options && options.keepViewport) });
     renderAssignmentQueues(allOrders);
+    fetchAndDrawRoute(safeDriverId);
     if (!(options && options.silent) && safeDriverId) {
       C.showMessage(el.assignmentMessage || el.ordersMessage, "Selected driver " + safeDriverId + ".", "success");
     }
@@ -1833,6 +1836,83 @@
       zoom: 4,
     });
     return map;
+  }
+
+  // ── Route polyline drawing ──────────────────────────────────────────
+
+  function clearRouteLayer() {
+    var currentMap = ensureMap();
+    if (!currentMap) return;
+    if (currentMap.getLayer(activeRouteLayerId)) {
+      currentMap.removeLayer(activeRouteLayerId);
+    }
+    if (currentMap.getSource(activeRouteSourceId)) {
+      currentMap.removeSource(activeRouteSourceId);
+    }
+    var chipEl = document.getElementById("route-stats-chip");
+    if (chipEl) chipEl.style.display = "none";
+  }
+
+  function drawRoutePolyline(coordinates) {
+    var currentMap = ensureMap();
+    if (!currentMap || !coordinates || coordinates.length < 2) return;
+    clearRouteLayer();
+
+    var geojson = {
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: coordinates },
+    };
+
+    currentMap.addSource(activeRouteSourceId, { type: "geojson", data: geojson });
+    currentMap.addLayer({
+      id: activeRouteLayerId,
+      type: "line",
+      source: activeRouteSourceId,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": "#e63946",
+        "line-width": 4,
+        "line-opacity": 0.85,
+      },
+    });
+  }
+
+  function fetchAndDrawRoute(driverId) {
+    if (!driverId || !token) {
+      clearRouteLayer();
+      return;
+    }
+    C.apiFetch("/routes/directions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ driver_id: driverId }),
+    })
+      .then(function (resp) {
+        if (!resp.ok) {
+          clearRouteLayer();
+          return;
+        }
+        return resp.json();
+      })
+      .then(function (data) {
+        if (!data || !data.coordinates || data.coordinates.length < 2) {
+          clearRouteLayer();
+          return;
+        }
+        drawRoutePolyline(data.coordinates);
+        // Update route stats chip overlay on map.
+        var statsEl = document.getElementById("route-stats");
+        var chipEl = document.getElementById("route-stats-chip");
+        if (statsEl) {
+          var miles = (data.distance_meters / 1609.344).toFixed(1);
+          var mins = Math.round(data.duration_seconds / 60);
+          statsEl.textContent = data.ordered_stops.length + " stops · " + miles + " mi · ~" + mins + " min";
+          if (chipEl) chipEl.style.display = "";
+        }
+      })
+      .catch(function () {
+        clearRouteLayer();
+      });
   }
 
   function renderDriverMarkers(driverLocations, options) {

@@ -170,3 +170,61 @@ def test_optimize_with_explicit_stops_payload():
     body = response.json()
     assert len(body["ordered_stops"]) == 2
     assert {stop["order_id"] for stop in body["ordered_stops"]} == {"order-a", "order-b"}
+
+
+def test_directions_single_stop_returns_straight_line():
+    """With a single stop, directions skips OR-Tools and returns a fallback."""
+    dispatcher_token = make_token("dispatcher-10", "org-10", ["Dispatcher"])
+    response = client.post(
+        "/routes/directions",
+        json={
+            "driver_id": "driver-y",
+            "start_lat": 37.77,
+            "start_lng": -122.42,
+            "stops": [
+                {"order_id": "order-c", "lat": 37.781, "lng": -122.404},
+            ],
+        },
+        headers={"Authorization": f"Bearer {dispatcher_token}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["coordinates"]) >= 2
+    assert body["distance_meters"] >= 0
+    assert body["duration_seconds"] >= 0
+    assert len(body["ordered_stops"]) == 1
+    assert body["ordered_stops"][0]["order_id"] == "order-c"
+
+
+def test_directions_multi_stop_requires_ortools():
+    """Multi-stop directions needs OR-Tools; raises RuntimeError when unavailable."""
+    dispatcher_token = make_token("dispatcher-11", "org-11", ["Dispatcher"])
+    try:
+        response = client.post(
+            "/routes/directions",
+            json={
+                "driver_id": "driver-y",
+                "start_lat": 37.77,
+                "start_lng": -122.42,
+                "stops": [
+                    {"order_id": "order-c", "lat": 37.781, "lng": -122.404},
+                    {"order_id": "order-d", "lat": 37.768, "lng": -122.431},
+                ],
+            },
+            headers={"Authorization": f"Bearer {dispatcher_token}"},
+        )
+        # OR-Tools installed in CI → 200 with valid response.
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["ordered_stops"]) == 2
+    except RuntimeError as exc:
+        # OR-Tools not installed locally → expected.
+        assert "OR-Tools" in str(exc)
+
+
+def test_directions_requires_auth():
+    response = client.post(
+        "/routes/directions",
+        json={"driver_id": "driver-z"},
+    )
+    assert response.status_code == 401

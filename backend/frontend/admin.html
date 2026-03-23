@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/styles.css?v=20260322f">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322h">
 </head>
 <body class="theme-admin">
 
@@ -84,6 +84,10 @@
               <span class="map-stat-chip-label">Due Soon</span>
               <strong class="map-stat-chip-value stat-warning" id="stats-upcoming-due">0</strong>
             </button>
+            <div class="map-stat-chip map-stat-chip-route" id="route-stats-chip" style="display:none">
+              <span class="map-stat-chip-label">Route</span>
+              <strong class="map-stat-chip-value" id="route-stats"></strong>
+            </div>
           </div>
 
           <div id="driver-map" class="dispatch-map-container"></div>
@@ -454,7 +458,7 @@
   <span id="assigned-queue-count" hidden>0</span>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260322f"></script>
-  <script src="assets/admin.js?v=20260322f"></script>
+  <script src="assets/common.js?v=20260322h"></script>
+  <script src="assets/admin.js?v=20260322h"></script>
 </body>
 </html>

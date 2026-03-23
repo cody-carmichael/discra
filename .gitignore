@@ -5,6 +5,10 @@ target/
 # Local SAM config (dev only)
 /samconfig.toml
 
+# Environment secrets (API keys, credentials)
+.env
+.env.*
+
 # Python local development artifacts
 .venv/
 __pycache__/

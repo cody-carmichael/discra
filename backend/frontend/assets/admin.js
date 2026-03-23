@@ -1363,16 +1363,10 @@
   }
 
   function normalizeCreatePayload(formData) {
-    const startRaw = formData.get("time_window_start");
-    const endRaw = formData.get("time_window_end");
     const pickupDeadlineRaw = formData.get("pickup_deadline");
     const dropoffDeadlineRaw = formData.get("dropoff_deadline");
-    const startDate = startRaw ? new Date(startRaw) : null;
-    const endDate = endRaw ? new Date(endRaw) : null;
     const pickupDeadlineDate = pickupDeadlineRaw ? new Date(pickupDeadlineRaw) : null;
     const dropoffDeadlineDate = dropoffDeadlineRaw ? new Date(dropoffDeadlineRaw) : null;
-    const timeWindowStart = startDate && !Number.isNaN(startDate.getTime()) ? startDate.toISOString() : null;
-    const timeWindowEnd = endDate && !Number.isNaN(endDate.getTime()) ? endDate.toISOString() : null;
     const pickupDeadline = pickupDeadlineDate && !Number.isNaN(pickupDeadlineDate.getTime()) ? pickupDeadlineDate.toISOString() : null;
     const dropoffDeadline = dropoffDeadlineDate && !Number.isNaN(dropoffDeadlineDate.getTime()) ? dropoffDeadlineDate.toISOString() : null;
     const payload = {
@@ -1386,10 +1380,8 @@
       delivery_city: formData.get("delivery_city"),
       delivery_state: formData.get("delivery_state"),
       delivery_zip: formData.get("delivery_zip"),
-      dimensions: formData.get("dimensions"),
+      dimensions: formData.get("dimensions") || null,
       weight: C.toNumberOrNull(formData.get("weight")),
-      time_window_start: timeWindowStart,
-      time_window_end: timeWindowEnd,
       pickup_deadline: pickupDeadline,
       dropoff_deadline: dropoffDeadline,
       phone: formData.get("phone") || null,

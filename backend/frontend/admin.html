@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/styles.css?v=20260322e">
+  <link rel="stylesheet" href="assets/styles.css?v=20260322f">
 </head>
 <body class="theme-admin">
 
@@ -31,6 +31,7 @@
       <span id="auth-state" class="status-pill status-idle">Not Signed In</span>
       <a class="topbar-link" href="register">Registration</a>
       <a class="topbar-link" href="driver">Driver</a>
+      <button id="logout-hosted-ui" class="btn btn-ghost" type="button">Logout</button>
     </div>
   </header>
 
@@ -327,7 +328,7 @@
               </label>
               <div class="row">
                 <button id="login-hosted-ui" class="btn btn-accent" type="button">Login Hosted UI</button>
-                <button id="logout-hosted-ui" class="btn btn-ghost" type="button">Logout</button>
+                <button id="logout-hosted-ui-auth" class="btn btn-ghost" type="button">Logout</button>
               </div>
             </details>
 
@@ -465,7 +466,7 @@
   <span id="assigned-queue-count" hidden>0</span>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260322e"></script>
-  <script src="assets/admin.js?v=20260322e"></script>
+  <script src="assets/common.js?v=20260322f"></script>
+  <script src="assets/admin.js?v=20260322f"></script>
 </body>
 </html>

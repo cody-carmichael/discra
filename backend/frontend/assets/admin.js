@@ -91,6 +91,7 @@
     cognitoClientId: document.getElementById("cognito-client-id"),
     loginHostedUi: document.getElementById("login-hosted-ui"),
     logoutHostedUi: document.getElementById("logout-hosted-ui"),
+    logoutHostedUiAuth: document.getElementById("logout-hosted-ui-auth"),
     authDebug: document.getElementById("admin-auth-debug"),
     devAuthPanel: document.getElementById("dev-auth-panel"),
     devAuthActions: document.getElementById("dev-auth-actions"),
@@ -2819,6 +2820,13 @@
       C.showMessage(el.authMessage, error.message, "error");
     });
   });
+  if (el.logoutHostedUiAuth) {
+    el.logoutHostedUiAuth.addEventListener("click", function () {
+      launchHostedLogout().catch(function (error) {
+        C.showMessage(el.authMessage, error.message, "error");
+      });
+    });
+  }
   if (el.refreshOrdersTable) {
     el.refreshOrdersTable.addEventListener("click", refreshOrders);
   }

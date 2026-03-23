@@ -15,9 +15,15 @@ def _to_utc(value: Optional[datetime]) -> Optional[datetime]:
 
 class OrderCreate(BaseModel):
     customer_name: str
-    reference_number: int = Field(..., ge=1)
-    pick_up_address: str = Field(..., min_length=1, max_length=300)
-    delivery: str = Field(..., min_length=1, max_length=300)
+    reference_id: str = Field(..., min_length=1, max_length=64)
+    pick_up_street: str = Field(..., min_length=1, max_length=200)
+    pick_up_city: str = Field(..., min_length=1, max_length=100)
+    pick_up_state: str = Field(..., min_length=1, max_length=50)
+    pick_up_zip: str = Field(..., min_length=1, max_length=20)
+    delivery_street: str = Field(..., min_length=1, max_length=200)
+    delivery_city: str = Field(..., min_length=1, max_length=100)
+    delivery_state: str = Field(..., min_length=1, max_length=50)
+    delivery_zip: str = Field(..., min_length=1, max_length=20)
     dimensions: str = Field(..., min_length=1, max_length=120)
     weight: float = Field(..., gt=0)
     time_window_start: Optional[datetime] = None
@@ -54,9 +60,15 @@ class OrderStatus(str, Enum):
 class Order(BaseModel):
     id: str
     customer_name: str
-    reference_number: int
-    pick_up_address: str
-    delivery: str
+    reference_id: str
+    pick_up_street: str
+    pick_up_city: str
+    pick_up_state: str
+    pick_up_zip: str
+    delivery_street: str
+    delivery_city: str
+    delivery_state: str
+    delivery_zip: str
     dimensions: str
     weight: float
     time_window_start: Optional[datetime] = None
@@ -249,9 +261,15 @@ class StripeWebhookResponse(BaseModel):
 class WebhookOrderInput(BaseModel):
     external_order_id: str = Field(..., min_length=1, max_length=128)
     customer_name: str = Field(..., min_length=1, max_length=160)
-    reference_number: int = Field(..., ge=1)
-    pick_up_address: str = Field(..., min_length=1, max_length=300)
-    delivery: str = Field(..., min_length=1, max_length=300)
+    reference_id: str = Field(..., min_length=1, max_length=64)
+    pick_up_street: str = Field(..., min_length=1, max_length=200)
+    pick_up_city: str = Field(..., min_length=1, max_length=100)
+    pick_up_state: str = Field(..., min_length=1, max_length=50)
+    pick_up_zip: str = Field(..., min_length=1, max_length=20)
+    delivery_street: str = Field(..., min_length=1, max_length=200)
+    delivery_city: str = Field(..., min_length=1, max_length=100)
+    delivery_state: str = Field(..., min_length=1, max_length=50)
+    delivery_zip: str = Field(..., min_length=1, max_length=20)
     dimensions: str = Field(..., min_length=1, max_length=120)
     weight: float = Field(..., gt=0)
     time_window_start: Optional[datetime] = None

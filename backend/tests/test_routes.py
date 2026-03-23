@@ -40,14 +40,20 @@ def _test_env(monkeypatch):
     reset_in_memory_address_geocoder()
 
 
-def _create_assigned_order(admin_token: str, driver_id: str, reference_number: int, delivery: str):
+def _create_assigned_order(admin_token: str, driver_id: str, reference_id: str, delivery: str):
     create = client.post(
         "/orders/",
         json={
             "customer_name": "Route Customer",
-            "reference_number": reference_number,
-            "pick_up_address": "Route Warehouse",
-            "delivery": delivery,
+            "reference_id": reference_id,
+            "pick_up_street": "Route Warehouse",
+            "pick_up_city": "Test City",
+            "pick_up_state": "TS",
+            "pick_up_zip": "00000",
+            "delivery_street": delivery,
+            "delivery_city": "Dest City",
+            "delivery_state": "DS",
+            "delivery_zip": "99999",
             "dimensions": "10x10x10 in",
             "weight": 5.5,
             "num_packages": 1,
@@ -74,9 +80,9 @@ def test_optimize_assigned_orders_for_driver():
     )
 
     order_ids = [
-        _create_assigned_order(admin_token, "driver-1", 7001, "Dropoff A"),
-        _create_assigned_order(admin_token, "driver-1", 7002, "Dropoff B"),
-        _create_assigned_order(admin_token, "driver-1", 7003, "Dropoff C"),
+        _create_assigned_order(admin_token, "driver-1", "7001", "Dropoff A"),
+        _create_assigned_order(admin_token, "driver-1", "7002", "Dropoff B"),
+        _create_assigned_order(admin_token, "driver-1", "7003", "Dropoff C"),
     ]
 
     response = client.post(
@@ -112,9 +118,15 @@ def test_optimize_assigned_orders_reports_geocode_failures():
         "/orders/",
         json={
             "customer_name": "No coords",
-            "reference_number": 8001,
-            "pick_up_address": "Warehouse Missing",
-            "delivery": "Missing delivery address",
+            "reference_id": "8001",
+            "pick_up_street": "Warehouse Missing",
+            "pick_up_city": "Test City",
+            "pick_up_state": "TS",
+            "pick_up_zip": "00000",
+            "delivery_street": "Missing delivery address",
+            "delivery_city": "Dest City",
+            "delivery_state": "DS",
+            "delivery_zip": "99999",
             "dimensions": "4x4x4 in",
             "weight": 1.5,
             "num_packages": 1,

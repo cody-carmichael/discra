@@ -39,7 +39,12 @@ def _stops_from_assigned_orders(org_id: str, driver_id: str) -> List[RouteStopIn
     stops = []
 
     for order in assigned:
-        delivery = (order.delivery or "").strip()
+        delivery = ", ".join(filter(None, [
+            getattr(order, "delivery_street", "") or "",
+            getattr(order, "delivery_city", "") or "",
+            getattr(order, "delivery_state", "") or "",
+            getattr(order, "delivery_zip", "") or "",
+        ])).strip()
         if not delivery:
             unresolved_order_ids.append(order.id)
             continue
@@ -59,7 +64,7 @@ def _stops_from_assigned_orders(org_id: str, driver_id: str) -> List[RouteStopIn
                 order_id=order.id,
                 lat=point.lat,
                 lng=point.lng,
-                address=order.delivery,
+                address=delivery,
             )
         )
 

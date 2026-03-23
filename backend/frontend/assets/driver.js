@@ -470,7 +470,7 @@
       "Order: " +
       C.escapeHtml(order.id) +
       "<br>Reference: " +
-      C.escapeHtml(order.reference_number || "-") +
+      C.escapeHtml(order.reference_id || "-") +
       "<br>Status: <span class=\"table-status " +
       C.escapeHtml(statusClass) +
       "\">" +
@@ -479,9 +479,9 @@
       "</p>" +
       "<p class=\"order-meta\">" +
       "Pick Up: " +
-      C.escapeHtml(order.pick_up_address || "-") +
+      C.escapeHtml([order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-") +
       "<br>Delivery: " +
-      C.escapeHtml(order.delivery || "-") +
+      C.escapeHtml([order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-") +
       "<br>Dimensions: " +
       C.escapeHtml(order.dimensions || "-") +
       "<br>Weight: " +

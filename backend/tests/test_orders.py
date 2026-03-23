@@ -31,7 +31,7 @@ def make_order_payload(
     customer_name: str,
     pick_up_address: str,
     delivery: str,
-    reference_number: int = 1001,
+    reference_id: str = "1001",
     time_window_start: Optional[str] = None,
     time_window_end: Optional[str] = None,
     pickup_deadline: Optional[str] = None,
@@ -39,9 +39,15 @@ def make_order_payload(
 ):
     payload = {
         "customer_name": customer_name,
-        "reference_number": reference_number,
-        "pick_up_address": pick_up_address,
-        "delivery": delivery,
+        "reference_id": reference_id,
+        "pick_up_street": pick_up_address,
+        "pick_up_city": "Test City",
+        "pick_up_state": "TS",
+        "pick_up_zip": "00000",
+        "delivery_street": delivery,
+        "delivery_city": "Dest City",
+        "delivery_state": "DS",
+        "delivery_zip": "99999",
         "dimensions": "10x8x4 in",
         "weight": 4.5,
         "num_packages": 1,
@@ -151,7 +157,7 @@ def test_cross_tenant_order_access_is_hidden():
 
     create_response = client.post(
         "/orders/",
-        json=make_order_payload("Bob", "Warehouse 2", "456 Broadway", reference_number=2002) | {"num_packages": 2},
+        json=make_order_payload("Bob", "Warehouse 2", "456 Broadway", reference_id="2002") | {"num_packages": 2},
         headers={"Authorization": f"Bearer {org_a_admin}"},
     )
     order_id = create_response.json()["id"]
@@ -170,7 +176,7 @@ def test_no_role_user_cannot_get_or_update_orders():
 
     create_response = client.post(
         "/orders/",
-        json=make_order_payload("Role Check", "Warehouse 2", "456 Broadway", reference_number=2003),
+        json=make_order_payload("Role Check", "Warehouse 2", "456 Broadway", reference_id="2003"),
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     order_id = create_response.json()["id"]
@@ -191,7 +197,7 @@ def test_assign_and_unassign_order():
 
     create_response = client.post(
         "/orders/",
-        json=make_order_payload("Carol", "Warehouse 3", "789 Market St", reference_number=3003),
+        json=make_order_payload("Carol", "Warehouse 3", "789 Market St", reference_id="3003"),
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     order_id = create_response.json()["id"]
@@ -223,7 +229,7 @@ def test_unassign_rejects_terminal_order():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
     created = client.post(
         "/orders/",
-        json=make_order_payload("Terminal", "Warehouse 10", "42 End St", reference_number=3010),
+        json=make_order_payload("Terminal", "Warehouse 10", "42 End St", reference_id="3010"),
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     order_id = created.json()["id"]
@@ -270,7 +276,7 @@ def test_driver_inbox_and_status_update():
 
     create_response = client.post(
         "/orders/",
-        json=make_order_payload("Dave", "Warehouse 4", "100 1st Ave", reference_number=4004),
+        json=make_order_payload("Dave", "Warehouse 4", "100 1st Ave", reference_id="4004"),
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     order_id = create_response.json()["id"]
@@ -306,7 +312,7 @@ def test_invalid_status_transition_is_rejected():
     dispatcher_token = make_token("dispatcher-a", "org-a", ["Dispatcher"])
     create_response = client.post(
         "/orders/",
-        json=make_order_payload("Eve", "Warehouse 5", "11 2nd St", reference_number=5005),
+        json=make_order_payload("Eve", "Warehouse 5", "11 2nd St", reference_id="5005"),
         headers={"Authorization": f"Bearer {dispatcher_token}"},
     )
     order_id = create_response.json()["id"]
@@ -323,7 +329,7 @@ def test_reassign_writes_order_reassigned_audit_event():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
     created = client.post(
         "/orders/",
-        json=make_order_payload("Frank", "Warehouse 6", "1010 Center St", reference_number=6006),
+        json=make_order_payload("Frank", "Warehouse 6", "1010 Center St", reference_id="6006"),
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     order_id = created.json()["id"]
@@ -349,14 +355,14 @@ def test_reassign_writes_order_reassigned_audit_event():
 def test_bulk_assign_and_unassign_orders():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
     order_ids = []
-    for reference in (7001, 7002):
+    for reference in ("7001", "7002"):
         created = client.post(
             "/orders/",
             json=make_order_payload(
                 f"Bulk {reference}",
                 "Warehouse 8",
                 f"{reference} Market St",
-                reference_number=reference,
+                reference_id=reference,
             ),
             headers={"Authorization": f"Bearer {admin_token}"},
         )
@@ -401,7 +407,7 @@ def test_bulk_assign_requires_driver_id():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
     created = client.post(
         "/orders/",
-        json=make_order_payload("Bulk missing driver", "Warehouse 9", "901 Main", reference_number=9001),
+        json=make_order_payload("Bulk missing driver", "Warehouse 9", "901 Main", reference_id="9001"),
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     order_id = created.json()["id"]
@@ -418,12 +424,12 @@ def test_bulk_assign_prevalidates_order_ids_without_partial_updates():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
     first = client.post(
         "/orders/",
-        json=make_order_payload("Bulk first", "Warehouse 11", "111 Main", reference_number=9011),
+        json=make_order_payload("Bulk first", "Warehouse 11", "111 Main", reference_id="9011"),
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()["id"]
     second = client.post(
         "/orders/",
-        json=make_order_payload("Bulk second", "Warehouse 11", "222 Main", reference_number=9012),
+        json=make_order_payload("Bulk second", "Warehouse 11", "222 Main", reference_id="9012"),
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()["id"]
 
@@ -446,12 +452,12 @@ def test_bulk_unassign_prevalidates_order_ids_without_partial_updates():
     admin_token = make_token("admin-a", "org-a", ["Admin"])
     first = client.post(
         "/orders/",
-        json=make_order_payload("Bulk unassign first", "Warehouse 12", "333 Main", reference_number=9013),
+        json=make_order_payload("Bulk unassign first", "Warehouse 12", "333 Main", reference_id="9013"),
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()["id"]
     second = client.post(
         "/orders/",
-        json=make_order_payload("Bulk unassign second", "Warehouse 12", "444 Main", reference_number=9014),
+        json=make_order_payload("Bulk unassign second", "Warehouse 12", "444 Main", reference_id="9014"),
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()["id"]
 

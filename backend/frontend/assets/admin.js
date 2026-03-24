@@ -1496,7 +1496,7 @@
     _pruneSelectionToVisibleOrders();
     renderAssignmentQueues(allOrders);
     if (!lastOrders.length) {
-      el.ordersBody.innerHTML = "<tr><td colspan=\"7\">No orders available for the current filters.</td></tr>";
+      el.ordersBody.innerHTML = "<tr><td colspan=\"7\">No orders for the current filters.</td></tr>";
       el.ordersMobile.innerHTML = "<p class=\"panel-help\">No orders available.</p>";
       _syncSelectAllCheckbox();
       _renderSelectionCount();
@@ -1510,84 +1510,43 @@
       const currentStatusClass = statusClass(order.status);
       const due = _dueBadge(order, nowDate);
       const suggestedDriver = order.assigned_to || selectedDriverId || "";
-      const statusOptions = C.STATUS_VALUES.map(function (statusValue) {
-        const selected = statusValue === order.status ? "selected" : "";
-        return "<option " + selected + " value=\"" + statusValue + "\">" + statusValue + "</option>";
-      }).join("");
+      const pickup = [order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-";
+      const delivery = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-";
 
       return (
         "<tr>" +
         "<td><input type=\"checkbox\" data-select-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\" " +
-        (isSelected ? "checked" : "") +
-        "></td>" +
-        "<td>" +
-        C.escapeHtml(order.customer_name) +
-        "<br><small>Ref " +
-        C.escapeHtml(order.reference_id || "-") +
-        "</small><br>" +
-        orderCell(order) +
+        C.escapeHtml(order.id) + "\" " + (isSelected ? "checked" : "") + "></td>" +
+        "<td class=\"order-cell-name\">" +
+        "<strong>" + C.escapeHtml(order.customer_name) + "</strong>" +
+        "<br><small class=\"text-muted\">Ref " + C.escapeHtml(order.reference_id || "-") + "</small>" +
+        (order.phone ? "<br><small class=\"text-muted\">" + C.escapeHtml(order.phone) + "</small>" : "") +
         "</td>" +
-        "<td><small>Pick Up</small><br>" +
-        C.escapeHtml([order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-") +
-        "<br><small>Delivery</small><br>" +
-        C.escapeHtml([order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-") +
-        "<br><small>Dim: " +
-        C.escapeHtml(order.dimensions || "-") +
-        " | Wt: " +
-        C.escapeHtml(order.weight || "-") +
-        "</small></td>" +
-        "<td><small>" +
-        C.escapeHtml(_formatOrderDeadlines(order)) +
-        "</small><br><span class=\"" +
-        C.escapeHtml(due.cssClass) +
-        "\">" +
-        C.escapeHtml(due.label) +
-        "</span></td>" +
-        "<td><small>" +
-        C.escapeHtml(C.formatTimestamp(order.time_window_start)) +
-        " -> " +
-        C.escapeHtml(C.formatTimestamp(order.time_window_end)) +
-        "</small></td>" +
-        "<td>" +
-        "<small>Current</small><br>" +
+        "<td class=\"order-cell-stops\">" +
+        "<div class=\"order-stop\"><small class=\"text-muted\">PICKUP</small><br>" + C.escapeHtml(pickup) + "</div>" +
+        "<div class=\"order-stop\"><small class=\"text-muted\">DELIVERY</small><br>" + C.escapeHtml(delivery) + "</div>" +
+        "</td>" +
+        "<td class=\"order-cell-deadlines\">" +
+        "<small>" + C.escapeHtml(_formatOrderDeadlines(order)) + "</small>" +
+        "<br><span class=\"" + C.escapeHtml(due.cssClass) + "\">" + C.escapeHtml(due.label) + "</span>" +
+        "</td>" +
+        "<td><span class=\"table-status " + currentStatusClass + "\">" + C.escapeHtml(order.status) + "</span></td>" +
+        "<td class=\"order-cell-assign\">" +
         C.escapeHtml(order.assigned_to || "Unassigned") +
         "<div class=\"mobile-order-actions\">" +
         "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
-        C.escapeHtml(order.id) +
-        "\" placeholder=\"driver sub\" value=\"" +
-        C.escapeHtml(suggestedDriver) +
-        "\">" +
+        C.escapeHtml(order.id) + "\" placeholder=\"driver sub\" value=\"" +
+        C.escapeHtml(suggestedDriver) + "\">" +
         "<div class=\"actions-stack\">" +
         "<button class=\"btn btn-primary\" data-action=\"assign\" data-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">" +
-        assignLabel +
-        "</button>" +
+        C.escapeHtml(order.id) + "\">" + assignLabel + "</button>" +
         "<button class=\"btn btn-accent\" data-action=\"assign-selected\" data-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">Assign Selected Driver</button>" +
+        C.escapeHtml(order.id) + "\">Assign Selected Driver</button>" +
         "<button class=\"btn btn-ghost\" data-action=\"unassign\" data-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">Unassign</button>" +
+        C.escapeHtml(order.id) + "\">Unassign</button>" +
         "</div></div></td>" +
-        "<td>" +
-        "<span class=\"table-status " +
-        currentStatusClass +
-        "\">" +
-        C.escapeHtml(order.status) +
-        "</span>" +
-        "<div class=\"mobile-order-actions\">" +
-        "<select class=\"compact-input\" data-status-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">" +
-        statusOptions +
-        "</select>" +
-        "<button class=\"btn btn-accent\" data-action=\"status\" data-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">Update</button>" +
-        "</div></td>" +
+        "<td><button class=\"btn btn-ghost btn-sm\" data-action=\"edit\" data-order-id=\"" +
+        C.escapeHtml(order.id) + "\">Edit</button></td>" +
         "</tr>"
       );
     });
@@ -1599,79 +1558,36 @@
       const currentStatusClass = statusClass(order.status);
       const due = _dueBadge(order, nowDate);
       const suggestedDriver = order.assigned_to || selectedDriverId || "";
-      const statusOptions = C.STATUS_VALUES.map(function (statusValue) {
-        const selected = statusValue === order.status ? "selected" : "";
-        return "<option " + selected + " value=\"" + statusValue + "\">" + statusValue + "</option>";
-      }).join("");
 
       return (
         "<article class=\"mobile-order-card\" data-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">" +
-        "<h3>" +
-        C.escapeHtml(order.customer_name) +
-        "</h3>" +
+        C.escapeHtml(order.id) + "\">" +
+        "<h3>" + C.escapeHtml(order.customer_name) + "</h3>" +
         "<label class=\"field\"><span>Select</span><input type=\"checkbox\" data-select-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\" " +
-        (isSelected ? "checked" : "") +
-        "></label>" +
+        C.escapeHtml(order.id) + "\" " + (isSelected ? "checked" : "") + "></label>" +
         "<p class=\"mobile-order-meta\">" +
-        "Order: " +
-        C.escapeHtml(order.id) +
-        "<br>Ref: " +
-        C.escapeHtml(order.reference_id || "-") +
-        "<br>Pick Up: " +
-        C.escapeHtml([order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-") +
-        "<br>Delivery: " +
-        C.escapeHtml([order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-") +
-        "<br>Window: " +
-        C.escapeHtml(C.formatTimestamp(order.time_window_start)) +
-        " -> " +
-        C.escapeHtml(C.formatTimestamp(order.time_window_end)) +
-        "<br>Deadlines: " +
-        C.escapeHtml(_formatOrderDeadlines(order)) +
-        "<br>Due: <span class=\"" +
-        C.escapeHtml(due.cssClass) +
-        "\">" +
-        C.escapeHtml(due.label) +
-        "</span>" +
-        "<br>Status: <span class=\"table-status " +
-        currentStatusClass +
-        "\">" +
-        C.escapeHtml(order.status) +
-        "</span>" +
-        "<br>Assigned: " +
-        C.escapeHtml(order.assigned_to || "-") +
+        "Ref: " + C.escapeHtml(order.reference_id || "-") +
+        "<br>Pick Up: " + C.escapeHtml([order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-") +
+        "<br>Delivery: " + C.escapeHtml([order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-") +
+        "<br>Deadlines: " + C.escapeHtml(_formatOrderDeadlines(order)) +
+        "<br>Due: <span class=\"" + C.escapeHtml(due.cssClass) + "\">" + C.escapeHtml(due.label) + "</span>" +
+        "<br>Status: <span class=\"table-status " + currentStatusClass + "\">" + C.escapeHtml(order.status) + "</span>" +
+        "<br>Assigned: " + C.escapeHtml(order.assigned_to || "-") +
         "</p>" +
         "<div class=\"mobile-order-actions\">" +
         "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
-        C.escapeHtml(order.id) +
-        "\" placeholder=\"driver sub\" value=\"" +
-        C.escapeHtml(suggestedDriver) +
-        "\">" +
+        C.escapeHtml(order.id) + "\" placeholder=\"driver sub\" value=\"" +
+        C.escapeHtml(suggestedDriver) + "\">" +
         "<div class=\"actions-stack\">" +
         "<button class=\"btn btn-primary\" data-action=\"assign\" data-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">" +
-        assignLabel +
-        "</button>" +
+        C.escapeHtml(order.id) + "\">" + assignLabel + "</button>" +
         "<button class=\"btn btn-accent\" data-action=\"assign-selected\" data-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">Assign Selected</button>" +
+        C.escapeHtml(order.id) + "\">Assign Selected</button>" +
         "<button class=\"btn btn-ghost\" data-action=\"unassign\" data-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">Unassign</button>" +
-        "</div>" +
-        "<select class=\"compact-input\" data-status-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">" +
-        statusOptions +
-        "</select>" +
-        "<button class=\"btn btn-accent\" data-action=\"status\" data-order-id=\"" +
-        C.escapeHtml(order.id) +
-        "\">Update Status</button>" +
-        "</div>" +
+        C.escapeHtml(order.id) + "\">Unassign</button>" +
+        "<button class=\"btn btn-ghost\" data-action=\"edit\" data-order-id=\"" +
+        C.escapeHtml(order.id) + "\">Edit</button>" +
+        "</div></div>" +
         "</article>"
       );
     });
@@ -2671,22 +2587,107 @@
         await assignOrder(orderId, selectedDriverId);
       } else if (action === "unassign") {
         await unassignOrder(orderId);
-      } else if (action === "status") {
-        const contextCard = target.closest(".mobile-order-card");
-        const select = contextCard
-          ? contextCard.querySelector("select[data-status-id=\"" + orderId + "\"]")
-          : el.ordersBody.querySelector("select[data-status-id=\"" + orderId + "\"]");
-        const statusValue = select ? select.value : "";
-        if (!statusValue) {
-          throw new Error("Choose a status first.");
-        }
-        await updateOrderStatus(orderId, statusValue);
+      } else if (action === "edit") {
+        openEditOrderModal(orderId);
+        return;
       }
       await refreshOrders();
     } catch (error) {
       C.showMessage(el.ordersMessage, error.message, "error");
     }
   }
+
+  // ── Edit Order Modal ────────────────────────────────────────────────
+
+  function _findOrderById(orderId) {
+    return allOrders.find(function (o) { return o.id === orderId; });
+  }
+
+  function _toLocalDatetime(isoStr) {
+    if (!isoStr) return "";
+    var d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "";
+    var pad = function (n) { return n < 10 ? "0" + n : "" + n; };
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+      "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+
+  function openEditOrderModal(orderId) {
+    var order = _findOrderById(orderId);
+    if (!order) return;
+    document.getElementById("edit-order-id").value = order.id;
+    document.getElementById("edit-order-title").textContent = "Edit: " + (order.customer_name || "Order");
+    document.getElementById("edit-customer-name").value = order.customer_name || "";
+    document.getElementById("edit-reference-id").value = order.reference_id || "";
+    document.getElementById("edit-phone").value = order.phone || "";
+    document.getElementById("edit-email").value = order.email || "";
+    document.getElementById("edit-pickup-street").value = order.pick_up_street || "";
+    document.getElementById("edit-pickup-city").value = order.pick_up_city || "";
+    document.getElementById("edit-pickup-state").value = order.pick_up_state || "";
+    document.getElementById("edit-pickup-zip").value = order.pick_up_zip || "";
+    document.getElementById("edit-delivery-street").value = order.delivery_street || "";
+    document.getElementById("edit-delivery-city").value = order.delivery_city || "";
+    document.getElementById("edit-delivery-state").value = order.delivery_state || "";
+    document.getElementById("edit-delivery-zip").value = order.delivery_zip || "";
+    document.getElementById("edit-pickup-deadline").value = _toLocalDatetime(order.pickup_deadline);
+    document.getElementById("edit-dropoff-deadline").value = _toLocalDatetime(order.dropoff_deadline);
+    document.getElementById("edit-dimensions").value = order.dimensions || "";
+    document.getElementById("edit-weight").value = order.weight || "";
+    document.getElementById("edit-num-packages").value = order.num_packages || 1;
+    document.getElementById("edit-notes").value = order.notes || "";
+    document.getElementById("edit-order-message").textContent = "";
+    document.getElementById("edit-order-overlay").style.display = "flex";
+  }
+
+  function closeEditOrderModal() {
+    document.getElementById("edit-order-overlay").style.display = "none";
+  }
+
+  async function submitEditOrder(e) {
+    e.preventDefault();
+    var orderId = document.getElementById("edit-order-id").value;
+    var msgEl = document.getElementById("edit-order-message");
+    var weight = document.getElementById("edit-weight").value;
+    var body = {
+      customer_name: document.getElementById("edit-customer-name").value.trim(),
+      reference_id: document.getElementById("edit-reference-id").value.trim(),
+      phone: document.getElementById("edit-phone").value.trim() || null,
+      email: document.getElementById("edit-email").value.trim() || null,
+      pick_up_street: document.getElementById("edit-pickup-street").value.trim(),
+      pick_up_city: document.getElementById("edit-pickup-city").value.trim(),
+      pick_up_state: document.getElementById("edit-pickup-state").value.trim(),
+      pick_up_zip: document.getElementById("edit-pickup-zip").value.trim(),
+      delivery_street: document.getElementById("edit-delivery-street").value.trim(),
+      delivery_city: document.getElementById("edit-delivery-city").value.trim(),
+      delivery_state: document.getElementById("edit-delivery-state").value.trim(),
+      delivery_zip: document.getElementById("edit-delivery-zip").value.trim(),
+      pickup_deadline: document.getElementById("edit-pickup-deadline").value || null,
+      dropoff_deadline: document.getElementById("edit-dropoff-deadline").value || null,
+      dimensions: document.getElementById("edit-dimensions").value.trim() || null,
+      weight: weight ? parseFloat(weight) : null,
+      num_packages: parseInt(document.getElementById("edit-num-packages").value, 10) || 1,
+      notes: document.getElementById("edit-notes").value.trim() || null,
+    };
+    try {
+      await C.requestJson(apiBase, "/orders/" + encodeURIComponent(orderId), {
+        token: token,
+        method: "PUT",
+        json: body,
+      });
+      closeEditOrderModal();
+      await refreshOrders();
+      C.showMessage(el.ordersMessage, "Order updated.", "success");
+    } catch (err) {
+      C.showMessage(msgEl, err.message, "error");
+    }
+  }
+
+  document.getElementById("edit-order-form").addEventListener("submit", submitEditOrder);
+  document.getElementById("edit-order-close").addEventListener("click", closeEditOrderModal);
+  document.getElementById("edit-order-cancel").addEventListener("click", closeEditOrderModal);
+  document.getElementById("edit-order-overlay").addEventListener("click", function (e) {
+    if (e.target === e.currentTarget) closeEditOrderModal();
+  });
 
   function hostedFlowConfig() {
     const redirectUri = window.location.origin + window.location.pathname;

@@ -23,6 +23,7 @@ try:
         Order,
         OrderCreate,
         OrderStatus,
+        OrderUpdate,
         StatusUpdateRequest,
     )
 except ModuleNotFoundError:  # local run from backend/ directory
@@ -38,6 +39,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
         Order,
         OrderCreate,
         OrderStatus,
+        OrderUpdate,
         StatusUpdateRequest,
     )
 
@@ -344,6 +346,36 @@ async def bulk_unassign_orders(
         },
     )
     return BulkOrderMutationResponse(updated=len(updated_ids), order_ids=updated_ids)
+
+
+@router.put("/{order_id}", response_model=Order)
+async def update_order(
+    order_id: str,
+    body: OrderUpdate,
+    request: Request,
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    order_store=Depends(get_order_store),
+    audit_store=Depends(get_audit_log_store),
+):
+    order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        return order
+    for field, value in updates.items():
+        setattr(order, field, value)
+    saved = order_store.upsert_order(order)
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="order.updated",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="order",
+        target_id=saved.id,
+        request=request,
+        details={"updated_fields": list(updates.keys())},
+    )
+    return saved
 
 
 @router.post("/{order_id}/status", response_model=Order)

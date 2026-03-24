@@ -1916,10 +1916,8 @@
 
   function _unassignedPinSvg() {
     return (
-      '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">' +
-      '<circle cx="14" cy="14" r="13" fill="#f5c542" stroke="#1a1a2e" stroke-width="2"/>' +
-      '<rect x="12" y="6" width="4" height="10" rx="1.5" fill="#1a1a2e"/>' +
-      '<circle cx="14" cy="20" r="2.2" fill="#1a1a2e"/>' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36">' +
+      '<text x="12" y="28" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="36" font-weight="900" fill="#f5c542" stroke="#1a1a2e" stroke-width="1.5" paint-order="stroke">!</text>' +
       '</svg>'
     );
   }

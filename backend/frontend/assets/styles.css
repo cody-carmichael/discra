@@ -1793,11 +1793,24 @@ body.theme-admin .map-card .maplibregl-canvas {
   margin: 0;
 }
 
-.modal-close {
+.modal-close,
+.modal-close-btn {
   font-size: 1.35rem;
   line-height: 1;
   padding: 0.25rem 0.5rem;
   min-width: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.modal-close-btn:hover {
+  color: var(--text);
+}
+
+.modal-lg {
+  width: min(640px, 92vw);
 }
 
 .modal-body {
@@ -1823,6 +1836,47 @@ body.theme-admin .billing-seat-cards .stat-card {
 body.theme-admin .billing-seat-cards .stat-card small {
   color: #8ea7bb;
 }
+
+/* Form grid for modals */
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.form-section-label {
+  margin: 12px 0 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Small button variant */
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.74rem;
+}
+
+/* Order table readability */
+.order-cell-stops .order-stop {
+  margin-bottom: 4px;
+}
+
+.order-cell-stops .order-stop small {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.text-muted { color: var(--text-muted); }
 
 /* ================================================================
    DISPATCH CONSOLE REDESIGN — 3-column layout
@@ -1872,6 +1926,9 @@ body.theme-admin .billing-seat-cards .stat-card small {
   background: rgba(255,255,255,0.06);
   border-radius: 8px;
   padding: 3px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .topbar-ws-tab {
@@ -2055,6 +2112,8 @@ body.theme-admin .billing-seat-cards .stat-card small {
   cursor: pointer;
   transition: all 180ms;
   position: relative;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .dispatch-order-card:hover {
@@ -2132,12 +2191,14 @@ body.theme-admin .billing-seat-cards .stat-card small {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+  min-width: 0;
 }
 
 .dispatch-card-detail {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .dispatch-card-label {

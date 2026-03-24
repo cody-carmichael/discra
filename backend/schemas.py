@@ -48,6 +48,35 @@ class OrderCreate(BaseModel):
         return self
 
 
+class OrderUpdate(BaseModel):
+    customer_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    reference_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    pick_up_street: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    pick_up_city: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    pick_up_state: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    pick_up_zip: Optional[str] = Field(default=None, min_length=1, max_length=20)
+    delivery_street: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    delivery_city: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    delivery_state: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    delivery_zip: Optional[str] = Field(default=None, min_length=1, max_length=20)
+    dimensions: Optional[str] = Field(default=None, max_length=120)
+    weight: Optional[float] = Field(default=None, gt=0)
+    pickup_deadline: Optional[datetime] = None
+    dropoff_deadline: Optional[datetime] = None
+    phone: Optional[str] = Field(default=None, max_length=40)
+    email: Optional[str] = Field(default=None, max_length=320)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    num_packages: Optional[int] = Field(default=None, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def validate_deadlines(self):
+        pickup_utc = _to_utc(self.pickup_deadline)
+        dropoff_utc = _to_utc(self.dropoff_deadline)
+        if pickup_utc and dropoff_utc and dropoff_utc < pickup_utc:
+            raise ValueError("dropoff_deadline must be greater than or equal to pickup_deadline")
+        return self
+
+
 class OrderStatus(str, Enum):
     CREATED = "Created"
     ASSIGNED = "Assigned"

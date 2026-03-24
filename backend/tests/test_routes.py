@@ -99,14 +99,14 @@ def test_optimize_assigned_orders_for_driver():
     assert body["total_duration_seconds"] >= 0
 
 
-def test_optimize_rejects_driver_role():
+def test_optimize_allows_driver_role():
     driver_token = make_token("driver-2", "org-1", ["Driver"])
     response = client.post(
         "/routes/optimize",
         json={"driver_id": "driver-2", "stops": [{"order_id": "o1", "lat": 1, "lng": 1}]},
         headers={"Authorization": f"Bearer {driver_token}"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 200
 
 
 def test_optimize_assigned_orders_reports_geocode_failures():

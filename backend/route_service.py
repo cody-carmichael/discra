@@ -232,9 +232,34 @@ def _optimization_timeout_seconds() -> int:
     return max(1, min(timeout, 30))
 
 
+def solve_nearest_neighbor(duration_seconds: List[List[float]], start_index: int = 0) -> List[int]:
+    """Greedy nearest-neighbor heuristic — no external dependencies."""
+    n = len(duration_seconds)
+    if n == 0:
+        return []
+    if n == 1:
+        return [0]
+    visited = {start_index}
+    sequence = [start_index]
+    current = start_index
+    while len(visited) < n:
+        best_next = -1
+        best_cost = float("inf")
+        for j in range(n):
+            if j not in visited and duration_seconds[current][j] < best_cost:
+                best_cost = duration_seconds[current][j]
+                best_next = j
+        if best_next < 0:
+            break
+        visited.add(best_next)
+        sequence.append(best_next)
+        current = best_next
+    return sequence
+
+
 def solve_open_route(duration_seconds: List[List[float]], start_index: int = 0) -> List[int]:
     if pywrapcp is None or routing_enums_pb2 is None:
-        raise RuntimeError("OR-Tools is not installed")
+        return solve_nearest_neighbor(duration_seconds, start_index)
 
     node_count = len(duration_seconds)
     if node_count == 0:

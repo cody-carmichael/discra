@@ -3,28 +3,32 @@ from typing import List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, status as http_status
 
 try:
-    from backend.auth import ROLE_ADMIN, ROLE_DISPATCHER, require_roles
+    from backend.auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, require_roles
     from backend.geocode_service import get_address_geocoder
     from backend.location_service import get_driver_location_store
-    from backend.route_service import get_ors_provider, get_route_matrix_provider, solve_open_route
+    from backend.route_service import get_ors_provider, get_route_matrix_provider, haversine_meters, solve_open_route
     from backend.routers.orders import get_assigned_orders_for_driver
     from backend.schemas import (
         RouteDirectionsRequest,
         RouteDirectionsResponse,
+        RouteNavigateRequest,
+        RouteNavigateResponse,
         RouteOptimizeRequest,
         RouteOptimizeResponse,
         RouteOptimizedStop,
         RouteStopInput,
     )
 except ModuleNotFoundError:  # local run from backend/ directory
-    from auth import ROLE_ADMIN, ROLE_DISPATCHER, require_roles
+    from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, require_roles
     from geocode_service import get_address_geocoder
     from location_service import get_driver_location_store
-    from route_service import get_ors_provider, get_route_matrix_provider, solve_open_route
+    from route_service import get_ors_provider, get_route_matrix_provider, haversine_meters, solve_open_route
     from routers.orders import get_assigned_orders_for_driver
     from schemas import (
         RouteDirectionsRequest,
         RouteDirectionsResponse,
+        RouteNavigateRequest,
+        RouteNavigateResponse,
         RouteOptimizeRequest,
         RouteOptimizeResponse,
         RouteOptimizedStop,
@@ -113,7 +117,7 @@ def _resolve_start_position(
 @router.post("/optimize", response_model=RouteOptimizeResponse)
 async def optimize_driver_route(
     payload: RouteOptimizeRequest,
-    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
 ):
     stops = payload.stops or _stops_from_assigned_orders(
         org_id=user["org_id"],
@@ -192,7 +196,7 @@ async def optimize_driver_route(
 @router.post("/directions", response_model=RouteDirectionsResponse)
 async def get_route_directions(
     payload: RouteDirectionsRequest,
-    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
 ):
     """Get driving directions with a GeoJSON polyline for a driver's optimized route.
 
@@ -294,4 +298,36 @@ async def get_route_directions(
         duration_seconds=round(total_duration, 2),
         bbox=None,
         ordered_stops=ordered_stops,
+    )
+
+
+@router.post("/navigate", response_model=RouteNavigateResponse)
+async def navigate_to_point(
+    payload: RouteNavigateRequest,
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
+):
+    """Get driving directions from point A to point B."""
+    start = [payload.start_lng, payload.start_lat]
+    dest = [payload.dest_lng, payload.dest_lat]
+
+    ors = get_ors_provider()
+    if ors is not None:
+        try:
+            directions = ors.get_directions([start, dest])
+            return RouteNavigateResponse(
+                coordinates=directions.coordinates,
+                distance_meters=round(directions.distance_meters, 2),
+                duration_seconds=round(directions.duration_seconds, 2),
+                bbox=directions.bbox,
+            )
+        except Exception:
+            pass
+
+    # Straight-line fallback
+    dist = haversine_meters(payload.start_lat, payload.start_lng, payload.dest_lat, payload.dest_lng)
+    return RouteNavigateResponse(
+        coordinates=[start, dest],
+        distance_meters=round(dist, 2),
+        duration_seconds=round(dist / 13.89, 2),
+        bbox=None,
     )

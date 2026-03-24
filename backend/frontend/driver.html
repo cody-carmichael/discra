@@ -7,7 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=20260323b">
+  <link rel="stylesheet" href="assets/styles.css?v=20260323c">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/driver-manifest.json">
 </head>
 <body class="theme-admin">
@@ -28,74 +29,88 @@
       </div>
     </header>
 
-    <main class="driver-main">
-      <!-- Shift Controls -->
-      <section class="driver-shift-panel">
-        <div class="driver-shift-row">
-          <div class="driver-shift-info">
-            <h3>Shift Controls</h3>
-            <p id="location-status" class="driver-shift-status">Auto share is off.</p>
-          </div>
-          <div class="driver-shift-actions">
-            <button id="send-location-now" class="btn btn-accent btn-sm" type="button">Send Location</button>
-            <button id="start-location-share" class="btn btn-primary btn-sm" type="button">Start Auto Share</button>
-            <button id="stop-location-share" class="btn btn-ghost btn-sm" type="button">Stop</button>
+    <main class="driver-console">
+      <!-- Left: Assigned Stops -->
+      <aside class="driver-left">
+        <div class="driver-left-header">
+          <h3>My Stops</h3>
+          <div class="driver-left-actions">
             <button id="refresh-inbox" class="btn btn-ghost btn-sm" type="button">Refresh</button>
           </div>
         </div>
-      </section>
-
-      <!-- Assigned Orders -->
-      <section class="driver-orders-section">
-        <div id="driver-orders" class="driver-orders-grid"></div>
+        <div class="driver-shift-bar">
+          <button id="send-location-now" class="btn btn-accent btn-xs" type="button">Send Location</button>
+          <button id="start-location-share" class="btn btn-primary btn-xs" type="button">Auto Share</button>
+          <button id="stop-location-share" class="btn btn-ghost btn-xs" type="button">Stop</button>
+          <span id="location-status" class="driver-location-status">Off</span>
+        </div>
+        <div id="driver-orders" class="driver-stop-list"></div>
         <p id="driver-orders-message" class="message"></p>
+      </aside>
+
+      <!-- Center: Map -->
+      <section class="driver-map-area">
+        <div id="driver-map" class="driver-map-container"></div>
+        <!-- Route prompt overlay -->
+        <div id="route-prompt" class="driver-route-prompt" style="display:none;">
+          <div class="driver-route-prompt-inner">
+            <span id="route-prompt-text">Route to Pickup?</span>
+            <div class="driver-route-prompt-actions">
+              <button id="route-go" class="btn btn-accent btn-sm">Go</button>
+              <button id="route-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div id="route-stats" class="driver-route-stats" style="display:none;">
+          <span id="route-stats-text"></span>
+        </div>
       </section>
 
-      <!-- Session Settings (collapsed) -->
-      <section class="driver-session-panel">
-        <details class="session-details">
-          <summary class="driver-session-summary">Session &amp; Auth Settings</summary>
-          <div class="driver-session-body">
-            <div id="driver-dev-auth-panel" class="dev-auth-panel" hidden>
-              <p class="panel-help">Quick test sign-in (no token required)</p>
-              <div id="driver-dev-auth-actions" class="row"></div>
-            </div>
+      <!-- Right: Selected Order Details + POD -->
+      <aside id="driver-detail-panel" class="driver-right" style="display:none;">
+        <div class="driver-detail-header">
+          <h3 id="detail-customer-name">Order Details</h3>
+          <button id="detail-close" class="modal-close-btn" type="button">&times;</button>
+        </div>
+        <div id="detail-body" class="driver-detail-body"></div>
+      </aside>
+    </main>
 
-            <details class="auth-config">
-              <summary>Hosted UI login</summary>
-              <label class="field">
-                <span>Cognito Hosted UI Domain</span>
-                <input id="driver-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
-              </label>
-              <label class="field">
-                <span>Client ID</span>
-                <input id="driver-cognito-client-id" placeholder="app client id">
-              </label>
-              <div class="row">
-                <button id="driver-login-hosted-ui" class="btn btn-accent" type="button">Login Hosted UI</button>
-              </div>
-            </details>
-
-            <details id="driver-auth-debug" class="auth-config" hidden>
-              <summary>Debug Token Override</summary>
-              <label class="field">
-                <span>JWT Token</span>
-                <textarea id="driver-jwt-token" rows="5" placeholder="Paste id_token here"></textarea>
-              </label>
-              <div class="row">
-                <button id="driver-save-token" class="btn btn-primary" type="button">Save Token</button>
-                <button id="driver-clear-token" class="btn btn-ghost" type="button">Clear</button>
-              </div>
-              <pre id="driver-claims-view" class="claims-view">No active web session.</pre>
-            </details>
-            <p id="driver-auth-message" class="message"></p>
+    <!-- Session Settings (hidden drawer) -->
+    <div id="session-drawer" class="driver-session-drawer" style="display:none;">
+      <div class="driver-session-drawer-inner">
+        <div class="driver-session-drawer-header">
+          <h3>Session &amp; Auth</h3>
+          <button id="session-drawer-close" class="modal-close-btn" type="button">&times;</button>
+        </div>
+        <div id="driver-dev-auth-panel" class="dev-auth-panel" hidden>
+          <p class="panel-help">Quick test sign-in</p>
+          <div id="driver-dev-auth-actions" class="row"></div>
+        </div>
+        <details class="auth-config" open>
+          <summary>Hosted UI login</summary>
+          <label class="field"><span>Cognito Domain</span><input id="driver-cognito-domain" class="compact-input" placeholder="your-domain.auth.us-east-1.amazoncognito.com"></label>
+          <label class="field"><span>Client ID</span><input id="driver-cognito-client-id" class="compact-input" placeholder="app client id"></label>
+          <div class="row">
+            <button id="driver-login-hosted-ui" class="btn btn-accent btn-sm" type="button">Login</button>
           </div>
         </details>
-      </section>
-    </main>
+        <details id="driver-auth-debug" class="auth-config" hidden>
+          <summary>Debug Token Override</summary>
+          <label class="field"><span>JWT Token</span><textarea id="driver-jwt-token" rows="3" class="compact-input" placeholder="Paste id_token here"></textarea></label>
+          <div class="row">
+            <button id="driver-save-token" class="btn btn-primary btn-sm" type="button">Save</button>
+            <button id="driver-clear-token" class="btn btn-ghost btn-sm" type="button">Clear</button>
+          </div>
+          <pre id="driver-claims-view" class="claims-view">No active web session.</pre>
+        </details>
+        <p id="driver-auth-message" class="message"></p>
+      </div>
+    </div>
   </div>
 
-  <script src="assets/common.js?v=20260323b"></script>
-  <script src="assets/driver.js?v=20260323b"></script>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="assets/common.js?v=20260323c"></script>
+  <script src="assets/driver.js?v=20260323c"></script>
 </body>
 </html>

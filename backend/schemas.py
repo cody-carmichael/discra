@@ -463,6 +463,20 @@ class RouteDirectionsResponse(BaseModel):
     ordered_stops: List[RouteOptimizedStop]
 
 
+class RouteNavigateRequest(BaseModel):
+    start_lat: float = Field(..., ge=-90, le=90)
+    start_lng: float = Field(..., ge=-180, le=180)
+    dest_lat: float = Field(..., ge=-90, le=90)
+    dest_lng: float = Field(..., ge=-180, le=180)
+
+
+class RouteNavigateResponse(BaseModel):
+    coordinates: List[List[float]]  # [[lng, lat], ...] polyline
+    distance_meters: float
+    duration_seconds: float
+    bbox: Optional[List[float]] = None
+
+
 class DispatchSummaryResponse(BaseModel):
     org_id: str
     generated_at: datetime

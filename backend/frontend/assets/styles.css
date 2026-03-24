@@ -1878,6 +1878,179 @@ body.theme-admin .billing-seat-cards .stat-card small {
 
 .text-muted { color: var(--text-muted); }
 
+/* ── Driver View (redesign) ──────────────────────────────────── */
+
+.topbar-slim-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.topbar-subtitle {
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.driver-main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.driver-shift-panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 14px 18px;
+}
+
+.driver-shift-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.driver-shift-info h3 {
+  margin: 0 0 2px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.driver-shift-status {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.driver-shift-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.driver-orders-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.driver-stop-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.driver-stop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.driver-stop-header strong {
+  font-size: 0.92rem;
+}
+
+.driver-stop-addresses {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.driver-stop-addr small {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.driver-stop-addr div {
+  font-size: 0.82rem;
+  margin-top: 2px;
+}
+
+.driver-stop-meta {
+  font-size: 0.8rem;
+  margin-bottom: 4px;
+}
+
+.driver-stop-actions {
+  display: flex;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--panel-border);
+  margin: 10px 0;
+}
+
+.driver-stop-pod {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.driver-pod-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.driver-signature-wrap {
+  border: 1px dashed var(--panel-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.driver-signature-wrap canvas.signature-pad {
+  display: block;
+  width: 100%;
+  height: 120px;
+  background: rgba(9, 21, 33, 0.6);
+  touch-action: none;
+}
+
+.btn-xs {
+  padding: 2px 8px;
+  font-size: 0.68rem;
+}
+
+.driver-session-panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+}
+
+.driver-session-summary {
+  padding: 12px 18px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.driver-session-body {
+  padding: 0 18px 16px;
+}
+
+@media (max-width: 600px) {
+  .driver-stop-addresses {
+    grid-template-columns: 1fr;
+  }
+  .driver-shift-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 /* ================================================================
    DISPATCH CONSOLE REDESIGN — 3-column layout
    ================================================================ */

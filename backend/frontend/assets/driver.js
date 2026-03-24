@@ -357,7 +357,7 @@
     const ctx = canvas.getContext("2d");
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
-    ctx.strokeStyle = "#e6f4fb";
+    ctx.strokeStyle = "#8ec8e8";
 
     let drawing = false;
 
@@ -457,47 +457,50 @@
     });
   }
 
+  function _statusBadgeClass(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "assigned") return "badge-assigned";
+    if (s === "pickedup") return "badge-pickedup";
+    if (s === "enroute") return "badge-enroute";
+    if (s === "delivered") return "badge-delivered";
+    if (s === "failed") return "badge-failed";
+    return "badge-created";
+  }
+
   function orderCardMarkup(order) {
-    const statusClass = "status-" + String(order.status || "").toLowerCase();
+    var badgeClass = _statusBadgeClass(order.status);
+    var pickup = [order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-";
+    var delivery = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-";
+
     return (
-      "<article class=\"order-card\" data-order-id=\"" +
-      C.escapeHtml(order.id) +
-      "\">" +
-      "<h3>" +
-      C.escapeHtml(order.customer_name) +
-      "</h3>" +
-      "<p class=\"order-meta\">" +
-      "Order: " +
-      C.escapeHtml(order.id) +
-      "<br>Reference: " +
-      C.escapeHtml(order.reference_id || "-") +
-      "<br>Status: <span class=\"table-status " +
-      C.escapeHtml(statusClass) +
-      "\">" +
-      C.escapeHtml(order.status) +
-      "</span>" +
-      "</p>" +
-      "<p class=\"order-meta\">" +
-      "Pick Up: " +
-      C.escapeHtml([order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-") +
-      "<br>Delivery: " +
-      C.escapeHtml([order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-") +
-      "<br>Dimensions: " +
-      C.escapeHtml(order.dimensions || "-") +
-      "<br>Weight: " +
-      C.escapeHtml(order.weight || "-") +
-      "</p>" +
-      "<div class=\"status-row\">" +
-      "<button class=\"btn btn-primary\" data-action=\"status\" data-status=\"PickedUp\">Picked Up</button>" +
-      "<button class=\"btn btn-accent\" data-action=\"status\" data-status=\"EnRoute\">En Route</button>" +
-      "<button class=\"btn btn-ghost\" data-action=\"status\" data-status=\"Failed\">Mark Failed</button>" +
+      "<article class=\"driver-stop-card\" data-order-id=\"" + C.escapeHtml(order.id) + "\">" +
+      "<div class=\"driver-stop-header\">" +
+      "<div><strong>" + C.escapeHtml(order.customer_name) + "</strong>" +
+      "<br><small class=\"text-muted\">Ref " + C.escapeHtml(order.reference_id || "-") + "</small></div>" +
+      "<span class=\"dispatch-status-badge " + badgeClass + "\">" + C.escapeHtml(order.status) + "</span>" +
       "</div>" +
-      "<label class=\"field\"><span>Delivery Photo</span><input class=\"pod-photo\" type=\"file\" accept=\"image/*\"></label>" +
-      "<div class=\"signature-wrap\"><canvas class=\"signature-pad\" width=\"320\" height=\"140\"></canvas></div>" +
-      "<div class=\"row\"><button class=\"btn btn-ghost\" data-action=\"clear-signature\">Clear Signature</button></div>" +
-      "<label class=\"field\"><span>Delivery Notes</span><textarea class=\"pod-notes\" rows=\"2\" placeholder=\"Left with front desk\"></textarea></label>" +
-      "<div class=\"row\">" +
-      "<button class=\"btn btn-accent\" data-action=\"submit-pod\">Submit POD + Mark Delivered</button>" +
+      "<div class=\"driver-stop-addresses\">" +
+      "<div class=\"driver-stop-addr\"><small class=\"text-muted\">PICKUP</small><div>" + C.escapeHtml(pickup) + "</div></div>" +
+      "<div class=\"driver-stop-addr\"><small class=\"text-muted\">DELIVERY</small><div>" + C.escapeHtml(delivery) + "</div></div>" +
+      "</div>" +
+      (order.phone ? "<div class=\"driver-stop-meta\"><small class=\"text-muted\">Phone:</small> " + C.escapeHtml(order.phone) + "</div>" : "") +
+      (order.notes ? "<div class=\"driver-stop-meta\"><small class=\"text-muted\">Notes:</small> " + C.escapeHtml(order.notes) + "</div>" : "") +
+      "<div class=\"driver-stop-actions\">" +
+      "<button class=\"btn btn-primary btn-sm\" data-action=\"status\" data-status=\"PickedUp\">Picked Up</button>" +
+      "<button class=\"btn btn-accent btn-sm\" data-action=\"status\" data-status=\"EnRoute\">En Route</button>" +
+      "<button class=\"btn btn-ghost btn-sm\" data-action=\"status\" data-status=\"Failed\">Failed</button>" +
+      "</div>" +
+      "<div class=\"driver-stop-pod\">" +
+      "<div class=\"driver-pod-row\">" +
+      "<label class=\"field\"><span>Photo</span><input class=\"pod-photo compact-input\" type=\"file\" accept=\"image/*\"></label>" +
+      "</div>" +
+      "<div class=\"driver-pod-row\">" +
+      "<label class=\"field\"><span>Signature</span></label>" +
+      "<div class=\"driver-signature-wrap\"><canvas class=\"signature-pad\" width=\"320\" height=\"120\"></canvas></div>" +
+      "<button class=\"btn btn-ghost btn-xs\" data-action=\"clear-signature\">Clear</button>" +
+      "</div>" +
+      "<label class=\"field\"><span>Delivery Notes</span><textarea class=\"pod-notes compact-input\" rows=\"2\" placeholder=\"Left with front desk...\"></textarea></label>" +
+      "<button class=\"btn btn-accent\" data-action=\"submit-pod\">Submit POD &amp; Deliver</button>" +
       "</div>" +
       "</article>"
     );
@@ -670,7 +673,7 @@
     if (!action) {
       return;
     }
-    const orderCard = target.closest(".order-card");
+    const orderCard = target.closest(".driver-stop-card");
     if (!orderCard) {
       return;
     }

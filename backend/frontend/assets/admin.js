@@ -2763,6 +2763,8 @@
     C.showMessage(el.authMessage, "Session cleared.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
+    } else {
+      window.location.reload();
     }
   }
 

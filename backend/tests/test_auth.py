@@ -76,6 +76,35 @@ def test_missing_org_claim_is_forbidden(monkeypatch):
     assert response.status_code == 403
 
 
+def test_missing_org_claim_resolved_from_user_table(monkeypatch):
+    monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
+    monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
+
+    from backend.repositories import get_identity_repository
+    from backend.schemas import UserRecord
+    from datetime import datetime, timezone
+
+    repo = get_identity_repository()
+    now = datetime.now(timezone.utc)
+    repo.upsert_user(UserRecord(
+        org_id="org-resolved",
+        user_id="user-lookup",
+        roles=["Admin"],
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    ))
+
+    app = _build_test_app()
+    client = TestClient(app)
+    token = make_mock_token({"sub": "user-lookup", "cognito:groups": ["Admin"]})
+
+    response = client.get("/whoami", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["org_id"] == "org-resolved"
+
+
 def test_rbac_blocks_non_admin(monkeypatch):
     monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
     app = _build_test_app()

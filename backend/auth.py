@@ -370,7 +370,10 @@ def _claims_to_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
 def _claims_to_user(claims: Dict[str, Any]) -> Dict[str, Any]:
     identity = _claims_to_identity(claims)
     if not identity.get("org_id"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing org_id claim")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Missing org_id claim. Ensure the Cognito user has the custom:org_id attribute set.",
+        )
     return identity
 
 
@@ -401,9 +404,37 @@ def get_dev_auth_user(request: Request) -> Optional[Dict[str, Any]]:
     return _claims_to_user(claims)
 
 
+def _lookup_org_id_for_sub(user_id: str) -> Optional[str]:
+    """Look up org_id from the UsersTable by user_id (Cognito sub)."""
+    if not user_id:
+        return None
+    try:
+        from backend.repositories import get_identity_repository
+    except ModuleNotFoundError:
+        from repositories import get_identity_repository
+    try:
+        repo = get_identity_repository()
+        user_record = repo.find_user_by_sub(user_id)
+        if user_record:
+            return user_record.org_id
+    except Exception:
+        pass
+    return None
+
+
 async def get_current_user(request: Request) -> Dict[str, Any]:
     claims = _resolve_claims(request)
-    return _claims_to_user(claims)
+    identity = _claims_to_identity(claims)
+    if not identity.get("org_id"):
+        org_id = _lookup_org_id_for_sub(identity.get("sub", ""))
+        if org_id:
+            identity["org_id"] = org_id
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Missing org_id claim. Ensure the Cognito user has the custom:org_id attribute set.",
+            )
+    return identity
 
 
 async def get_authenticated_identity(request: Request) -> Dict[str, Any]:

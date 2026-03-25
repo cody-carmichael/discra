@@ -41,6 +41,11 @@ class IdentityRepository(ABC):
     def list_users(self, org_id: str) -> List[UserRecord]:
         raise NotImplementedError
 
+    @abstractmethod
+    def find_user_by_sub(self, user_id: str) -> Optional[UserRecord]:
+        """Look up a user across all orgs by user_id (Cognito sub)."""
+        raise NotImplementedError
+
 
 class InMemoryIdentityRepository(IdentityRepository):
     def __init__(self):
@@ -63,6 +68,12 @@ class InMemoryIdentityRepository(IdentityRepository):
 
     def list_users(self, org_id: str) -> List[UserRecord]:
         return [user for (item_org_id, _), user in self._users.items() if item_org_id == org_id]
+
+    def find_user_by_sub(self, user_id: str) -> Optional[UserRecord]:
+        for (_, uid), user in self._users.items():
+            if uid == user_id:
+                return user
+        return None
 
 
 class DynamoIdentityRepository(IdentityRepository):
@@ -103,6 +114,20 @@ class DynamoIdentityRepository(IdentityRepository):
             )
             items.extend(response.get("Items", []))
         return [UserRecord.model_validate(item) for item in items]
+
+    def find_user_by_sub(self, user_id: str) -> Optional[UserRecord]:
+        try:
+            response = self._users_table.query(
+                IndexName="user_id_index",
+                KeyConditionExpression=Key("user_id").eq(user_id),
+                Limit=1,
+            )
+        except Exception:
+            return None
+        items = response.get("Items", [])
+        if not items:
+            return None
+        return UserRecord.model_validate(items[0])
 
 
 _IN_MEMORY_REPO = InMemoryIdentityRepository()

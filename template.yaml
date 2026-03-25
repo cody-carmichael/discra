@@ -218,6 +218,13 @@ Resources:
           KeyType: HASH
         - AttributeName: user_id
           KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: user_id_index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
       Tags:
         - Key: App
           Value: Discra
@@ -538,6 +545,7 @@ Resources:
             Resource:
               - !GetAtt OrganizationsTable.Arn
               - !GetAtt UsersTable.Arn
+              - !Sub "${UsersTable.Arn}/index/*"
               - !GetAtt OrdersTable.Arn
               - !Sub "${OrdersTable.Arn}/index/*"
               - !GetAtt PodArtifactsTable.Arn

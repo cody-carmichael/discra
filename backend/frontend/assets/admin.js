@@ -10,6 +10,9 @@
   const debugAuth = query.get("debug_auth") === "1";
 
   const el = {
+    loginScreen: document.getElementById("login-screen"),
+    loginScreenBtn: document.getElementById("login-screen-btn"),
+    loginScreenMessage: document.getElementById("login-screen-message"),
     authState: document.getElementById("auth-state"),
     token: document.getElementById("jwt-token"),
     saveToken: document.getElementById("save-token"),
@@ -1058,10 +1061,17 @@
     driverRefreshTimer = null;
   }
 
+  function showLoginScreen(show) {
+    if (el.loginScreen) {
+      el.loginScreen.classList.toggle("hidden", !show);
+    }
+  }
+
   function evaluateAuthorization(claims) {
     if (!claims) {
       isAuthorizedRole = false;
       isAdminRole = false;
+      showLoginScreen(true);
       stopDriverAutoRefresh();
       allOrders = [];
       lastOrders = [];
@@ -1087,12 +1097,15 @@
     isAuthorizedRole = hasAllowedRole(claims);
     isAdminRole = hasAdminRole(claims);
     if (!isAuthorizedRole) {
+      showLoginScreen(true);
       stopDriverAutoRefresh();
       allOrders = [];
       lastOrders = [];
       lastDriverLocations = [];
       selectedDriverId = "";
       _clearSelection();
+    } else {
+      showLoginScreen(false);
     }
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
@@ -2760,11 +2773,8 @@
     el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
     el.auditLogsView.innerHTML = "No audit logs loaded.";
     el.routeResult.innerHTML = "No route computed yet.";
-    C.showMessage(el.authMessage, "Session cleared.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
-    } else {
-      window.location.reload();
     }
   }
 
@@ -3004,6 +3014,13 @@
       C.showMessage(el.authMessage, error.message, "error");
     });
   });
+  if (el.loginScreenBtn) {
+    el.loginScreenBtn.addEventListener("click", function () {
+      launchHostedLogin().catch(function (error) {
+        C.showMessage(el.loginScreenMessage, error.message, "error");
+      });
+    });
+  }
   el.logoutHostedUi.addEventListener("click", function () {
     launchHostedLogout().catch(function (error) {
       C.showMessage(el.authMessage, error.message, "error");

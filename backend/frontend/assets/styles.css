@@ -2285,6 +2285,30 @@ body.theme-admin .billing-seat-cards .stat-card small {
    ================================================================ */
 
 /* --- Slim Topbar --- */
+/* ===== LOGIN SCREEN ===== */
+.login-screen {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+}
+.login-screen.hidden { display: none; }
+.login-card {
+  text-align: center; padding: 3rem 2.5rem;
+  background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: 16px; min-width: 320px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.3);
+}
+.login-logo-mark {
+  width: 64px; height: 64px; margin: 0 auto 1rem;
+  background: var(--accent); color: #fff;
+  border-radius: 14px; font-size: 2rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.login-title { font-size: 1.75rem; font-weight: 700; color: var(--text); margin: 0 0 .25rem; }
+.login-subtitle { font-size: .95rem; color: var(--text-muted); margin: 0 0 2rem; }
+.login-btn { width: 100%; padding: .75rem; font-size: 1rem; }
+.login-message { margin-top: 1rem; }
+
 .topbar-slim {
   height: 52px;
   background: var(--bg-soft);

@@ -18,7 +18,7 @@ router = APIRouter(prefix="/drivers", tags=["drivers"])
 @router.post("/location", response_model=DriverLocationRecord)
 async def upsert_driver_location(
     payload: LocationUpdate,
-    user=Depends(require_roles([ROLE_DRIVER])),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
     location_store=Depends(get_driver_location_store),
 ):
     record = build_driver_location_record(

@@ -1,6 +1,8 @@
+import json
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
 try:
@@ -86,7 +88,9 @@ class DynamoDriverLocationStore(DriverLocationStore):
         self.table = boto3.resource("dynamodb").Table(table_name)
 
     def upsert_location(self, location: DriverLocationRecord) -> DriverLocationRecord:
-        self.table.put_item(Item=location.model_dump(mode="json"))
+        # DynamoDB requires Decimal instead of float
+        item = json.loads(json.dumps(location.model_dump(mode="json")), parse_float=Decimal)
+        self.table.put_item(Item=item)
         return location
 
     def list_locations(self, org_id: str) -> List[DriverLocationRecord]:

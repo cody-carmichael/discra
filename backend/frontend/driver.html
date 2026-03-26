@@ -35,6 +35,9 @@
       </div>
       <div class="drv-topbar-right">
         <span id="driver-auth-state" class="drv-status-pill drv-status-off">Offline</span>
+        <button id="profile-btn" class="drv-profile-btn" type="button" title="Profile">
+          <span id="profile-avatar" class="drv-profile-avatar">?</span>
+        </button>
         <button id="driver-logout-hosted-ui" class="drv-btn drv-btn-ghost drv-btn-sm" type="button">Logout</button>
       </div>
     </header>
@@ -79,6 +82,42 @@
         <button id="detail-close" class="drv-close-btn" type="button">&times;</button>
       </div>
       <div id="detail-body" class="drv-detail-body"></div>
+    </div>
+
+    <!-- PROFILE MODAL -->
+    <div id="profile-modal" class="drv-detail" style="display:none;">
+      <div class="drv-detail-header">
+        <h3>My Profile</h3>
+        <button id="profile-close" class="drv-close-btn" type="button">&times;</button>
+      </div>
+      <div class="drv-detail-body">
+        <form id="profile-form">
+          <div class="drv-detail-section">
+            <div class="drv-detail-label">PHOTO</div>
+            <div class="drv-profile-photo-row">
+              <div id="profile-photo-preview" class="drv-profile-photo-preview">?</div>
+              <div class="drv-field" style="flex:1;">
+                <span class="drv-field-label">Photo URL</span>
+                <input id="profile-photo-url" type="url" class="drv-input" placeholder="https://...">
+              </div>
+            </div>
+          </div>
+          <div class="drv-detail-section">
+            <div class="drv-field">
+              <span class="drv-field-label">Phone</span>
+              <input id="profile-phone" type="tel" class="drv-input" placeholder="(555) 123-4567">
+            </div>
+          </div>
+          <div class="drv-detail-section">
+            <div class="drv-field">
+              <span class="drv-field-label">Email</span>
+              <input id="profile-email" type="email" class="drv-input" placeholder="you@email.com">
+            </div>
+          </div>
+          <p id="profile-message" class="drv-msg"></p>
+          <button type="submit" class="drv-btn drv-btn-accent" style="width:100%;">Save Profile</button>
+        </form>
+      </div>
     </div>
   </div>
 

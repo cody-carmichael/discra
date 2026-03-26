@@ -322,6 +322,41 @@ body {
 .drv-empty-icon { font-size: 2rem; margin-bottom: 8px; opacity: .4; }
 .drv-empty-text { font-size: .85rem; }
 
+/* ===== PROFILE ===== */
+.drv-profile-btn {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 2px solid var(--drv-border); background: var(--drv-surface-2);
+  cursor: pointer; padding: 0; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.drv-profile-avatar {
+  font-size: .7rem; font-weight: 700; color: var(--drv-text-muted);
+}
+.drv-profile-avatar img {
+  width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+}
+.drv-profile-photo-row {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+}
+.drv-profile-photo-preview {
+  width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+  background: var(--drv-surface-2); border: 2px solid var(--drv-border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; color: var(--drv-text-muted); overflow: hidden;
+}
+.drv-profile-photo-preview img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.drv-input {
+  width: 100%; padding: 10px 12px; border-radius: var(--drv-radius-sm);
+  border: 1px solid var(--drv-border); background: var(--drv-bg);
+  color: var(--drv-text); font-family: inherit; font-size: .85rem;
+}
+.drv-input:focus {
+  outline: none; border-color: var(--drv-accent);
+  box-shadow: 0 0 0 2px var(--drv-accent-glow);
+}
+
 /* ===== DESKTOP: 3-column layout ===== */
 @media (min-width: 768px) {
   .drv-map {

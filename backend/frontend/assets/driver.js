@@ -44,6 +44,16 @@
     detailClose: document.getElementById("detail-close"),
     bottomSheet: document.getElementById("bottom-sheet"),
     sheetHandle: document.getElementById("sheet-handle"),
+    profileBtn: document.getElementById("profile-btn"),
+    profileAvatar: document.getElementById("profile-avatar"),
+    profileModal: document.getElementById("profile-modal"),
+    profileClose: document.getElementById("profile-close"),
+    profileForm: document.getElementById("profile-form"),
+    profilePhone: document.getElementById("profile-phone"),
+    profileEmail: document.getElementById("profile-email"),
+    profilePhotoUrl: document.getElementById("profile-photo-url"),
+    profilePhotoPreview: document.getElementById("profile-photo-preview"),
+    profileMessage: document.getElementById("profile-message"),
   };
 
   let token = "";
@@ -714,6 +724,72 @@
     await updateOrderStatus(orderId, "Delivered");
   }
 
+  // ── Profile ────────────────────────────────────────────────────
+
+  var currentProfile = null;
+
+  function updateProfileAvatar() {
+    if (!el.profileAvatar) return;
+    if (currentProfile && currentProfile.photo_url) {
+      el.profileAvatar.innerHTML = '<img src="' + C.escapeHtml(currentProfile.photo_url) + '" alt="">';
+    } else {
+      var claims = _activeClaims();
+      var name = (claims && claims.username) || "?";
+      var parts = name.split(/[\s@._-]/);
+      var init = parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : name.substring(0, 2).toUpperCase();
+      el.profileAvatar.textContent = init;
+    }
+  }
+
+  function updateProfilePhotoPreview() {
+    if (!el.profilePhotoPreview) return;
+    var url = el.profilePhotoUrl ? el.profilePhotoUrl.value.trim() : "";
+    if (url) {
+      el.profilePhotoPreview.innerHTML = '<img src="' + C.escapeHtml(url) + '" alt="">';
+    } else {
+      el.profilePhotoPreview.textContent = "?";
+    }
+  }
+
+  async function loadProfile() {
+    try {
+      currentProfile = await C.requestJson(apiBase, "/users/me", { token: token });
+      if (currentProfile) {
+        updateProfileAvatar();
+      }
+    } catch (e) { /* ok */ }
+  }
+
+  function openProfileModal() {
+    if (!el.profileModal) return;
+    if (currentProfile) {
+      if (el.profilePhone) el.profilePhone.value = currentProfile.phone || "";
+      if (el.profileEmail) el.profileEmail.value = currentProfile.email || "";
+      if (el.profilePhotoUrl) el.profilePhotoUrl.value = currentProfile.photo_url || "";
+      updateProfilePhotoPreview();
+    }
+    el.profileModal.style.display = "flex";
+  }
+
+  function closeProfileModal() {
+    if (el.profileModal) el.profileModal.style.display = "none";
+  }
+
+  async function saveProfile() {
+    var updates = {};
+    if (el.profilePhone) updates.phone = el.profilePhone.value.trim() || null;
+    if (el.profileEmail) updates.email = el.profileEmail.value.trim() || null;
+    if (el.profilePhotoUrl) updates.photo_url = el.profilePhotoUrl.value.trim() || null;
+    try {
+      currentProfile = await C.requestJson(apiBase, "/users/me", { method: "PUT", token: token, json: updates });
+      updateProfileAvatar();
+      C.showMessage(el.profileMessage, "Profile saved.", "success");
+      setTimeout(closeProfileModal, 800);
+    } catch (e) {
+      C.showMessage(el.profileMessage, e.message, "error");
+    }
+  }
+
   // ── Bottom Sheet Drag ──────────────────────────────────────────
 
   function setupBottomSheet() {
@@ -766,6 +842,12 @@
   el.routeGo.addEventListener("click", function () { executeNavigation().catch(function (e) { C.showMessage(el.ordersMessage, e.message, "error"); }); });
   el.routeCancel.addEventListener("click", function () { hideRoutePrompt(); clearRouteLayer(); });
   el.refreshInbox.addEventListener("click", refreshInbox);
+
+  // Profile
+  if (el.profileBtn) el.profileBtn.addEventListener("click", openProfileModal);
+  if (el.profileClose) el.profileClose.addEventListener("click", closeProfileModal);
+  if (el.profileForm) el.profileForm.addEventListener("submit", function (e) { e.preventDefault(); saveProfile(); });
+  if (el.profilePhotoUrl) el.profilePhotoUrl.addEventListener("input", updateProfilePhotoPreview);
 
   // Login screen button
   if (el.loginScreenBtn) {
@@ -829,6 +911,7 @@
     if (isAuthorizedRole) {
       // Auto-share location immediately on login
       startAutoLocationShare();
+      await loadProfile();
       await refreshInbox();
     } else {
       renderOrders([]);

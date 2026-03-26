@@ -401,7 +401,7 @@ async def update_order_status(
 
 @router.get("/driver/inbox", response_model=List[Order])
 async def driver_inbox(
-    user=Depends(require_roles([ROLE_DRIVER])),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
     order_store=Depends(get_order_store),
 ):
     results = order_store.list_assigned_orders(

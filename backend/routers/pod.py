@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status as http_status
 
 try:
-    from backend.auth import ROLE_DRIVER, require_roles
+    from backend.auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, require_roles
     from backend.pod_service import (
         build_pod_key,
         get_pod_data_store,
@@ -22,7 +22,7 @@ try:
         PodPresignedUpload,
     )
 except ModuleNotFoundError:  # local run from backend/ directory
-    from auth import ROLE_DRIVER, require_roles
+    from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, require_roles
     from pod_service import (
         build_pod_key,
         get_pod_data_store,
@@ -64,7 +64,7 @@ def _validate_metadata_keys(prefix: str, keys: List[str]):
 @router.post("/presign", response_model=PodPresignResponse)
 async def create_pod_presigned_uploads(
     payload: PodPresignRequest,
-    user=Depends(require_roles([ROLE_DRIVER])),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
     pod_store=Depends(get_pod_data_store),
 ):
     order = _require_tenant_order(payload.order_id, user["org_id"])
@@ -108,7 +108,7 @@ async def create_pod_presigned_uploads(
 @router.post("/metadata", response_model=PodMetadataRecord)
 async def create_pod_metadata(
     payload: PodMetadataCreateRequest,
-    user=Depends(require_roles([ROLE_DRIVER])),
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
     pod_store=Depends(get_pod_data_store),
 ):
     order = _require_tenant_order(payload.order_id, user["org_id"])

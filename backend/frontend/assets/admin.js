@@ -2018,40 +2018,66 @@
     currentMap.fitBounds(bounds, { padding: 36, maxZoom: 12 });
   }
 
-  function renderDriverList(driverLocations) {
-    if (!driverLocations.length) {
-      el.driverList.innerHTML = "<li class=\"dispatch-empty\">No active drivers in range.</li>";
-      return;
-    }
-    var initials = function (id) {
-      var parts = String(id || "").split(/[\s@._-]/);
+  function renderDriverList(driverLocations, roster) {
+    var initials = function (name) {
+      var parts = String(name || "").split(/[\s@._-]/);
       if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-      return String(id || "?").substring(0, 2).toUpperCase();
+      return String(name || "?").substring(0, 2).toUpperCase();
     };
-    el.driverList.innerHTML =
-      "<li class=\"dispatch-driver-section-label\">Active (" + driverLocations.length + ")</li>" +
-      driverLocations
-        .map(function (item) {
-          const selectedClass = item.driver_id === selectedDriverId ? " is-selected" : "";
-          return (
-            "<li><button type=\"button\" class=\"dispatch-driver-card" +
-            selectedClass +
-            "\" data-driver-id=\"" +
-            C.escapeHtml(item.driver_id) +
-            "\"><div class=\"dispatch-driver-avatar\">" +
-            C.escapeHtml(initials(item.driver_id)) +
-            "<span class=\"dispatch-driver-status-dot\"></span>" +
-            "</div><div class=\"dispatch-driver-info\">" +
-            "<span class=\"dispatch-driver-name\">" +
-            C.escapeHtml(item.driver_id) +
-            "</span><span class=\"dispatch-driver-meta\">" +
-            C.escapeHtml(item.lat.toFixed(4) + ", " + item.lng.toFixed(4)) +
-            " | " +
-            C.escapeHtml(C.formatTimestamp(item.timestamp)) +
-            "</span></div></button></li>"
-          );
-        })
-        .join("");
+    roster = Array.isArray(roster) ? roster : [];
+    var onlineIds = new Set(driverLocations.map(function (d) { return d.driver_id; }));
+    var offlineDrivers = roster.filter(function (r) { return !r.is_online; });
+    var html = "";
+    if (driverLocations.length) {
+      html += "<li class=\"dispatch-driver-section-label\">Online (" + driverLocations.length + ")</li>";
+      html += driverLocations.map(function (item) {
+        var rosterEntry = roster.find(function (r) { return r.user_id === item.driver_id; });
+        var displayName = (rosterEntry && rosterEntry.username) || item.driver_id;
+        var photoUrl = rosterEntry && rosterEntry.photo_url;
+        var selectedClass = item.driver_id === selectedDriverId ? " is-selected" : "";
+        var avatarHtml = photoUrl
+          ? "<img src=\"" + C.escapeHtml(photoUrl) + "\" class=\"dispatch-driver-avatar-img\" alt=\"\">"
+          : C.escapeHtml(initials(displayName));
+        return (
+          "<li><button type=\"button\" class=\"dispatch-driver-card" + selectedClass +
+          "\" data-driver-id=\"" + C.escapeHtml(item.driver_id) +
+          "\"><div class=\"dispatch-driver-avatar\">" + avatarHtml +
+          "<span class=\"dispatch-driver-status-dot status-online\"></span>" +
+          "</div><div class=\"dispatch-driver-info\">" +
+          "<span class=\"dispatch-driver-name\">" + C.escapeHtml(displayName) +
+          "</span><span class=\"dispatch-driver-meta\">" +
+          C.escapeHtml(item.lat.toFixed(4) + ", " + item.lng.toFixed(4)) +
+          " | " + C.escapeHtml(C.formatTimestamp(item.timestamp)) +
+          "</span></div></button></li>"
+        );
+      }).join("");
+    }
+    if (offlineDrivers.length) {
+      html += "<li class=\"dispatch-driver-section-label\">Offline (" + offlineDrivers.length + ")</li>";
+      html += offlineDrivers.map(function (d) {
+        var displayName = d.username || d.user_id;
+        var photoUrl = d.photo_url;
+        var selectedClass = d.user_id === selectedDriverId ? " is-selected" : "";
+        var avatarHtml = photoUrl
+          ? "<img src=\"" + C.escapeHtml(photoUrl) + "\" class=\"dispatch-driver-avatar-img\" alt=\"\">"
+          : C.escapeHtml(initials(displayName));
+        var lastSeen = d.last_seen ? C.formatTimestamp(d.last_seen) : "Never";
+        return (
+          "<li><button type=\"button\" class=\"dispatch-driver-card dispatch-driver-offline" + selectedClass +
+          "\" data-driver-id=\"" + C.escapeHtml(d.user_id) +
+          "\"><div class=\"dispatch-driver-avatar dispatch-driver-avatar-offline\">" + avatarHtml +
+          "<span class=\"dispatch-driver-status-dot status-offline\"></span>" +
+          "</div><div class=\"dispatch-driver-info\">" +
+          "<span class=\"dispatch-driver-name\">" + C.escapeHtml(displayName) +
+          "</span><span class=\"dispatch-driver-meta\">Last seen: " + C.escapeHtml(lastSeen) +
+          "</span></div></button></li>"
+        );
+      }).join("");
+    }
+    if (!html) {
+      html = "<li class=\"dispatch-empty\">No drivers registered.</li>";
+    }
+    el.driverList.innerHTML = html;
   }
 
   function renderDriverOptions(users) {
@@ -2116,7 +2142,13 @@
       if (!selectedStillActive) {
         selectedDriverId = "";
       }
-      renderDriverList(lastDriverLocations);
+      // Also fetch roster for offline drivers
+      var roster = [];
+      try {
+        roster = await C.requestJson(apiBase, "/drivers/roster?active_minutes=120", { token });
+        if (!Array.isArray(roster)) roster = [];
+      } catch (e) { roster = []; }
+      renderDriverList(lastDriverLocations, roster);
       renderDriverMarkers(lastDriverLocations, { keepCurrentViewport: !!selectedStillActive });
       renderAssignmentQueues(allOrders);
       updateActiveDriverStat(lastDriverLocations.length);

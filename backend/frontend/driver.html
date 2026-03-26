@@ -2,115 +2,144 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Discra Driver App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Discra Driver</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=20260323c">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/driver-manifest.json">
+  <meta name="theme-color" content="#0b1117">
+  <link rel="stylesheet" href="assets/driver-mobile.css?v=20260325a">
 </head>
-<body class="theme-admin">
-  <div class="app-shell">
-    <header class="topbar-slim">
-      <div class="topbar-slim-left">
-        <div class="topbar-logo-mark">D</div>
-        <span class="topbar-brand">Discra</span>
+<body>
+
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen" class="drv-login">
+    <div class="drv-login-card">
+      <div class="drv-login-logo">D</div>
+      <h1 class="drv-login-title">Discra</h1>
+      <p class="drv-login-sub">Driver</p>
+      <button id="login-screen-btn" class="drv-btn drv-btn-accent drv-login-btn" type="button">Sign In</button>
+      <p id="login-screen-message" class="drv-msg"></p>
+    </div>
+  </div>
+
+  <!-- APP SHELL -->
+  <div id="app-shell" class="drv-shell" style="display:none;">
+    <!-- TOP BAR -->
+    <header class="drv-topbar">
+      <div class="drv-topbar-left">
+        <div class="drv-logo">D</div>
+        <span class="drv-brand">Discra</span>
       </div>
-      <div class="topbar-slim-center">
-        <span class="topbar-subtitle">Driver</span>
-      </div>
-      <div class="topbar-slim-right">
-        <span id="driver-auth-state" class="status-pill status-idle">Not Signed In</span>
-        <a class="topbar-link" href="register">Registration</a>
-        <a class="topbar-link" href="admin">Admin</a>
-        <button id="driver-logout-hosted-ui" class="btn btn-ghost btn-sm" type="button">Logout</button>
+      <div class="drv-topbar-right">
+        <span id="driver-auth-state" class="drv-status-pill drv-status-off">Offline</span>
+        <button id="profile-btn" class="drv-profile-btn" type="button" title="Profile">
+          <span id="profile-avatar" class="drv-profile-avatar">?</span>
+        </button>
+        <button id="driver-logout-hosted-ui" class="drv-btn drv-btn-ghost drv-btn-sm" type="button">Logout</button>
       </div>
     </header>
 
-    <main class="driver-console">
-      <!-- Left: Assigned Stops -->
-      <aside class="driver-left">
-        <div class="driver-left-header">
-          <h3>My Stops</h3>
-          <div class="driver-left-actions">
-            <button id="refresh-inbox" class="btn btn-ghost btn-sm" type="button">Refresh</button>
-          </div>
-        </div>
-        <div class="driver-shift-bar">
-          <button id="send-location-now" class="btn btn-accent btn-xs" type="button">Send Location</button>
-          <button id="start-location-share" class="btn btn-primary btn-xs" type="button">Auto Share</button>
-          <button id="stop-location-share" class="btn btn-ghost btn-xs" type="button">Stop</button>
-          <span id="location-status" class="driver-location-status">Off</span>
-        </div>
-        <div id="driver-orders" class="driver-stop-list"></div>
-        <p id="driver-orders-message" class="message"></p>
-      </aside>
+    <!-- MAP (full-screen behind UI) -->
+    <div id="driver-map" class="drv-map"></div>
 
-      <!-- Center: Map -->
-      <section class="driver-map-area">
-        <div id="driver-map" class="driver-map-container"></div>
-        <!-- Route prompt overlay -->
-        <div id="route-prompt" class="driver-route-prompt" style="display:none;">
-          <div class="driver-route-prompt-inner">
-            <span id="route-prompt-text">Route to Pickup?</span>
-            <div class="driver-route-prompt-actions">
-              <button id="route-go" class="btn btn-accent btn-sm">Go</button>
-              <button id="route-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+    <!-- LOCATION STATUS BAR -->
+    <div id="location-bar" class="drv-location-bar">
+      <span id="location-status" class="drv-loc-text">Connecting...</span>
+    </div>
+
+    <!-- ROUTE PROMPT OVERLAY -->
+    <div id="route-prompt" class="drv-route-prompt" style="display:none;">
+      <span id="route-prompt-text">Route to Pickup?</span>
+      <div class="drv-route-prompt-btns">
+        <button id="route-go" class="drv-btn drv-btn-accent drv-btn-sm">Go</button>
+        <button id="route-cancel" class="drv-btn drv-btn-ghost drv-btn-sm">Cancel</button>
+      </div>
+    </div>
+
+    <!-- ROUTE STATS -->
+    <div id="route-stats" class="drv-route-stats" style="display:none;">
+      <span id="route-stats-text"></span>
+    </div>
+
+    <!-- BOTTOM SHEET: Orders -->
+    <div id="bottom-sheet" class="drv-sheet">
+      <div class="drv-sheet-handle" id="sheet-handle"><div class="drv-sheet-bar"></div></div>
+      <div class="drv-sheet-header">
+        <h3 class="drv-sheet-title">My Stops <span id="stop-count" class="drv-stop-count">0</span></h3>
+        <button id="refresh-inbox" class="drv-btn drv-btn-ghost drv-btn-sm" type="button">Refresh</button>
+      </div>
+      <div id="driver-orders" class="drv-orders-list"></div>
+      <p id="driver-orders-message" class="drv-msg"></p>
+    </div>
+
+    <!-- ORDER DETAIL SLIDE-UP -->
+    <div id="driver-detail-panel" class="drv-detail" style="display:none;">
+      <div class="drv-detail-header">
+        <h3 id="detail-customer-name">Order Details</h3>
+        <button id="detail-close" class="drv-close-btn" type="button">&times;</button>
+      </div>
+      <div id="detail-body" class="drv-detail-body"></div>
+    </div>
+
+    <!-- PROFILE MODAL -->
+    <div id="profile-modal" class="drv-detail" style="display:none;">
+      <div class="drv-detail-header">
+        <h3>My Profile</h3>
+        <button id="profile-close" class="drv-close-btn" type="button">&times;</button>
+      </div>
+      <div class="drv-detail-body">
+        <form id="profile-form">
+          <div class="drv-detail-section">
+            <div class="drv-detail-label">PHOTO</div>
+            <div class="drv-profile-photo-row">
+              <div id="profile-photo-preview" class="drv-profile-photo-preview">?</div>
+              <div class="drv-field" style="flex:1;">
+                <span class="drv-field-label">Photo URL</span>
+                <input id="profile-photo-url" type="url" class="drv-input" placeholder="https://...">
+              </div>
             </div>
           </div>
-        </div>
-        <div id="route-stats" class="driver-route-stats" style="display:none;">
-          <span id="route-stats-text"></span>
-        </div>
-      </section>
-
-      <!-- Right: Selected Order Details + POD -->
-      <aside id="driver-detail-panel" class="driver-right" style="display:none;">
-        <div class="driver-detail-header">
-          <h3 id="detail-customer-name">Order Details</h3>
-          <button id="detail-close" class="modal-close-btn" type="button">&times;</button>
-        </div>
-        <div id="detail-body" class="driver-detail-body"></div>
-      </aside>
-    </main>
-
-    <!-- Session Settings (hidden drawer) -->
-    <div id="session-drawer" class="driver-session-drawer" style="display:none;">
-      <div class="driver-session-drawer-inner">
-        <div class="driver-session-drawer-header">
-          <h3>Session &amp; Auth</h3>
-          <button id="session-drawer-close" class="modal-close-btn" type="button">&times;</button>
-        </div>
-        <div id="driver-dev-auth-panel" class="dev-auth-panel" hidden>
-          <p class="panel-help">Quick test sign-in</p>
-          <div id="driver-dev-auth-actions" class="row"></div>
-        </div>
-        <details class="auth-config" open>
-          <summary>Hosted UI login</summary>
-          <label class="field"><span>Cognito Domain</span><input id="driver-cognito-domain" class="compact-input" placeholder="your-domain.auth.us-east-1.amazoncognito.com"></label>
-          <label class="field"><span>Client ID</span><input id="driver-cognito-client-id" class="compact-input" placeholder="app client id"></label>
-          <div class="row">
-            <button id="driver-login-hosted-ui" class="btn btn-accent btn-sm" type="button">Login</button>
+          <div class="drv-detail-section">
+            <div class="drv-field">
+              <span class="drv-field-label">Phone</span>
+              <input id="profile-phone" type="tel" class="drv-input" placeholder="(555) 123-4567">
+            </div>
           </div>
-        </details>
-        <details id="driver-auth-debug" class="auth-config" hidden>
-          <summary>Debug Token Override</summary>
-          <label class="field"><span>JWT Token</span><textarea id="driver-jwt-token" rows="3" class="compact-input" placeholder="Paste id_token here"></textarea></label>
-          <div class="row">
-            <button id="driver-save-token" class="btn btn-primary btn-sm" type="button">Save</button>
-            <button id="driver-clear-token" class="btn btn-ghost btn-sm" type="button">Clear</button>
+          <div class="drv-detail-section">
+            <div class="drv-field">
+              <span class="drv-field-label">Email</span>
+              <input id="profile-email" type="email" class="drv-input" placeholder="you@email.com">
+            </div>
           </div>
-          <pre id="driver-claims-view" class="claims-view">No active web session.</pre>
-        </details>
-        <p id="driver-auth-message" class="message"></p>
+          <p id="profile-message" class="drv-msg"></p>
+          <button type="submit" class="drv-btn drv-btn-accent" style="width:100%;">Save Profile</button>
+        </form>
       </div>
     </div>
   </div>
 
+  <!-- SESSION SETTINGS (hidden) -->
+  <div id="session-drawer" style="display:none;">
+    <div id="driver-dev-auth-panel" class="dev-auth-panel" hidden>
+      <div id="driver-dev-auth-actions" class="row"></div>
+    </div>
+    <input id="driver-cognito-domain" type="hidden">
+    <input id="driver-cognito-client-id" type="hidden">
+    <button id="driver-login-hosted-ui" type="button" hidden>Login</button>
+    <details id="driver-auth-debug" hidden>
+      <textarea id="driver-jwt-token" hidden></textarea>
+      <button id="driver-save-token" type="button" hidden>Save</button>
+      <button id="driver-clear-token" type="button" hidden>Clear</button>
+      <pre id="driver-claims-view" hidden></pre>
+    </details>
+    <p id="driver-auth-message" class="drv-msg"></p>
+  </div>
+
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260323c"></script>
-  <script src="assets/driver.js?v=20260323c"></script>
+  <script src="assets/common.js?v=20260325a"></script>
+  <script src="assets/driver.js?v=20260325a"></script>
 </body>
 </html>

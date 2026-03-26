@@ -8,12 +8,12 @@ try:
     from backend.audit_store import get_audit_log_store
     from backend.auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
     from backend.repositories import get_identity_repository
-    from backend.schemas import AuditLogRecord, OrganizationRecord, OrganizationUpdateRequest, UserRecord
+    from backend.schemas import AuditLogRecord, OrganizationRecord, OrganizationUpdateRequest, UserProfileUpdate, UserRecord
 except ModuleNotFoundError:  # local run from backend/ directory
     from audit_store import get_audit_log_store
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
     from repositories import get_identity_repository
-    from schemas import AuditLogRecord, OrganizationRecord, OrganizationUpdateRequest, UserRecord
+    from schemas import AuditLogRecord, OrganizationRecord, OrganizationUpdateRequest, UserProfileUpdate, UserRecord
 
 router = APIRouter(tags=["identity"])
 _USER_LIST_ROLES = {ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER}
@@ -73,6 +73,23 @@ async def sync_current_user_record(
 ):
     _ensure_org(user, repo)
     return _sync_user(user, repo)
+
+
+@router.put("/users/me", response_model=UserRecord)
+async def update_current_user_profile(
+    payload: UserProfileUpdate,
+    user=Depends(get_current_user),
+    repo=Depends(get_identity_repository),
+):
+    _ensure_org(user, repo)
+    record = _sync_user(user, repo)
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        return record
+    for field, value in updates.items():
+        setattr(record, field, value)
+    record.updated_at = datetime.now(timezone.utc)
+    return repo.upsert_user(record)
 
 
 @router.get("/users", response_model=List[UserRecord])

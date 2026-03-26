@@ -2,12 +2,16 @@
   const C = window.DiscraCommon;
   const storageKey = "discra_driver_auth";
   const apiBase = C.deriveApiBase("/ui/driver");
-  const driverAllowedRoles = ["Driver"];
+  const driverAllowedRoles = ["Driver", "Admin", "Dispatcher"];
   const query = new URLSearchParams(window.location.search || "");
   const debugAuth = query.get("debug_auth") === "1";
   const defaultMapStyle = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
   const el = {
+    loginScreen: document.getElementById("login-screen"),
+    loginScreenBtn: document.getElementById("login-screen-btn"),
+    loginScreenMessage: document.getElementById("login-screen-message"),
+    appShell: document.getElementById("app-shell"),
     authState: document.getElementById("driver-auth-state"),
     token: document.getElementById("driver-jwt-token"),
     saveToken: document.getElementById("driver-save-token"),
@@ -17,9 +21,8 @@
     refreshInbox: document.getElementById("refresh-inbox"),
     orders: document.getElementById("driver-orders"),
     ordersMessage: document.getElementById("driver-orders-message"),
-    sendLocationNow: document.getElementById("send-location-now"),
-    startLocationShare: document.getElementById("start-location-share"),
-    stopLocationShare: document.getElementById("stop-location-share"),
+    stopCount: document.getElementById("stop-count"),
+    locationBar: document.getElementById("location-bar"),
     locationStatus: document.getElementById("location-status"),
     cognitoDomain: document.getElementById("driver-cognito-domain"),
     cognitoClientId: document.getElementById("driver-cognito-client-id"),
@@ -39,6 +42,18 @@
     detailCustomerName: document.getElementById("detail-customer-name"),
     detailBody: document.getElementById("detail-body"),
     detailClose: document.getElementById("detail-close"),
+    bottomSheet: document.getElementById("bottom-sheet"),
+    sheetHandle: document.getElementById("sheet-handle"),
+    profileBtn: document.getElementById("profile-btn"),
+    profileAvatar: document.getElementById("profile-avatar"),
+    profileModal: document.getElementById("profile-modal"),
+    profileClose: document.getElementById("profile-close"),
+    profileForm: document.getElementById("profile-form"),
+    profilePhone: document.getElementById("profile-phone"),
+    profileEmail: document.getElementById("profile-email"),
+    profilePhotoUrl: document.getElementById("profile-photo-url"),
+    profilePhotoPreview: document.getElementById("profile-photo-preview"),
+    profileMessage: document.getElementById("profile-message"),
   };
 
   let token = "";
@@ -59,11 +74,11 @@
   let selectedOrderId = null;
   let pendingNavigation = null;
   const geocodeCache = {};
-  const orderCoords = {}; // orderId → {lat, lng}
+  const orderCoords = {};
   const activeRouteSourceId = "driver-active-route";
   const activeRouteLayerId = "driver-active-route-layer";
 
-  // ── Auth (unchanged logic) ──────────────────────────────────────
+  // ── Auth ─────────────────────────────────────────────────────────
 
   function claimsRoles(claims) {
     if (!claims) return [];
@@ -92,22 +107,37 @@
   function _activeClaims() { return devSessionClaims || webSessionClaims || C.decodeJwt(token); }
 
   function setInteractiveState(enabled) {
-    el.refreshInbox.disabled = !enabled;
-    el.sendLocationNow.disabled = !enabled;
-    el.startLocationShare.disabled = !enabled;
-    el.stopLocationShare.disabled = !enabled;
+    if (el.refreshInbox) el.refreshInbox.disabled = !enabled;
+  }
+
+  function showLoginScreen(show) {
+    if (el.loginScreen) el.loginScreen.classList.toggle("hidden", !show);
+    if (el.appShell) el.appShell.style.display = show ? "none" : "flex";
   }
 
   function evaluateAuthorization(claims) {
-    if (!claims) { isAuthorizedRole = false; setInteractiveState(false); return; }
+    if (!claims) {
+      isAuthorizedRole = false;
+      showLoginScreen(true);
+      setInteractiveState(false);
+      return;
+    }
     isAuthorizedRole = hasAllowedRole(claims);
+    if (isAuthorizedRole) {
+      showLoginScreen(false);
+    } else {
+      showLoginScreen(true);
+    }
     setInteractiveState(isAuthorizedRole);
-    if (!isAuthorizedRole) C.showMessage(el.authMessage, "Driver role is required.", "error");
+    if (!isAuthorizedRole && el.loginScreenMessage) {
+      el.loginScreenMessage.textContent = "Driver, Admin, or Dispatcher role required.";
+      el.loginScreenMessage.className = "drv-msg error";
+    }
   }
 
   function requireAuthorized(msgEl) {
-    if (!token && !devSessionClaims && !webSessionClaims) { C.showMessage(msgEl, "Sign in to continue.", "error"); return false; }
-    if (!isAuthorizedRole) { C.showMessage(msgEl, "Driver role required.", "error"); return false; }
+    if (!token && !devSessionClaims && !webSessionClaims) { if (msgEl) C.showMessage(msgEl, "Sign in to continue.", "error"); return false; }
+    if (!isAuthorizedRole) { if (msgEl) C.showMessage(msgEl, "Driver role required.", "error"); return false; }
     return true;
   }
 
@@ -121,16 +151,17 @@
   function renderClaims() {
     var claims = _activeClaims();
     if (!claims) {
-      el.authState.textContent = "Not Signed In";
-      el.authState.classList.add("status-idle"); el.authState.classList.remove("status-live");
+      el.authState.textContent = "Offline";
+      el.authState.className = "drv-status-pill drv-status-off";
       if (el.claims) el.claims.textContent = "No active web session.";
-      evaluateAuthorization(null); return;
+      evaluateAuthorization(null);
+      return;
     }
     var roles = C.tokenRoleSummary(claims);
     var usingDev = !!claims._dev_session;
     var usingWeb = !!claims._web_session;
-    el.authState.textContent = usingDev ? (roles ? "DEV: " + roles : "Dev Session") : usingWeb ? (roles ? roles : "Signed In") : (roles || "Active");
-    el.authState.classList.remove("status-idle"); el.authState.classList.add("status-live");
+    el.authState.textContent = usingDev ? "DEV" : "Online";
+    el.authState.className = "drv-status-pill drv-status-on";
     if (el.claims) el.claims.textContent = JSON.stringify(claims, null, 2);
     evaluateAuthorization(claims);
   }
@@ -138,8 +169,8 @@
   async function loadUiConfig() {
     try {
       var config = await C.requestJson(apiBase, "/ui/config");
-      if (config && config.cognito_domain) el.cognitoDomain.value = config.cognito_domain;
-      if (config && config.cognito_client_id) el.cognitoClientId.value = config.cognito_client_id;
+      if (config && config.cognito_domain && el.cognitoDomain) el.cognitoDomain.value = config.cognito_domain;
+      if (config && config.cognito_client_id && el.cognitoClientId) el.cognitoClientId.value = config.cognito_client_id;
       devAuthEnabled = !!(config && config.dev_auth_enabled);
       devAuthProfiles = Array.isArray(config && config.dev_auth_profiles) ? config.dev_auth_profiles : [];
       renderDevAuthActions();
@@ -151,9 +182,9 @@
     if (!devAuthEnabled) { el.devAuthPanel.hidden = true; el.devAuthActions.innerHTML = ""; return; }
     var driverProfiles = devAuthProfiles.map(function (p, i) { return { profile: p, index: i }; }).filter(function (e) { return e.profile && driverAllowedRoles.indexOf(e.profile.role) >= 0; });
     if (!driverProfiles.length) { el.devAuthPanel.hidden = true; el.devAuthActions.innerHTML = ""; return; }
-    var btns = driverProfiles.map(function (e) { return '<button class="btn btn-accent btn-sm" type="button" data-dev-auth-index="' + e.index + '">' + C.escapeHtml(e.profile.label || e.profile.role + " " + e.profile.user_id) + "</button>"; }).join("");
+    var btns = driverProfiles.map(function (e) { return '<button class="drv-btn drv-btn-accent drv-btn-sm" type="button" data-dev-auth-index="' + e.index + '">' + C.escapeHtml(e.profile.label || e.profile.role + " " + e.profile.user_id) + "</button>"; }).join("");
     el.devAuthPanel.hidden = false;
-    el.devAuthActions.innerHTML = btns + '<button class="btn btn-ghost btn-sm" type="button" data-dev-auth-logout="1">Exit Dev</button>';
+    el.devAuthActions.innerHTML = btns + '<button class="drv-btn drv-btn-ghost drv-btn-sm" type="button" data-dev-auth-logout="1">Exit Dev</button>';
   }
 
   function _preferredAutoDevProfileIndex() {
@@ -203,14 +234,13 @@
     token = C.setStoredToken(storageKey + "_debug", "");
     if (el.token) el.token.value = token;
     renderClaims();
-    C.showMessage(el.authMessage, "Dev session ready.", "success");
   }
 
   async function logoutDevAuthSession(silent) {
     if (devAuthEnabled) { try { await C.logoutDevAuthSession(apiBase); } catch (e) { /* ok */ } }
     devSessionClaims = null;
     renderClaims();
-    if (!silent) C.showMessage(el.authMessage, "Dev session cleared.", "success");
+    if (!silent && el.authMessage) C.showMessage(el.authMessage, "Session cleared.", "success");
   }
 
   async function onDevAuthActionClick(event) {
@@ -222,6 +252,25 @@
     var index = Number.parseInt(rawIndex, 10);
     if (!Number.isFinite(index) || index < 0) return;
     await loginDevAuthProfile(index);
+  }
+
+  function hostedFlowConfig() {
+    return {
+      domain: el.cognitoDomain ? el.cognitoDomain.value.trim() : "",
+      clientId: el.cognitoClientId ? el.cognitoClientId.value.trim() : "",
+      redirectUri: window.location.origin + window.location.pathname,
+      storageKey: storageKey,
+    };
+  }
+
+  async function launchHostedLogin() {
+    var loginUrl = await C.startHostedLogin(hostedFlowConfig());
+    if (!loginUrl) {
+      var msgEl = el.loginScreenMessage || el.authMessage;
+      if (msgEl) C.showMessage(msgEl, "Sign-in is not configured. Contact support.", "error");
+      return;
+    }
+    window.location.assign(loginUrl);
   }
 
   // ── Map ─────────────────────────────────────────────────────────
@@ -242,7 +291,7 @@
     if (!map) return;
     if (map.getLayer(activeRouteLayerId)) map.removeLayer(activeRouteLayerId);
     if (map.getSource(activeRouteSourceId)) map.removeSource(activeRouteSourceId);
-    el.routeStats.style.display = "none";
+    if (el.routeStats) el.routeStats.style.display = "none";
   }
 
   function drawRoutePolyline(coords) {
@@ -282,11 +331,12 @@
     if (!map) return;
     orderCoords[order.id] = { lat: lat, lng: lng };
     var pinEl = document.createElement("div");
-    pinEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><text x="12" y="28" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-size="36" font-weight="900" fill="#e63946" stroke="#1a1a2e" stroke-width="1.5" paint-order="stroke">!</text></svg>';
+    var isDelivery = String(order.status || "").match(/PickedUp|EnRoute/i);
+    var color = isDelivery ? "#34d399" : "#f59e0b";
+    pinEl.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="' + color + '" stroke="#0a1019" stroke-width="2"/><text x="14" y="18" text-anchor="middle" font-size="13" font-weight="700" fill="#0a1019">&#x25BC;</text></svg>';
     pinEl.style.cursor = "pointer";
-    pinEl.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.5))";
     pinEl.addEventListener("click", function () { selectOrder(order.id); });
-    var marker = new maplibregl.Marker({ element: pinEl, anchor: "bottom" })
+    var marker = new maplibregl.Marker({ element: pinEl, anchor: "center" })
       .setLngLat([lng, lat])
       .addTo(map);
     stopMarkers.push(marker);
@@ -295,7 +345,14 @@
   // ── Geocoding & Pins ───────────────────────────────────────────
 
   function _geocodeAndPin(order) {
-    var address = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ");
+    var status = String(order.status || "").toLowerCase();
+    var isDelivery = status === "pickedup" || status === "enroute";
+    var address;
+    if (isDelivery) {
+      address = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ");
+    } else {
+      address = [order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ");
+    }
     if (!address) return;
     if (geocodeCache[address]) {
       placeStopPin(order, geocodeCache[address][1], geocodeCache[address][0]);
@@ -305,7 +362,7 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data.features || !data.features.length) return;
-        var coords = data.features[0].geometry.coordinates; // [lng, lat]
+        var coords = data.features[0].geometry.coordinates;
         geocodeCache[address] = coords;
         placeStopPin(order, coords[1], coords[0]);
       })
@@ -316,7 +373,6 @@
 
   function sortOrdersByDistance(orders) {
     if (!driverLocation || !orders.length) return orders;
-    // Sort by haversine distance from driver to delivery address
     var withDist = orders.map(function (order) {
       var coord = orderCoords[order.id];
       var dist = coord ? _haversine(driverLocation.lat, driverLocation.lng, coord.lat, coord.lng) : Infinity;
@@ -336,41 +392,39 @@
 
   // ── Order Card Rendering ───────────────────────────────────────
 
-  function _statusBadgeClass(status) {
+  function _badgeClass(status) {
     var s = String(status || "").toLowerCase();
-    if (s === "assigned") return "badge-assigned";
-    if (s === "pickedup") return "badge-pickedup";
-    if (s === "enroute") return "badge-enroute";
-    if (s === "delivered") return "badge-delivered";
-    if (s === "failed") return "badge-failed";
-    return "badge-created";
+    if (s === "assigned") return "drv-badge-assigned";
+    if (s === "pickedup") return "drv-badge-pickedup";
+    if (s === "enroute") return "drv-badge-enroute";
+    if (s === "delivered") return "drv-badge-delivered";
+    if (s === "failed") return "drv-badge-failed";
+    return "drv-badge-created";
   }
 
   function renderStopCard(order, index) {
-    var badgeClass = _statusBadgeClass(order.status);
-    var delivery = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-";
+    var badge = _badgeClass(order.status);
+    var delivery = [order.delivery_street, order.delivery_city].filter(Boolean).join(", ") || "-";
     var isSelected = order.id === selectedOrderId;
     return (
-      '<div class="driver-stop-card' + (isSelected ? ' driver-stop-card-selected' : '') + '" data-order-id="' + C.escapeHtml(order.id) + '">' +
-      '<div class="driver-stop-card-header">' +
-      '<span class="driver-stop-seq">' + (index + 1) + '</span>' +
-      '<div class="driver-stop-card-info">' +
-      '<strong>' + C.escapeHtml(order.customer_name) + '</strong>' +
-      '<small class="text-muted">' + C.escapeHtml(delivery) + '</small>' +
+      '<div class="drv-order-card' + (isSelected ? ' selected' : '') + '" data-order-id="' + C.escapeHtml(order.id) + '">' +
+      '<div class="drv-order-seq">' + (index + 1) + '</div>' +
+      '<div class="drv-order-info">' +
+      '<div class="drv-order-name">' + C.escapeHtml(order.customer_name) + '</div>' +
+      '<div class="drv-order-addr">' + C.escapeHtml(delivery) + '</div>' +
       '</div>' +
-      '<span class="dispatch-status-badge ' + badgeClass + '">' + C.escapeHtml(order.status) + '</span>' +
-      '</div>' +
+      '<span class="drv-order-badge ' + badge + '">' + C.escapeHtml(order.status) + '</span>' +
       '</div>'
     );
   }
 
   function renderOrders(orders) {
     currentOrders = orders || [];
+    if (el.stopCount) el.stopCount.textContent = currentOrders.length;
     if (!currentOrders.length) {
-      el.orders.innerHTML = '<p class="panel-help" style="padding:12px;">No assigned orders.</p>';
+      el.orders.innerHTML = '<div class="drv-empty"><div class="drv-empty-icon">&#x1F4E6;</div><div class="drv-empty-text">No assigned orders</div></div>';
       return;
     }
-    // Sort by distance if we have driver location
     var sorted = sortOrdersByDistance(currentOrders);
     el.orders.innerHTML = sorted.map(renderStopCard).join("");
   }
@@ -383,8 +437,8 @@
     if (!order) return;
 
     // Highlight card
-    document.querySelectorAll(".driver-stop-card").forEach(function (c) {
-      c.classList.toggle("driver-stop-card-selected", c.getAttribute("data-order-id") === orderId);
+    document.querySelectorAll(".drv-order-card").forEach(function (c) {
+      c.classList.toggle("selected", c.getAttribute("data-order-id") === orderId);
     });
 
     // Fly to pin
@@ -393,10 +447,7 @@
       map.flyTo({ center: [coord.lng, coord.lat], zoom: 14, duration: 800 });
     }
 
-    // Show detail panel
     showDetailPanel(order);
-
-    // Show route prompt
     showRoutePrompt(order);
   }
 
@@ -404,39 +455,32 @@
     el.detailCustomerName.textContent = order.customer_name || "Order";
     var pickup = [order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-";
     var delivery = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-";
-    var badgeClass = _statusBadgeClass(order.status);
+    var badge = _badgeClass(order.status);
 
     el.detailBody.innerHTML =
-      '<div class="driver-detail-section">' +
-      '<span class="dispatch-status-badge ' + badgeClass + '">' + C.escapeHtml(order.status) + '</span>' +
-      '<small class="text-muted">Ref ' + C.escapeHtml(order.reference_id || "-") + '</small>' +
-      (order.phone ? '<div style="margin-top:6px;"><small class="text-muted">Phone:</small> ' + C.escapeHtml(order.phone) + '</div>' : '') +
+      '<div class="drv-detail-section">' +
+        '<span class="drv-order-badge ' + badge + '">' + C.escapeHtml(order.status) + '</span>' +
+        '<span style="margin-left:8px;font-size:.75rem;color:var(--drv-text-muted)">Ref ' + C.escapeHtml(order.reference_id || "-") + '</span>' +
       '</div>' +
-      '<div class="driver-detail-section">' +
-      '<small class="text-muted">PICKUP</small><div>' + C.escapeHtml(pickup) + '</div>' +
-      '</div>' +
-      '<div class="driver-detail-section">' +
-      '<small class="text-muted">DELIVERY</small><div>' + C.escapeHtml(delivery) + '</div>' +
-      '</div>' +
-      (order.notes ? '<div class="driver-detail-section"><small class="text-muted">NOTES</small><div>' + C.escapeHtml(order.notes) + '</div></div>' : '') +
-      '<div class="driver-detail-section">' +
-      '<div class="driver-stop-actions">' +
-      '<button class="btn btn-primary btn-sm" data-action="status" data-status="PickedUp" data-order-id="' + C.escapeHtml(order.id) + '">Picked Up</button>' +
-      '<button class="btn btn-accent btn-sm" data-action="status" data-status="EnRoute" data-order-id="' + C.escapeHtml(order.id) + '">En Route</button>' +
-      '<button class="btn btn-ghost btn-sm" data-action="status" data-status="Failed" data-order-id="' + C.escapeHtml(order.id) + '">Failed</button>' +
-      '</div>' +
-      '</div>' +
-      '<div class="driver-detail-section">' +
-      '<label class="field"><span>Delivery Photo</span><input class="pod-photo compact-input" type="file" accept="image/*"></label>' +
-      '<label class="field"><span>Signature</span></label>' +
-      '<div class="driver-signature-wrap"><canvas class="signature-pad" width="320" height="120"></canvas></div>' +
-      '<button class="btn btn-ghost btn-xs" data-action="clear-signature" data-order-id="' + C.escapeHtml(order.id) + '">Clear Signature</button>' +
-      '<label class="field"><span>Delivery Notes</span><textarea class="pod-notes compact-input" rows="2" placeholder="Left with front desk..."></textarea></label>' +
-      '<button class="btn btn-accent" data-action="submit-pod" data-order-id="' + C.escapeHtml(order.id) + '">Submit POD &amp; Deliver</button>' +
+      (order.phone ? '<div class="drv-detail-section"><div class="drv-detail-label">PHONE</div><a href="tel:' + C.escapeHtml(order.phone) + '" style="color:var(--drv-accent);font-size:.85rem;">' + C.escapeHtml(order.phone) + '</a></div>' : '') +
+      '<div class="drv-detail-section"><div class="drv-detail-label">PICKUP</div><div class="drv-detail-value">' + C.escapeHtml(pickup) + '</div></div>' +
+      '<div class="drv-detail-section"><div class="drv-detail-label">DELIVERY</div><div class="drv-detail-value">' + C.escapeHtml(delivery) + '</div></div>' +
+      (order.notes ? '<div class="drv-detail-section"><div class="drv-detail-label">NOTES</div><div class="drv-detail-value">' + C.escapeHtml(order.notes) + '</div></div>' : '') +
+      '<div class="drv-detail-section"><div class="drv-detail-label">ACTIONS</div><div class="drv-detail-actions">' +
+        '<button class="drv-btn drv-btn-accent drv-btn-sm" data-action="status" data-status="PickedUp" data-order-id="' + C.escapeHtml(order.id) + '">Picked Up</button>' +
+        '<button class="drv-btn drv-btn-green drv-btn-sm" data-action="status" data-status="EnRoute" data-order-id="' + C.escapeHtml(order.id) + '">En Route</button>' +
+        '<button class="drv-btn drv-btn-red drv-btn-sm" data-action="status" data-status="Failed" data-order-id="' + C.escapeHtml(order.id) + '">Failed</button>' +
+      '</div></div>' +
+      '<div class="drv-pod-section">' +
+        '<div class="drv-detail-label" style="margin-bottom:12px;">PROOF OF DELIVERY</div>' +
+        '<div class="drv-field"><span class="drv-field-label">Photo</span><input class="pod-photo" type="file" accept="image/*" capture="environment"></div>' +
+        '<div class="drv-field"><span class="drv-field-label">Signature</span><div class="drv-sig-wrap"><canvas class="signature-pad" width="320" height="100"></canvas></div>' +
+        '<button class="drv-btn drv-btn-ghost drv-btn-xs" data-action="clear-signature" data-order-id="' + C.escapeHtml(order.id) + '">Clear</button></div>' +
+        '<div class="drv-field"><span class="drv-field-label">Notes</span><textarea class="pod-notes" rows="2" placeholder="Left with front desk..."></textarea></div>' +
+        '<button class="drv-btn drv-btn-green" style="width:100%" data-action="submit-pod" data-order-id="' + C.escapeHtml(order.id) + '">Submit POD &amp; Deliver</button>' +
       '</div>';
 
     el.detailPanel.style.display = "flex";
-    // Init signature pad
     var canvas = el.detailBody.querySelector("canvas.signature-pad");
     if (canvas) setupSignaturePad(canvas);
   }
@@ -444,21 +488,14 @@
   function closeDetailPanel() {
     el.detailPanel.style.display = "none";
     selectedOrderId = null;
-    document.querySelectorAll(".driver-stop-card").forEach(function (c) {
-      c.classList.remove("driver-stop-card-selected");
-    });
+    document.querySelectorAll(".drv-order-card").forEach(function (c) { c.classList.remove("selected"); });
   }
 
   // ── Route Prompt & Navigation ──────────────────────────────────
 
   function showRoutePrompt(order) {
     var status = String(order.status || "").toLowerCase();
-    var label;
-    if (status === "pickedup" || status === "enroute") {
-      label = "Route to Delivery?";
-    } else {
-      label = "Route to Pickup?";
-    }
+    var label = (status === "pickedup" || status === "enroute") ? "Route to Delivery?" : "Route to Pickup?";
     el.routePromptText.textContent = label;
     pendingNavigation = { order: order, target: (status === "pickedup" || status === "enroute") ? "delivery" : "pickup" };
     el.routePrompt.style.display = "flex";
@@ -471,7 +508,7 @@
 
   async function executeNavigation() {
     if (!pendingNavigation || !driverLocation) {
-      C.showMessage(el.ordersMessage, "Location unavailable. Send location first.", "error");
+      C.showMessage(el.ordersMessage, "Location unavailable.", "error");
       hideRoutePrompt();
       return;
     }
@@ -479,7 +516,6 @@
     var target = pendingNavigation.target;
     hideRoutePrompt();
 
-    // Determine destination
     var destAddress;
     if (target === "delivery") {
       destAddress = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ");
@@ -487,7 +523,6 @@
       destAddress = [order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ");
     }
 
-    // Geocode destination if needed
     var destCoords;
     if (target === "delivery" && orderCoords[order.id]) {
       destCoords = orderCoords[order.id];
@@ -510,7 +545,6 @@
       return;
     }
 
-    // Call navigate endpoint
     try {
       var route = await C.requestJson(apiBase, "/routes/navigate", {
         method: "POST",
@@ -525,13 +559,11 @@
 
       drawRoutePolyline(route.coordinates);
 
-      // Show route stats
       var miles = (route.distance_meters / 1609.34).toFixed(1);
       var mins = Math.round(route.duration_seconds / 60);
       el.routeStatsText.textContent = miles + " mi \u00B7 ~" + mins + " min";
       el.routeStats.style.display = "flex";
 
-      // Fit map to route bounds
       if (route.bbox && map) {
         map.fitBounds([[route.bbox[0], route.bbox[1]], [route.bbox[2], route.bbox[3]]], { padding: 60, duration: 600 });
       } else if (map) {
@@ -553,7 +585,11 @@
     ctx.lineCap = "round";
     ctx.strokeStyle = "#8ec8e8";
     var drawing = false;
-    function pt(e) { var r = canvas.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * canvas.width, y: ((e.clientY - r.top) / r.height) * canvas.height }; }
+    function pt(e) {
+      var r = canvas.getBoundingClientRect();
+      var touch = e.touches ? e.touches[0] : e;
+      return { x: ((touch.clientX - r.left) / r.width) * canvas.width, y: ((touch.clientY - r.top) / r.height) * canvas.height };
+    }
     canvas.addEventListener("pointerdown", function (e) { drawing = true; var p = pt(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); canvas.dataset.dirty = "1"; canvas.setPointerCapture(e.pointerId); });
     canvas.addEventListener("pointermove", function (e) { if (!drawing) return; var p = pt(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
     function end(e) { drawing = false; if (e.pointerId) canvas.releasePointerCapture(e.pointerId); }
@@ -588,31 +624,38 @@
   }
 
   async function sendLocationUpdate() {
-    if (!requireAuthorized(el.ordersMessage)) return;
+    if (!requireAuthorized(null)) return;
     var loc = await getCurrentPosition();
-    if (!loc) { el.locationStatus.textContent = "Unavailable"; return; }
+    if (!loc) {
+      el.locationStatus.textContent = "Location unavailable";
+      return;
+    }
     try {
       await C.requestJson(apiBase, "/drivers/location", { method: "POST", token: token, json: loc });
-      el.locationStatus.textContent = "Sent " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      el.locationStatus.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       updateDriverMarker(loc.lat, loc.lng);
-      // Re-sort orders now that we have location
+      // Center map on first location
+      if (map && !driverMarker) {
+        map.flyTo({ center: [loc.lng, loc.lat], zoom: 12, duration: 1000 });
+      }
       renderOrders(currentOrders);
-    } catch (e) { el.locationStatus.textContent = "Error"; }
+    } catch (e) {
+      console.error("Location update failed:", e);
+      el.locationStatus.textContent = "Error sharing location";
+    }
   }
 
-  function startLocationShare() {
+  function startAutoLocationShare() {
     if (locationTimer) return;
-    if (!requireAuthorized(el.ordersMessage)) return;
     sendLocationUpdate();
     locationTimer = window.setInterval(sendLocationUpdate, 60000);
-    el.locationStatus.textContent = "Sharing...";
   }
 
   function stopLocationShare() {
     if (!locationTimer) return;
     window.clearInterval(locationTimer);
     locationTimer = null;
-    el.locationStatus.textContent = "Off";
+    el.locationStatus.textContent = "Offline";
   }
 
   // ── API Actions ────────────────────────────────────────────────
@@ -622,21 +665,20 @@
     try {
       var orders = await C.requestJson(apiBase, "/orders/driver/inbox", { token: token });
       currentOrders = orders || [];
-      // Geocode and pin all orders
       clearStopMarkers();
       currentOrders.forEach(function (order, i) {
         setTimeout(function () { _geocodeAndPin(order); }, i * 200);
       });
       renderOrders(currentOrders);
-      C.showMessage(el.ordersMessage, currentOrders.length + " stops loaded.", "success");
+      if (currentOrders.length) {
+        C.showMessage(el.ordersMessage, currentOrders.length + " stops loaded.", "success");
+      }
 
-      // Try to get driver location for sorting
       if (!driverLocation) {
         var loc = await getCurrentPosition();
         if (loc) {
           driverLocation = loc;
           updateDriverMarker(loc.lat, loc.lng);
-          // Re-render sorted after geocoding completes
           setTimeout(function () { renderOrders(currentOrders); }, currentOrders.length * 200 + 500);
         }
       }
@@ -682,10 +724,87 @@
     await updateOrderStatus(orderId, "Delivered");
   }
 
+  // ── Profile ────────────────────────────────────────────────────
+
+  var currentProfile = null;
+
+  function updateProfileAvatar() {
+    if (!el.profileAvatar) return;
+    if (currentProfile && currentProfile.photo_url) {
+      el.profileAvatar.innerHTML = '<img src="' + C.escapeHtml(currentProfile.photo_url) + '" alt="">';
+    } else {
+      var claims = _activeClaims();
+      var name = (claims && claims.username) || "?";
+      var parts = name.split(/[\s@._-]/);
+      var init = parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : name.substring(0, 2).toUpperCase();
+      el.profileAvatar.textContent = init;
+    }
+  }
+
+  function updateProfilePhotoPreview() {
+    if (!el.profilePhotoPreview) return;
+    var url = el.profilePhotoUrl ? el.profilePhotoUrl.value.trim() : "";
+    if (url) {
+      el.profilePhotoPreview.innerHTML = '<img src="' + C.escapeHtml(url) + '" alt="">';
+    } else {
+      el.profilePhotoPreview.textContent = "?";
+    }
+  }
+
+  async function loadProfile() {
+    try {
+      currentProfile = await C.requestJson(apiBase, "/users/me", { token: token });
+      if (currentProfile) {
+        updateProfileAvatar();
+      }
+    } catch (e) { /* ok */ }
+  }
+
+  function openProfileModal() {
+    if (!el.profileModal) return;
+    if (currentProfile) {
+      if (el.profilePhone) el.profilePhone.value = currentProfile.phone || "";
+      if (el.profileEmail) el.profileEmail.value = currentProfile.email || "";
+      if (el.profilePhotoUrl) el.profilePhotoUrl.value = currentProfile.photo_url || "";
+      updateProfilePhotoPreview();
+    }
+    el.profileModal.style.display = "flex";
+  }
+
+  function closeProfileModal() {
+    if (el.profileModal) el.profileModal.style.display = "none";
+  }
+
+  async function saveProfile() {
+    var updates = {};
+    if (el.profilePhone) updates.phone = el.profilePhone.value.trim() || null;
+    if (el.profileEmail) updates.email = el.profileEmail.value.trim() || null;
+    if (el.profilePhotoUrl) updates.photo_url = el.profilePhotoUrl.value.trim() || null;
+    try {
+      currentProfile = await C.requestJson(apiBase, "/users/me", { method: "PUT", token: token, json: updates });
+      updateProfileAvatar();
+      C.showMessage(el.profileMessage, "Profile saved.", "success");
+      setTimeout(closeProfileModal, 800);
+    } catch (e) {
+      C.showMessage(el.profileMessage, e.message, "error");
+    }
+  }
+
+  // ── Bottom Sheet Drag ──────────────────────────────────────────
+
+  function setupBottomSheet() {
+    if (!el.bottomSheet || !el.sheetHandle) return;
+    var collapsed = false;
+    el.sheetHandle.addEventListener("click", function () {
+      collapsed = !collapsed;
+      el.bottomSheet.classList.toggle("collapsed", collapsed);
+    });
+  }
+
   // ── Event Handlers ─────────────────────────────────────────────
 
   el.orders.addEventListener("click", function (e) {
-    var card = e.target.closest(".driver-stop-card");
+    var card = e.target.closest(".drv-order-card");
     if (!card) return;
     var orderId = card.getAttribute("data-order-id");
     if (orderId) selectOrder(orderId);
@@ -723,23 +842,37 @@
   el.routeGo.addEventListener("click", function () { executeNavigation().catch(function (e) { C.showMessage(el.ordersMessage, e.message, "error"); }); });
   el.routeCancel.addEventListener("click", function () { hideRoutePrompt(); clearRouteLayer(); });
   el.refreshInbox.addEventListener("click", refreshInbox);
-  el.sendLocationNow.addEventListener("click", sendLocationUpdate);
-  el.startLocationShare.addEventListener("click", startLocationShare);
-  el.stopLocationShare.addEventListener("click", stopLocationShare);
-  if (el.devAuthActions) el.devAuthActions.addEventListener("click", function (e) { onDevAuthActionClick(e).catch(function (err) { C.showMessage(el.authMessage, err.message, "error"); }); });
-  el.loginHostedUi.addEventListener("click", function () {
-    var redirectUri = window.location.origin + window.location.pathname;
-    C.startHostedLogin({ domain: el.cognitoDomain.value.trim(), clientId: el.cognitoClientId.value.trim(), redirectUri: redirectUri, storageKey: storageKey })
-      .then(function (url) { if (url) window.location.assign(url); })
-      .catch(function (e) { C.showMessage(el.authMessage, e.message, "error"); });
-  });
+
+  // Profile
+  if (el.profileBtn) el.profileBtn.addEventListener("click", openProfileModal);
+  if (el.profileClose) el.profileClose.addEventListener("click", closeProfileModal);
+  if (el.profileForm) el.profileForm.addEventListener("submit", function (e) { e.preventDefault(); saveProfile(); });
+  if (el.profilePhotoUrl) el.profilePhotoUrl.addEventListener("input", updateProfilePhotoPreview);
+
+  // Login screen button
+  if (el.loginScreenBtn) {
+    el.loginScreenBtn.addEventListener("click", function () {
+      launchHostedLogin().catch(function (e) {
+        if (el.loginScreenMessage) C.showMessage(el.loginScreenMessage, e.message, "error");
+      });
+    });
+  }
+
+  if (el.devAuthActions) el.devAuthActions.addEventListener("click", function (e) { onDevAuthActionClick(e).catch(function (err) { if (el.authMessage) C.showMessage(el.authMessage, err.message, "error"); }); });
+
+  if (el.loginHostedUi) {
+    el.loginHostedUi.addEventListener("click", function () {
+      launchHostedLogin().catch(function (e) { if (el.authMessage) C.showMessage(el.authMessage, e.message, "error"); });
+    });
+  }
+
   el.logoutHostedUi.addEventListener("click", function () {
     stopLocationShare();
     logoutDevAuthSession(true).then(function () {
       webSessionClaims = null; setToken(""); renderOrders([]); clearRouteLayer(); clearStopMarkers();
-      C.showMessage(el.authMessage, "Logged out.", "success");
     });
   });
+
   if (el.saveToken) el.saveToken.addEventListener("click", function () { logoutDevAuthSession(true).then(function () { setToken(el.token.value); }); });
   if (el.clearToken) el.clearToken.addEventListener("click", function () { logoutDevAuthSession(true).then(function () { stopLocationShare(); setToken(""); renderOrders([]); }); });
 
@@ -754,12 +887,14 @@
     if (el.token) el.token.value = token;
     if (el.authDebug) el.authDebug.hidden = !debugAuth;
     setInteractiveState(false);
+    showLoginScreen(true);
     renderClaims();
     registerServiceWorker();
-    ensureMap();
+    setupBottomSheet();
     await loadUiConfig();
+
     // Handle Cognito callback
-    var cbResult = await C.consumeHostedLoginCallback(apiBase, { domain: (el.cognitoDomain ? el.cognitoDomain.value.trim() : ""), clientId: (el.cognitoClientId ? el.cognitoClientId.value.trim() : ""), redirectUri: window.location.origin + window.location.pathname, storageKey: storageKey });
+    var cbResult = await C.consumeHostedLoginCallback(apiBase, hostedFlowConfig());
     if (cbResult && cbResult.status === "success") {
       await logoutDevAuthSession(true);
       setToken("");
@@ -769,8 +904,18 @@
       await restoreDevAuthSession();
       await maybeAutoBootstrapDevSession();
     }
-    if (isAuthorizedRole) await refreshInbox();
-    else renderOrders([]);
+
+    // Init map after auth
+    ensureMap();
+
+    if (isAuthorizedRole) {
+      // Auto-share location immediately on login
+      startAutoLocationShare();
+      await loadProfile();
+      await refreshInbox();
+    } else {
+      renderOrders([]);
+    }
   }
 
   bootstrap();

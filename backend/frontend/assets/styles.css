@@ -2944,8 +2944,18 @@ body.theme-admin .billing-seat-cards .stat-card small {
   background: #2ecc71;
 }
 
-.dispatch-driver-status-dot.offline {
+.dispatch-driver-status-dot.offline,
+.dispatch-driver-status-dot.status-offline {
   background: #5c6a78;
+}
+.dispatch-driver-status-dot.status-online {
+  background: #2ecc71;
+}
+.dispatch-driver-offline { opacity: .6; }
+.dispatch-driver-avatar-offline { background: #2a3545; }
+.dispatch-driver-avatar-img {
+  width: 100%; height: 100%; border-radius: 50%;
+  object-fit: cover;
 }
 
 .dispatch-driver-info {

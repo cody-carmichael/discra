@@ -91,8 +91,8 @@ body {
   border-bottom: 1px solid var(--drv-border);
   flex-shrink: 0;
 }
-.drv-topbar-left { display: flex; align-items: center; gap: 8px; }
-.drv-topbar-right { display: flex; align-items: center; gap: 8px; }
+.drv-topbar-left { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.drv-topbar-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; overflow: hidden; }
 .drv-logo {
   width: 30px; height: 30px; border-radius: 8px;
   background: var(--drv-accent); color: #fff;
@@ -347,6 +347,20 @@ body {
 .drv-profile-photo-preview img {
   width: 100%; height: 100%; object-fit: cover;
 }
+.drv-file-upload-btn {
+  display: block; cursor: pointer;
+}
+.drv-file-upload-btn .drv-btn {
+  display: block; margin-top: 4px;
+}
+.drv-toggle-row {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  padding: 10px 0; font-size: .85rem;
+}
+.drv-toggle-row input[type="checkbox"] {
+  width: 18px; height: 18px; accent-color: var(--drv-accent);
+}
+.drv-toggle-label { font-weight: 600; }
 .drv-input {
   width: 100%; padding: 10px 12px; border-radius: var(--drv-radius-sm);
   border: 1px solid var(--drv-border); background: var(--drv-bg);

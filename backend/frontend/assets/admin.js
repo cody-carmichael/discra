@@ -58,11 +58,10 @@
     optimizeForm: document.getElementById("optimize-form"),  // removed from DOM
     routeResult: document.getElementById("route-result"),    // removed from DOM
     routeMessage: document.getElementById("route-message"),  // removed from DOM
-    refreshDispatchSummary: document.getElementById("refresh-dispatch-summary"),
-    dispatchSummaryForm: document.getElementById("dispatch-summary-form"),
-    dispatchActiveMinutes: document.getElementById("dispatch-active-minutes"),
-    dispatchSummaryView: document.getElementById("dispatch-summary-view"),
-    dispatchSummaryMessage: document.getElementById("dispatch-summary-message"),
+    inflightList: document.getElementById("inflight-list"),
+    inflightCount: document.getElementById("inflight-count"),
+    inflightMessage: document.getElementById("inflight-message"),
+    refreshInflight: document.getElementById("refresh-inflight"),
     refreshAuditLogs: document.getElementById("refresh-audit-logs"),
     auditFilterForm: document.getElementById("audit-filter-form"),
     auditActionFilter: document.getElementById("audit-action-filter"),
@@ -113,7 +112,7 @@
 
   let token = "";
   let map = null;
-  let mapMarkers = [];
+  let mapMarkers = new Map(); // driver_id → { marker, lat, lng }
   let orderMarkers = [];
   let mapStyleUrl = defaultMapStyle;
   let activeRouteSourceId = "route-line-source";
@@ -122,6 +121,7 @@
   let allOrders = [];
   let lastOrders = [];
   let lastDriverLocations = [];
+  let lastDriverRoster = [];
   let selectedDriverId = "";
   let isAuthorizedRole = false;
   let isAdminRole = false;
@@ -551,10 +551,7 @@
         element.disabled = !enabled;
       });
     }
-    el.refreshDispatchSummary.disabled = !enabled;
-    el.dispatchSummaryForm.querySelectorAll("input, button").forEach(function (element) {
-      element.disabled = !enabled;
-    });
+    if (el.refreshInflight) el.refreshInflight.disabled = !enabled;
     el.refreshAuditLogs.disabled = !enabled;
     el.auditFilterForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
@@ -930,8 +927,8 @@
     if (el.bulkDriverId) {
       el.bulkDriverId.value = safeDriverId;
     }
-    renderDriverList(lastDriverLocations);
-    renderDriverMarkers(lastDriverLocations, { focusDriverId: safeDriverId, keepCurrentViewport: !!(options && options.keepViewport) });
+    renderDriverList(lastDriverLocations, lastDriverRoster);
+    renderDriverMarkers(lastDriverLocations, { focusDriverId: safeDriverId, keepCurrentViewport: !!(options && options.keepViewport), roster: lastDriverRoster });
     renderAssignmentQueues(allOrders);
     fetchAndDrawRoute(safeDriverId);
     if (!(options && options.silent) && safeDriverId) {
@@ -1050,7 +1047,7 @@
       refreshDrivers().catch(function () {
         // Do not interrupt dispatch work if background refresh fails.
       });
-    }, 30000);
+    }, 15000);
   }
 
   function stopDriverAutoRefresh() {
@@ -1076,10 +1073,11 @@
       allOrders = [];
       lastOrders = [];
       lastDriverLocations = [];
+      lastDriverRoster = [];
       selectedDriverId = "";
       _clearSelection();
       renderDriverOptions([]);
-      renderDriverList([]);
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues([]);
       updateOrderStats([]);
@@ -1089,7 +1087,7 @@
       el.billingStatus.innerHTML = "No billing provider status loaded.";
       _resetSeatCards();
       el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+      renderInflight([]);
       el.auditLogsView.innerHTML = "No audit logs loaded.";
       if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
       return;
@@ -1102,6 +1100,7 @@
       allOrders = [];
       lastOrders = [];
       lastDriverLocations = [];
+      lastDriverRoster = [];
       selectedDriverId = "";
       _clearSelection();
     } else {
@@ -1110,9 +1109,9 @@
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+      renderInflight([]);
       renderDriverOptions([]);
-      renderDriverList([]);
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues([]);
       C.showMessage(el.authMessage, "This console requires Admin or Dispatcher role.", "error");
@@ -1966,44 +1965,116 @@
       .catch(function () { /* silently skip */ });
   }
 
+  function _createDriverMarkerElement(item, rosterEntry, isSelectedDriver) {
+    var photoUrl = rosterEntry && rosterEntry.photo_url;
+    var isTsa = rosterEntry && rosterEntry.tsa_certified;
+    var borderColor = isSelectedDriver ? "#e63946" : (isTsa ? "#1565c0" : "#3498db");
+    if (isTsa) {
+      var tsaEl = document.createElement("div");
+      tsaEl.className = "dispatch-map-marker-tsa";
+      tsaEl.style.cssText = "width:42px;height:42px;cursor:pointer;position:relative;";
+      tsaEl.innerHTML = '<svg width="42" height="42" viewBox="0 0 42 42">' +
+        '<circle cx="21" cy="21" r="19" fill="#1565c0" stroke="#fff" stroke-width="2.5"/>' +
+        '<circle cx="21" cy="21" r="16" fill="none" stroke="#fff" stroke-width="1" opacity=".5"/>' +
+        '<g transform="translate(21,22) rotate(-45) scale(.55)">' +
+          '<path d="M-2,-14 L2,-14 L2,-4 L12,2 L12,5 L2,1 L2,8 L5,10 L5,12.5 L0,11 L-5,12.5 L-5,10 L-2,8 L-2,1 L-12,5 L-12,2 L-2,-4 Z" fill="#fff"/>' +
+        '</g>' +
+        (photoUrl ? '' : '<text x="21" y="37" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="Inter,sans-serif">TSA</text>') +
+      '</svg>';
+      if (photoUrl) {
+        var photoOverlay = document.createElement("div");
+        photoOverlay.style.cssText = "position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;border-radius:50%;border:2px solid #1565c0;overflow:hidden;background:#fff;";
+        var pImg = document.createElement("img");
+        pImg.src = photoUrl; pImg.alt = "";
+        pImg.style.cssText = "width:100%;height:100%;object-fit:cover;";
+        photoOverlay.appendChild(pImg);
+        tsaEl.appendChild(photoOverlay);
+      }
+      return { element: tsaEl, offset: 20 };
+    } else if (photoUrl) {
+      var elDiv = document.createElement("div");
+      elDiv.className = "dispatch-map-marker-photo";
+      elDiv.style.cssText = "width:36px;height:36px;border-radius:50%;border:3px solid " + borderColor + ";overflow:hidden;cursor:pointer;background:#fff;";
+      var img = document.createElement("img");
+      img.src = photoUrl; img.alt = "";
+      img.style.cssText = "width:100%;height:100%;object-fit:cover;";
+      elDiv.appendChild(img);
+      return { element: elDiv, offset: 15 };
+    }
+    return { color: borderColor, offset: 15 };
+  }
+
   function renderDriverMarkers(driverLocations, options) {
     const currentMap = ensureMap();
     if (!currentMap) {
       return;
     }
-    mapMarkers.forEach(function (marker) {
-      marker.remove();
-    });
-    mapMarkers = [];
     if (!driverLocations.length) {
+      mapMarkers.forEach(function (entry) { entry.marker.remove(); });
+      mapMarkers = new Map();
       return;
     }
     const markerOptions = options || {};
     const focusDriverId = String(markerOptions.focusDriverId || selectedDriverId || "").trim();
     let focusedDriver = null;
     const bounds = new window.maplibregl.LngLatBounds();
+    var roster = Array.isArray(markerOptions.roster) ? markerOptions.roster : [];
+    var activeIds = new Set();
+
     driverLocations.forEach(function (item) {
+      activeIds.add(item.driver_id);
       const isSelectedDriver = !!focusDriverId && item.driver_id === focusDriverId;
-      const marker = new window.maplibregl.Marker({ color: isSelectedDriver ? "#e63946" : "#3498db" })
-        .setLngLat([item.lng, item.lat])
-        .setPopup(
-          new window.maplibregl.Popup({ offset: 15 }).setHTML(
-            "<strong>" +
-              C.escapeHtml(item.driver_id) +
-              "</strong><br>Updated: " +
-              C.escapeHtml(C.formatTimestamp(item.timestamp))
-          )
-        )
-        .addTo(currentMap);
-      marker.getElement().addEventListener("click", function () {
-        selectDriver(item.driver_id, { silent: true, keepViewport: false });
-      });
-      mapMarkers.push(marker);
+      var rosterEntry = roster.find(function (r) { return r.user_id === item.driver_id; });
+      var driverName = (rosterEntry && rosterEntry.username) || item.driver_id;
+      var isTsa = rosterEntry && rosterEntry.tsa_certified;
+      var popupHtml = "<strong>" + C.escapeHtml(driverName) + "</strong>" +
+        (isTsa ? "<br><span style=\"color:#1565c0;font-weight:700;font-size:.75rem;\">TSA CERTIFIED</span>" : "") +
+        "<br>Updated: " + C.escapeHtml(C.formatTimestamp(item.timestamp));
+
+      var existing = mapMarkers.get(item.driver_id);
+      if (existing) {
+        // Animate existing marker to new position
+        existing.marker.setLngLat([item.lng, item.lat]);
+        existing.marker.setPopup(new window.maplibregl.Popup({ offset: 15 }).setHTML(popupHtml));
+        existing.lat = item.lat;
+        existing.lng = item.lng;
+      } else {
+        // Create new marker
+        var markerConfig = _createDriverMarkerElement(item, rosterEntry, isSelectedDriver);
+        var marker;
+        if (markerConfig.element) {
+          marker = new window.maplibregl.Marker({ element: markerConfig.element })
+            .setLngLat([item.lng, item.lat])
+            .setPopup(new window.maplibregl.Popup({ offset: markerConfig.offset }).setHTML(popupHtml))
+            .addTo(currentMap);
+        } else {
+          marker = new window.maplibregl.Marker({ color: markerConfig.color })
+            .setLngLat([item.lng, item.lat])
+            .setPopup(new window.maplibregl.Popup({ offset: markerConfig.offset }).setHTML(popupHtml))
+            .addTo(currentMap);
+        }
+        // Enable CSS transition for smooth movement
+        var markerEl = marker.getElement();
+        markerEl.style.transition = "transform 1.5s ease-out";
+        markerEl.addEventListener("click", function () {
+          selectDriver(item.driver_id, { silent: true, keepViewport: false });
+        });
+        mapMarkers.set(item.driver_id, { marker: marker, lat: item.lat, lng: item.lng });
+      }
       bounds.extend([item.lng, item.lat]);
       if (isSelectedDriver) {
         focusedDriver = item;
       }
     });
+
+    // Remove markers for drivers no longer active
+    mapMarkers.forEach(function (entry, driverId) {
+      if (!activeIds.has(driverId)) {
+        entry.marker.remove();
+        mapMarkers.delete(driverId);
+      }
+    });
+
     if (markerOptions.keepCurrentViewport) {
       return;
     }
@@ -2126,37 +2197,44 @@
   async function refreshDrivers() {
     if (!requireAuthorized(el.driversMessage)) {
       lastDriverLocations = [];
+      lastDriverRoster = [];
       selectedDriverId = "";
-      renderDriverList([]);
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues(allOrders);
       updateActiveDriverStat(0);
       return;
     }
     try {
-      const drivers = await C.requestJson(apiBase, "/drivers?active_minutes=120", { token });
+      var results = await Promise.all([
+        C.requestJson(apiBase, "/drivers?active_minutes=120", { token }),
+        C.requestJson(apiBase, "/drivers/roster", { token }).catch(function () { return []; })
+      ]);
+      var drivers = results[0];
+      var roster = results[1];
       lastDriverLocations = Array.isArray(drivers) ? drivers : [];
-      const selectedStillActive = selectedDriverId && lastDriverLocations.some(function (item) {
-        return item.driver_id === selectedDriverId;
-      });
+      lastDriverRoster = Array.isArray(roster) ? roster : [];
+      const selectedStillActive = selectedDriverId && (
+        lastDriverLocations.some(function (item) {
+          return item.driver_id === selectedDriverId;
+        }) ||
+        lastDriverRoster.some(function (item) {
+          return item.user_id === selectedDriverId;
+        })
+      );
       if (!selectedStillActive) {
         selectedDriverId = "";
       }
-      // Also fetch roster for offline drivers
-      var roster = [];
-      try {
-        roster = await C.requestJson(apiBase, "/drivers/roster?active_minutes=120", { token });
-        if (!Array.isArray(roster)) roster = [];
-      } catch (e) { roster = []; }
-      renderDriverList(lastDriverLocations, roster);
-      renderDriverMarkers(lastDriverLocations, { keepCurrentViewport: !!selectedStillActive });
+      renderDriverList(lastDriverLocations, lastDriverRoster);
+      renderDriverMarkers(lastDriverLocations, { keepCurrentViewport: !!selectedStillActive, roster: lastDriverRoster });
       renderAssignmentQueues(allOrders);
       updateActiveDriverStat(lastDriverLocations.length);
       setLastSyncStamp();
-      C.showMessage(el.driversMessage, "Loaded " + lastDriverLocations.length + " active drivers.", "success");
+      C.showMessage(el.driversMessage, "Loaded " + lastDriverLocations.length + " active driver" + (lastDriverLocations.length === 1 ? "" : "s") + " (" + lastDriverRoster.length + " total).", "success");
     } catch (error) {
       lastDriverLocations = [];
-      renderDriverList([]);
+      lastDriverRoster = [];
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues(allOrders);
       updateActiveDriverStat(0);
@@ -2164,87 +2242,149 @@
     }
   }
 
-  function renderDispatchSummary(summary) {
-    if (!summary || typeof summary !== "object") {
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
-      return;
-    }
-    const statuses = summary.by_status && typeof summary.by_status === "object"
-      ? Object.entries(summary.by_status)
-      : [];
-    const activeDrivers = Array.isArray(summary.active_driver_ids) ? summary.active_driver_ids : [];
-    const statusMarkup = statuses.length
-      ? statuses
-          .map(function (entry) {
-            return (
-              "<span class=\"chip\">" +
-              C.escapeHtml(entry[0]) +
-              ": " +
-              C.escapeHtml(String(entry[1])) +
-              "</span>"
-            );
-          })
-          .join(" ")
-      : "<span class=\"panel-help\">No status counts available.</span>";
-
-    const driversMarkup = activeDrivers.length
-      ? activeDrivers.map(function (driverId) {
-          return "<span class=\"chip\">" + C.escapeHtml(driverId) + "</span>";
-        }).join(" ")
-      : "<span class=\"panel-help\">No active drivers in this window.</span>";
-
-    el.dispatchSummaryView.innerHTML =
-      "<div class=\"metric-grid\">" +
-      "<div class=\"metric-item\"><span>Total Orders</span><strong>" +
-      C.escapeHtml(String(summary.total_orders || 0)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Assigned</span><strong>" +
-      C.escapeHtml(String(summary.assigned_orders || 0)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Unassigned</span><strong>" +
-      C.escapeHtml(String(summary.unassigned_orders || 0)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Active Drivers</span><strong>" +
-      C.escapeHtml(String(summary.active_drivers || 0)) +
-      "</strong></div>" +
-      "</div>" +
-      "<p class=\"panel-help\">Generated " +
-      C.escapeHtml(C.formatTimestamp(summary.generated_at)) +
-      " for org " +
-      C.escapeHtml(summary.org_id || "-") +
-      ".</p>" +
-      "<div><strong>Status Breakdown</strong><div class=\"row\">" +
-      statusMarkup +
-      "</div></div>" +
-      "<div style=\"margin-top:0.6rem;\"><strong>Active Driver IDs</strong><div class=\"row\">" +
-      driversMarkup +
-      "</div></div>";
+  function _inflightStatusDot(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "assigned") return "dot-assigned";
+    if (s === "pickedup") return "dot-pickedup";
+    if (s === "enroute") return "dot-enroute";
+    return "dot-created";
   }
 
-  async function refreshDispatchSummary(event) {
-    if (event) {
-      event.preventDefault();
+  function _inflightBarClass(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "assigned") return "status-assigned";
+    if (s === "pickedup") return "status-pickedup";
+    if (s === "enroute") return "status-enroute";
+    return "status-created";
+  }
+
+  function _inflightBarWidth(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "created") return "5%";
+    if (s === "assigned") return "20%";
+    if (s === "pickedup") return "50%";
+    if (s === "enroute") return "75%";
+    return "5%";
+  }
+
+  function _inflightActionLabel(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "assigned") return "Awaiting Pickup";
+    if (s === "pickedup") return "Arrive at Destination";
+    if (s === "enroute") return "Arrive at Destination";
+    return "Pending Assignment";
+  }
+
+  function _fmtDeadline(dt) {
+    if (!dt) return "-";
+    var d = new Date(dt);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString([], { month: "2-digit", day: "2-digit" }) + " " +
+           d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function _estimateEta(order) {
+    if (order.dropoff_deadline) {
+      var dl = new Date(order.dropoff_deadline);
+      var now = new Date();
+      var diffMs = dl - now;
+      if (diffMs <= 0) return "Overdue";
+      var h = Math.floor(diffMs / 3600000);
+      var m = Math.round((diffMs % 3600000) / 60000);
+      if (h > 0) return "~" + h + "h " + m + "m";
+      return "~" + m + "m";
     }
-    if (!requireAuthorized(el.dispatchSummaryMessage)) {
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+    return "-";
+  }
+
+  function renderInflight(orders) {
+    if (!el.inflightList) return;
+    var active = (orders || []).filter(function (o) {
+      return o.status !== "Delivered" && o.status !== "Failed";
+    });
+    if (el.inflightCount) el.inflightCount.textContent = active.length;
+    if (!active.length) {
+      el.inflightList.innerHTML = '<div class="inflight-empty">No active shipments.</div>';
       return;
     }
+    // Group by status
+    var inProgress = active.filter(function (o) { return o.status === "PickedUp" || o.status === "EnRoute"; });
+    var assigned = active.filter(function (o) { return o.status === "Assigned"; });
+    var created = active.filter(function (o) { return o.status === "Created"; });
 
-    const parsedWindow = Number.parseInt(el.dispatchActiveMinutes.value || "120", 10);
-    const activeMinutes = Number.isFinite(parsedWindow) ? Math.min(Math.max(parsedWindow, 1), 1440) : 120;
-    el.dispatchActiveMinutes.value = String(activeMinutes);
+    var html = "";
+    if (inProgress.length) {
+      html += '<div class="inflight-section-label">In Progress (' + inProgress.length + ')</div>';
+      html += inProgress.map(_renderInflightCard).join("");
+    }
+    if (assigned.length) {
+      html += '<div class="inflight-section-label">Assigned (' + assigned.length + ')</div>';
+      html += assigned.map(_renderInflightCard).join("");
+    }
+    if (created.length) {
+      html += '<div class="inflight-section-label">Unassigned (' + created.length + ')</div>';
+      html += created.map(_renderInflightCard).join("");
+    }
+    el.inflightList.innerHTML = html;
+  }
 
+  function _renderInflightCard(order) {
+    var pickup = [order.pick_up_street, order.pick_up_city].filter(Boolean).join(", ") || "-";
+    var delivery = [order.delivery_street, order.delivery_city].filter(Boolean).join(", ") || "-";
+    var pickupFull = [order.pick_up_city, order.pick_up_state].filter(Boolean).join(", ");
+    var deliveryFull = [order.delivery_city, order.delivery_state].filter(Boolean).join(", ");
+    var driver = order.assigned_to || "Unassigned";
+    var eta = _estimateEta(order);
+
+    return (
+      '<div class="inflight-card">' +
+        '<div>' +
+          '<div class="inflight-ref">' +
+            '<span class="inflight-status-dot ' + _inflightStatusDot(order.status) + '"></span>' +
+            C.escapeHtml(order.reference_id || order.id.slice(0, 8)) +
+          '</div>' +
+          '<div class="inflight-pkgs">' + order.num_packages + ' pcs' +
+            (order.weight ? ' &middot; ' + order.weight + ' lbs' : '') +
+          '</div>' +
+        '</div>' +
+        '<div>' +
+          '<div class="inflight-driver">' + C.escapeHtml(order.customer_name) + '</div>' +
+          '<div class="inflight-driver-sub">' + C.escapeHtml(driver) + '</div>' +
+        '</div>' +
+        '<div class="inflight-progress-area">' +
+          '<div class="inflight-progress-header">' +
+            '<span class="inflight-eta">' + C.escapeHtml(eta) + '</span>' +
+          '</div>' +
+          '<div class="inflight-bar-wrap">' +
+            '<div class="inflight-bar-fill ' + _inflightBarClass(order.status) + '" style="width:' + _inflightBarWidth(order.status) + '"></div>' +
+          '</div>' +
+          '<div class="inflight-progress-labels">' +
+            '<div class="inflight-progress-label"><strong>' + C.escapeHtml(pickupFull || "Pickup") + '</strong>' + C.escapeHtml(pickup) + '</div>' +
+            '<div class="inflight-progress-label" style="text-align:right;"><strong>' + C.escapeHtml(deliveryFull || "Delivery") + '</strong>' + C.escapeHtml(delivery) + '</div>' +
+          '</div>' +
+          '<div class="inflight-action-btn"><button class="btn btn-xs btn-ghost">' + _inflightActionLabel(order.status) + '</button></div>' +
+        '</div>' +
+        '<div class="inflight-dest">' +
+          '<div class="inflight-deadlines">' +
+            '<span class="deadline-label">Pickup: </span>' + _fmtDeadline(order.pickup_deadline) + '<br>' +
+            '<span class="deadline-label">Delivery: </span>' + _fmtDeadline(order.dropoff_deadline) +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  async function refreshInflight() {
+    if (!requireAuthorized(el.inflightMessage)) {
+      renderInflight([]);
+      return;
+    }
     try {
-      const summary = await C.requestJson(
-        apiBase,
-        "/reports/dispatch-summary?active_minutes=" + encodeURIComponent(String(activeMinutes)),
-        { token }
-      );
-      renderDispatchSummary(summary);
+      var orders = await C.requestJson(apiBase, "/orders", { token });
+      renderInflight(orders);
       setLastSyncStamp();
-      C.showMessage(el.dispatchSummaryMessage, "Dispatch summary loaded.", "success");
     } catch (error) {
-      C.showMessage(el.dispatchSummaryMessage, error.message, "error");
+      if (el.inflightMessage) C.showMessage(el.inflightMessage, error.message, "error");
     }
   }
 
@@ -2792,9 +2932,10 @@
     allOrders = [];
     lastOrders = [];
     lastDriverLocations = [];
+    lastDriverRoster = [];
     selectedDriverId = "";
     renderOrders([]);
-    renderDriverList([]);
+    renderDriverList([], []);
     renderDriverMarkers([]);
     renderAssignmentQueues([]);
     updateOrderStats([]);
@@ -2802,7 +2943,7 @@
     renderBillingStatus(null);
     renderBillingSummary(null);
     renderBillingInvitations([]);
-    el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+    renderInflight([]);
     el.auditLogsView.innerHTML = "No audit logs loaded.";
     el.routeResult.innerHTML = "No route computed yet.";
     if (logoutUrl) {
@@ -2839,7 +2980,6 @@
     await finishHostedLoginCallback();
     await restoreWebAuthSession();
     await restoreDevAuthSession();
-    await maybeAutoBootstrapDevSession();
     _writeOrderFilters();
     _writeAuditFilters();
     _renderSelectionCount();
@@ -2849,7 +2989,7 @@
         refreshAssignableDrivers(),
         refreshOrders(),
         refreshDrivers(),
-        refreshDispatchSummary(),
+        refreshInflight(),
         refreshAuditLogs(),
       ]);
       if (isAdminRole) {
@@ -2863,16 +3003,17 @@
       allOrders = [];
       lastOrders = [];
       lastDriverLocations = [];
+      lastDriverRoster = [];
       selectedDriverId = "";
       renderOrders([]);
-      renderDriverList([]);
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues([]);
       updateActiveDriverStat(0);
       renderBillingStatus(null);
       renderBillingSummary(null);
       renderBillingInvitations([]);
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+      renderInflight([]);
       el.auditLogsView.innerHTML = "No audit logs loaded.";
       if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
     }
@@ -2900,13 +3041,14 @@
         allOrders = [];
         lastOrders = [];
         lastDriverLocations = [];
+        lastDriverRoster = [];
         selectedDriverId = "";
         renderDriverOptions([]);
         renderOrders([]);
-        renderDriverList([]);
+        renderDriverList([], []);
         renderDriverMarkers([]);
         renderAssignmentQueues([]);
-        el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+        renderInflight([]);
         if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
         updateOrderStats([]);
         updateActiveDriverStat(0);
@@ -3000,16 +3142,13 @@
       });
     });
   }
-  el.refreshDispatchSummary.addEventListener("click", function () {
-    refreshDispatchSummary().catch(function (error) {
-      C.showMessage(el.dispatchSummaryMessage, error.message, "error");
+  if (el.refreshInflight) {
+    el.refreshInflight.addEventListener("click", function () {
+      refreshInflight().catch(function (error) {
+        if (el.inflightMessage) C.showMessage(el.inflightMessage, error.message, "error");
+      });
     });
-  });
-  el.dispatchSummaryForm.addEventListener("submit", function (event) {
-    refreshDispatchSummary(event).catch(function (error) {
-      C.showMessage(el.dispatchSummaryMessage, error.message, "error");
-    });
-  });
+  }
   el.refreshAuditLogs.addEventListener("click", refreshAuditLogs);
   el.auditFilterForm.addEventListener("submit", function (event) {
     applyAuditFilters(event).catch(function (error) {

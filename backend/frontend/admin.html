@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/styles.css?v=20260325a">
+  <link rel="stylesheet" href="assets/styles.css?v=20260326a">
 </head>
 <body class="theme-admin">
 
@@ -35,7 +35,7 @@
       <button class="topbar-ws-tab is-active" type="button" data-workspace-target="operations">Dispatch</button>
       <button class="topbar-ws-tab" type="button" data-workspace-target="orders">Orders</button>
       <button class="topbar-ws-tab" type="button" data-workspace-target="planning">Planning</button>
-      <button class="topbar-ws-tab" type="button" data-workspace-target="insights">Insights</button>
+      <button class="topbar-ws-tab" type="button" data-workspace-target="insights">In Flight</button>
       <button class="topbar-ws-tab" type="button" data-workspace-target="admin">Admin</button>
     </nav>
     <div class="topbar-slim-right">
@@ -318,17 +318,19 @@
 
     <!-- ===== INSIGHTS (existing, wrapped) ===== -->
     <section class="workspace-panel" data-workspace-panel="insights">
-      <div class="workspace-contained">
+      <div class="workspace-contained" style="max-width:none;">
         <section class="panel">
           <div class="panel-title-row">
-            <h2>Dispatch Summary</h2>
-            <button id="refresh-dispatch-summary" class="btn btn-ghost" type="button">Refresh</button>
+            <h2>In Flight</h2>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span id="inflight-count" class="stat-badge" style="background:var(--accent);color:#fff;padding:3px 10px;border-radius:12px;font-size:.75rem;font-weight:700;">0</span>
+              <button id="refresh-inflight" class="btn btn-ghost" type="button">Refresh</button>
+            </div>
           </div>
-          <form id="dispatch-summary-form" class="form-grid compact-form">
-            <label class="field"><span>Active Driver Window (minutes)</span><input id="dispatch-active-minutes" name="active_minutes" type="number" min="1" max="1440" value="120"></label>
-          </form>
-          <div id="dispatch-summary-view" class="data-surface">No dispatch summary loaded.</div>
-          <p id="dispatch-summary-message" class="message"></p>
+          <div id="inflight-list" class="inflight-list">
+            <div class="inflight-empty">No active shipments.</div>
+          </div>
+          <p id="inflight-message" class="message"></p>
         </section>
 
         <section class="panel">
@@ -513,7 +515,7 @@
   <span id="assigned-queue-count" hidden>0</span>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260322m"></script>
-  <script src="assets/admin.js?v=20260322m"></script>
+  <script src="assets/common.js?v=20260326b"></script>
+  <script src="assets/admin.js?v=20260326b"></script>
 </body>
 </html>

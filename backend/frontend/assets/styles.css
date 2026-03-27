@@ -2309,6 +2309,67 @@ body.theme-admin .billing-seat-cards .stat-card small {
 .login-btn { width: 100%; padding: .75rem; font-size: 1rem; }
 .login-message { margin-top: 1rem; }
 
+/* ===== IN FLIGHT ===== */
+.inflight-list { display: flex; flex-direction: column; gap: 2px; }
+.inflight-empty { color: var(--text-muted); font-size: .85rem; padding: 24px 0; text-align: center; }
+.inflight-card {
+  display: grid;
+  grid-template-columns: 80px 160px 1fr 160px;
+  align-items: center; gap: 0;
+  background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: 8px; padding: 16px 20px;
+  transition: border-color .15s;
+}
+.inflight-card:hover { border-color: var(--accent); }
+.inflight-ref { font-size: .85rem; font-weight: 700; color: var(--text); }
+.inflight-ref-id { font-size: .7rem; color: var(--text-muted); margin-top: 2px; }
+.inflight-driver { font-size: .8rem; font-weight: 600; }
+.inflight-driver-sub { font-size: .7rem; color: var(--text-muted); margin-top: 2px; }
+.inflight-pkgs { font-size: .7rem; color: var(--text-muted); }
+.inflight-progress-area { padding: 0 20px; }
+.inflight-progress-header {
+  display: flex; justify-content: center; gap: 8px; align-items: center;
+  font-size: .7rem; color: var(--text-muted); margin-bottom: 6px;
+}
+.inflight-eta { font-size: .7rem; color: var(--accent); font-weight: 600; }
+.inflight-bar-wrap {
+  position: relative; height: 6px; background: rgba(255,255,255,.08);
+  border-radius: 3px; overflow: hidden;
+}
+.inflight-bar-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  border-radius: 3px; transition: width .4s;
+}
+.inflight-bar-fill.status-assigned { background: var(--accent); }
+.inflight-bar-fill.status-pickedup { background: #f59e0b; width: 50%; }
+.inflight-bar-fill.status-enroute { background: #34d399; }
+.inflight-bar-fill.status-created { background: rgba(255,255,255,.15); width: 5%; }
+.inflight-progress-labels {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-top: 6px; font-size: .7rem; color: var(--text-muted);
+}
+.inflight-progress-label { max-width: 45%; }
+.inflight-progress-label strong { color: var(--text); font-weight: 600; display: block; font-size: .72rem; }
+.inflight-action-btn { margin-top: 6px; display: flex; justify-content: center; }
+.inflight-dest { text-align: right; }
+.inflight-dest-name { font-size: .8rem; font-weight: 600; }
+.inflight-dest-addr { font-size: .7rem; color: var(--text-muted); margin-top: 2px; }
+.inflight-deadlines { font-size: .65rem; color: var(--text-muted); margin-top: 4px; }
+.inflight-deadlines .deadline-label { color: var(--text-muted); }
+.inflight-status-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px;
+}
+.inflight-status-dot.dot-assigned { background: var(--accent); }
+.inflight-status-dot.dot-pickedup { background: #f59e0b; }
+.inflight-status-dot.dot-enroute { background: #34d399; }
+.inflight-status-dot.dot-created { background: var(--text-muted); }
+.inflight-section-label {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted);
+  padding: 12px 0 6px; border-bottom: 1px solid var(--panel-border);
+  margin-bottom: 2px;
+}
+
 .topbar-slim {
   height: 52px;
   background: var(--bg-soft);

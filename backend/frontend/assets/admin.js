@@ -58,11 +58,10 @@
     optimizeForm: document.getElementById("optimize-form"),  // removed from DOM
     routeResult: document.getElementById("route-result"),    // removed from DOM
     routeMessage: document.getElementById("route-message"),  // removed from DOM
-    refreshDispatchSummary: document.getElementById("refresh-dispatch-summary"),
-    dispatchSummaryForm: document.getElementById("dispatch-summary-form"),
-    dispatchActiveMinutes: document.getElementById("dispatch-active-minutes"),
-    dispatchSummaryView: document.getElementById("dispatch-summary-view"),
-    dispatchSummaryMessage: document.getElementById("dispatch-summary-message"),
+    inflightList: document.getElementById("inflight-list"),
+    inflightCount: document.getElementById("inflight-count"),
+    inflightMessage: document.getElementById("inflight-message"),
+    refreshInflight: document.getElementById("refresh-inflight"),
     refreshAuditLogs: document.getElementById("refresh-audit-logs"),
     auditFilterForm: document.getElementById("audit-filter-form"),
     auditActionFilter: document.getElementById("audit-action-filter"),
@@ -552,10 +551,7 @@
         element.disabled = !enabled;
       });
     }
-    el.refreshDispatchSummary.disabled = !enabled;
-    el.dispatchSummaryForm.querySelectorAll("input, button").forEach(function (element) {
-      element.disabled = !enabled;
-    });
+    if (el.refreshInflight) el.refreshInflight.disabled = !enabled;
     el.refreshAuditLogs.disabled = !enabled;
     el.auditFilterForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
@@ -1091,7 +1087,7 @@
       el.billingStatus.innerHTML = "No billing provider status loaded.";
       _resetSeatCards();
       el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+      renderInflight([]);
       el.auditLogsView.innerHTML = "No audit logs loaded.";
       if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
       return;
@@ -1113,7 +1109,7 @@
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+      renderInflight([]);
       renderDriverOptions([]);
       renderDriverList([], []);
       renderDriverMarkers([]);
@@ -2200,87 +2196,149 @@
     }
   }
 
-  function renderDispatchSummary(summary) {
-    if (!summary || typeof summary !== "object") {
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
-      return;
-    }
-    const statuses = summary.by_status && typeof summary.by_status === "object"
-      ? Object.entries(summary.by_status)
-      : [];
-    const activeDrivers = Array.isArray(summary.active_driver_ids) ? summary.active_driver_ids : [];
-    const statusMarkup = statuses.length
-      ? statuses
-          .map(function (entry) {
-            return (
-              "<span class=\"chip\">" +
-              C.escapeHtml(entry[0]) +
-              ": " +
-              C.escapeHtml(String(entry[1])) +
-              "</span>"
-            );
-          })
-          .join(" ")
-      : "<span class=\"panel-help\">No status counts available.</span>";
-
-    const driversMarkup = activeDrivers.length
-      ? activeDrivers.map(function (driverId) {
-          return "<span class=\"chip\">" + C.escapeHtml(driverId) + "</span>";
-        }).join(" ")
-      : "<span class=\"panel-help\">No active drivers in this window.</span>";
-
-    el.dispatchSummaryView.innerHTML =
-      "<div class=\"metric-grid\">" +
-      "<div class=\"metric-item\"><span>Total Orders</span><strong>" +
-      C.escapeHtml(String(summary.total_orders || 0)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Assigned</span><strong>" +
-      C.escapeHtml(String(summary.assigned_orders || 0)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Unassigned</span><strong>" +
-      C.escapeHtml(String(summary.unassigned_orders || 0)) +
-      "</strong></div>" +
-      "<div class=\"metric-item\"><span>Active Drivers</span><strong>" +
-      C.escapeHtml(String(summary.active_drivers || 0)) +
-      "</strong></div>" +
-      "</div>" +
-      "<p class=\"panel-help\">Generated " +
-      C.escapeHtml(C.formatTimestamp(summary.generated_at)) +
-      " for org " +
-      C.escapeHtml(summary.org_id || "-") +
-      ".</p>" +
-      "<div><strong>Status Breakdown</strong><div class=\"row\">" +
-      statusMarkup +
-      "</div></div>" +
-      "<div style=\"margin-top:0.6rem;\"><strong>Active Driver IDs</strong><div class=\"row\">" +
-      driversMarkup +
-      "</div></div>";
+  function _inflightStatusDot(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "assigned") return "dot-assigned";
+    if (s === "pickedup") return "dot-pickedup";
+    if (s === "enroute") return "dot-enroute";
+    return "dot-created";
   }
 
-  async function refreshDispatchSummary(event) {
-    if (event) {
-      event.preventDefault();
+  function _inflightBarClass(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "assigned") return "status-assigned";
+    if (s === "pickedup") return "status-pickedup";
+    if (s === "enroute") return "status-enroute";
+    return "status-created";
+  }
+
+  function _inflightBarWidth(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "created") return "5%";
+    if (s === "assigned") return "20%";
+    if (s === "pickedup") return "50%";
+    if (s === "enroute") return "75%";
+    return "5%";
+  }
+
+  function _inflightActionLabel(status) {
+    var s = String(status || "").toLowerCase();
+    if (s === "assigned") return "Awaiting Pickup";
+    if (s === "pickedup") return "Arrive at Destination";
+    if (s === "enroute") return "Arrive at Destination";
+    return "Pending Assignment";
+  }
+
+  function _fmtDeadline(dt) {
+    if (!dt) return "-";
+    var d = new Date(dt);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString([], { month: "2-digit", day: "2-digit" }) + " " +
+           d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function _estimateEta(order) {
+    if (order.dropoff_deadline) {
+      var dl = new Date(order.dropoff_deadline);
+      var now = new Date();
+      var diffMs = dl - now;
+      if (diffMs <= 0) return "Overdue";
+      var h = Math.floor(diffMs / 3600000);
+      var m = Math.round((diffMs % 3600000) / 60000);
+      if (h > 0) return "~" + h + "h " + m + "m";
+      return "~" + m + "m";
     }
-    if (!requireAuthorized(el.dispatchSummaryMessage)) {
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+    return "-";
+  }
+
+  function renderInflight(orders) {
+    if (!el.inflightList) return;
+    var active = (orders || []).filter(function (o) {
+      return o.status !== "Delivered" && o.status !== "Failed";
+    });
+    if (el.inflightCount) el.inflightCount.textContent = active.length;
+    if (!active.length) {
+      el.inflightList.innerHTML = '<div class="inflight-empty">No active shipments.</div>';
       return;
     }
+    // Group by status
+    var inProgress = active.filter(function (o) { return o.status === "PickedUp" || o.status === "EnRoute"; });
+    var assigned = active.filter(function (o) { return o.status === "Assigned"; });
+    var created = active.filter(function (o) { return o.status === "Created"; });
 
-    const parsedWindow = Number.parseInt(el.dispatchActiveMinutes.value || "120", 10);
-    const activeMinutes = Number.isFinite(parsedWindow) ? Math.min(Math.max(parsedWindow, 1), 1440) : 120;
-    el.dispatchActiveMinutes.value = String(activeMinutes);
+    var html = "";
+    if (inProgress.length) {
+      html += '<div class="inflight-section-label">In Progress (' + inProgress.length + ')</div>';
+      html += inProgress.map(_renderInflightCard).join("");
+    }
+    if (assigned.length) {
+      html += '<div class="inflight-section-label">Assigned (' + assigned.length + ')</div>';
+      html += assigned.map(_renderInflightCard).join("");
+    }
+    if (created.length) {
+      html += '<div class="inflight-section-label">Unassigned (' + created.length + ')</div>';
+      html += created.map(_renderInflightCard).join("");
+    }
+    el.inflightList.innerHTML = html;
+  }
 
+  function _renderInflightCard(order) {
+    var pickup = [order.pick_up_street, order.pick_up_city].filter(Boolean).join(", ") || "-";
+    var delivery = [order.delivery_street, order.delivery_city].filter(Boolean).join(", ") || "-";
+    var pickupFull = [order.pick_up_city, order.pick_up_state].filter(Boolean).join(", ");
+    var deliveryFull = [order.delivery_city, order.delivery_state].filter(Boolean).join(", ");
+    var driver = order.assigned_to || "Unassigned";
+    var eta = _estimateEta(order);
+
+    return (
+      '<div class="inflight-card">' +
+        '<div>' +
+          '<div class="inflight-ref">' +
+            '<span class="inflight-status-dot ' + _inflightStatusDot(order.status) + '"></span>' +
+            C.escapeHtml(order.reference_id || order.id.slice(0, 8)) +
+          '</div>' +
+          '<div class="inflight-pkgs">' + order.num_packages + ' pcs' +
+            (order.weight ? ' &middot; ' + order.weight + ' lbs' : '') +
+          '</div>' +
+        '</div>' +
+        '<div>' +
+          '<div class="inflight-driver">' + C.escapeHtml(order.customer_name) + '</div>' +
+          '<div class="inflight-driver-sub">' + C.escapeHtml(driver) + '</div>' +
+        '</div>' +
+        '<div class="inflight-progress-area">' +
+          '<div class="inflight-progress-header">' +
+            '<span class="inflight-eta">' + C.escapeHtml(eta) + '</span>' +
+          '</div>' +
+          '<div class="inflight-bar-wrap">' +
+            '<div class="inflight-bar-fill ' + _inflightBarClass(order.status) + '" style="width:' + _inflightBarWidth(order.status) + '"></div>' +
+          '</div>' +
+          '<div class="inflight-progress-labels">' +
+            '<div class="inflight-progress-label"><strong>' + C.escapeHtml(pickupFull || "Pickup") + '</strong>' + C.escapeHtml(pickup) + '</div>' +
+            '<div class="inflight-progress-label" style="text-align:right;"><strong>' + C.escapeHtml(deliveryFull || "Delivery") + '</strong>' + C.escapeHtml(delivery) + '</div>' +
+          '</div>' +
+          '<div class="inflight-action-btn"><button class="btn btn-xs btn-ghost">' + _inflightActionLabel(order.status) + '</button></div>' +
+        '</div>' +
+        '<div class="inflight-dest">' +
+          '<div class="inflight-deadlines">' +
+            '<span class="deadline-label">Pickup: </span>' + _fmtDeadline(order.pickup_deadline) + '<br>' +
+            '<span class="deadline-label">Delivery: </span>' + _fmtDeadline(order.dropoff_deadline) +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  async function refreshInflight() {
+    if (!requireAuthorized(el.inflightMessage)) {
+      renderInflight([]);
+      return;
+    }
     try {
-      const summary = await C.requestJson(
-        apiBase,
-        "/reports/dispatch-summary?active_minutes=" + encodeURIComponent(String(activeMinutes)),
-        { token }
-      );
-      renderDispatchSummary(summary);
+      var orders = await C.requestJson(apiBase, "/orders", { token });
+      renderInflight(orders);
       setLastSyncStamp();
-      C.showMessage(el.dispatchSummaryMessage, "Dispatch summary loaded.", "success");
     } catch (error) {
-      C.showMessage(el.dispatchSummaryMessage, error.message, "error");
+      if (el.inflightMessage) C.showMessage(el.inflightMessage, error.message, "error");
     }
   }
 
@@ -2839,7 +2897,7 @@
     renderBillingStatus(null);
     renderBillingSummary(null);
     renderBillingInvitations([]);
-    el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+    renderInflight([]);
     el.auditLogsView.innerHTML = "No audit logs loaded.";
     el.routeResult.innerHTML = "No route computed yet.";
     if (logoutUrl) {
@@ -2885,7 +2943,7 @@
         refreshAssignableDrivers(),
         refreshOrders(),
         refreshDrivers(),
-        refreshDispatchSummary(),
+        refreshInflight(),
         refreshAuditLogs(),
       ]);
       if (isAdminRole) {
@@ -2909,7 +2967,7 @@
       renderBillingStatus(null);
       renderBillingSummary(null);
       renderBillingInvitations([]);
-      el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+      renderInflight([]);
       el.auditLogsView.innerHTML = "No audit logs loaded.";
       if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
     }
@@ -2944,7 +3002,7 @@
         renderDriverList([], []);
         renderDriverMarkers([]);
         renderAssignmentQueues([]);
-        el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
+        renderInflight([]);
         if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
         updateOrderStats([]);
         updateActiveDriverStat(0);
@@ -3038,16 +3096,13 @@
       });
     });
   }
-  el.refreshDispatchSummary.addEventListener("click", function () {
-    refreshDispatchSummary().catch(function (error) {
-      C.showMessage(el.dispatchSummaryMessage, error.message, "error");
+  if (el.refreshInflight) {
+    el.refreshInflight.addEventListener("click", function () {
+      refreshInflight().catch(function (error) {
+        if (el.inflightMessage) C.showMessage(el.inflightMessage, error.message, "error");
+      });
     });
-  });
-  el.dispatchSummaryForm.addEventListener("submit", function (event) {
-    refreshDispatchSummary(event).catch(function (error) {
-      C.showMessage(el.dispatchSummaryMessage, error.message, "error");
-    });
-  });
+  }
   el.refreshAuditLogs.addEventListener("click", refreshAuditLogs);
   el.auditFilterForm.addEventListener("submit", function (event) {
     applyAuditFilters(event).catch(function (error) {

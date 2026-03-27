@@ -24,6 +24,7 @@ class DriverRosterEntry(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     photo_url: Optional[str] = None
+    tsa_certified: bool = False
     is_online: bool = False
     lat: Optional[float] = None
     lng: Optional[float] = None
@@ -92,6 +93,7 @@ async def list_driver_roster(
             email=u.email,
             phone=getattr(u, "phone", None),
             photo_url=getattr(u, "photo_url", None),
+            tsa_certified=getattr(u, "tsa_certified", False),
             is_online=is_online,
             lat=loc.lat if loc else None,
             lng=loc.lng if loc else None,

@@ -52,7 +52,9 @@
     profilePhone: document.getElementById("profile-phone"),
     profileEmail: document.getElementById("profile-email"),
     profilePhotoUrl: document.getElementById("profile-photo-url"),
+    profilePhotoFile: document.getElementById("profile-photo-file"),
     profilePhotoPreview: document.getElementById("profile-photo-preview"),
+    profileTsa: document.getElementById("profile-tsa"),
     profileMessage: document.getElementById("profile-message"),
   };
 
@@ -751,6 +753,44 @@
     }
   }
 
+  function resizeImageToDataUrl(file, maxDim, quality) {
+    maxDim = maxDim || 256;
+    quality = quality || 0.85;
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var img = new Image();
+        img.onload = function () {
+          var w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+            else { w = Math.round(w * maxDim / h); h = maxDim; }
+          }
+          var canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.onerror = function () { reject(new Error("Failed to load image")); };
+        img.src = reader.result;
+      };
+      reader.onerror = function () { reject(new Error("Failed to read file")); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function handleProfilePhotoFile() {
+    if (!el.profilePhotoFile || !el.profilePhotoFile.files.length) return;
+    var file = el.profilePhotoFile.files[0];
+    if (!file.type.startsWith("image/")) return;
+    resizeImageToDataUrl(file, 256, 0.85).then(function (dataUrl) {
+      if (el.profilePhotoUrl) el.profilePhotoUrl.value = dataUrl;
+      updateProfilePhotoPreview();
+    }).catch(function () {
+      C.showMessage(el.profileMessage, "Could not process image.", "error");
+    });
+  }
+
   async function loadProfile() {
     try {
       currentProfile = await C.requestJson(apiBase, "/users/me", { token: token });
@@ -766,6 +806,7 @@
       if (el.profilePhone) el.profilePhone.value = currentProfile.phone || "";
       if (el.profileEmail) el.profileEmail.value = currentProfile.email || "";
       if (el.profilePhotoUrl) el.profilePhotoUrl.value = currentProfile.photo_url || "";
+      if (el.profileTsa) el.profileTsa.checked = !!currentProfile.tsa_certified;
       updateProfilePhotoPreview();
     }
     el.profileModal.style.display = "flex";
@@ -780,6 +821,7 @@
     if (el.profilePhone) updates.phone = el.profilePhone.value.trim() || null;
     if (el.profileEmail) updates.email = el.profileEmail.value.trim() || null;
     if (el.profilePhotoUrl) updates.photo_url = el.profilePhotoUrl.value.trim() || null;
+    if (el.profileTsa) updates.tsa_certified = el.profileTsa.checked;
     try {
       currentProfile = await C.requestJson(apiBase, "/users/me", { method: "PUT", token: token, json: updates });
       updateProfileAvatar();
@@ -847,6 +889,7 @@
   if (el.profileBtn) el.profileBtn.addEventListener("click", openProfileModal);
   if (el.profileClose) el.profileClose.addEventListener("click", closeProfileModal);
   if (el.profileForm) el.profileForm.addEventListener("submit", function (e) { e.preventDefault(); saveProfile(); });
+  if (el.profilePhotoFile) el.profilePhotoFile.addEventListener("change", handleProfilePhotoFile);
   if (el.profilePhotoUrl) el.profilePhotoUrl.addEventListener("input", updateProfilePhotoPreview);
 
   // Login screen button

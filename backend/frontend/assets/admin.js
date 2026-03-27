@@ -112,7 +112,7 @@
 
   let token = "";
   let map = null;
-  let mapMarkers = [];
+  let mapMarkers = new Map(); // driver_id → { marker, lat, lng }
   let orderMarkers = [];
   let mapStyleUrl = defaultMapStyle;
   let activeRouteSourceId = "route-line-source";
@@ -1047,7 +1047,7 @@
       refreshDrivers().catch(function () {
         // Do not interrupt dispatch work if background refresh fails.
       });
-    }, 30000);
+    }, 15000);
   }
 
   function stopDriverAutoRefresh() {
@@ -1965,16 +1965,53 @@
       .catch(function () { /* silently skip */ });
   }
 
+  function _createDriverMarkerElement(item, rosterEntry, isSelectedDriver) {
+    var photoUrl = rosterEntry && rosterEntry.photo_url;
+    var isTsa = rosterEntry && rosterEntry.tsa_certified;
+    var borderColor = isSelectedDriver ? "#e63946" : (isTsa ? "#1565c0" : "#3498db");
+    if (isTsa) {
+      var tsaEl = document.createElement("div");
+      tsaEl.className = "dispatch-map-marker-tsa";
+      tsaEl.style.cssText = "width:42px;height:42px;cursor:pointer;position:relative;";
+      tsaEl.innerHTML = '<svg width="42" height="42" viewBox="0 0 42 42">' +
+        '<circle cx="21" cy="21" r="19" fill="#1565c0" stroke="#fff" stroke-width="2.5"/>' +
+        '<circle cx="21" cy="21" r="16" fill="none" stroke="#fff" stroke-width="1" opacity=".5"/>' +
+        '<g transform="translate(21,22) rotate(-45) scale(.55)">' +
+          '<path d="M-2,-14 L2,-14 L2,-4 L12,2 L12,5 L2,1 L2,8 L5,10 L5,12.5 L0,11 L-5,12.5 L-5,10 L-2,8 L-2,1 L-12,5 L-12,2 L-2,-4 Z" fill="#fff"/>' +
+        '</g>' +
+        (photoUrl ? '' : '<text x="21" y="37" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="Inter,sans-serif">TSA</text>') +
+      '</svg>';
+      if (photoUrl) {
+        var photoOverlay = document.createElement("div");
+        photoOverlay.style.cssText = "position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;border-radius:50%;border:2px solid #1565c0;overflow:hidden;background:#fff;";
+        var pImg = document.createElement("img");
+        pImg.src = photoUrl; pImg.alt = "";
+        pImg.style.cssText = "width:100%;height:100%;object-fit:cover;";
+        photoOverlay.appendChild(pImg);
+        tsaEl.appendChild(photoOverlay);
+      }
+      return { element: tsaEl, offset: 20 };
+    } else if (photoUrl) {
+      var elDiv = document.createElement("div");
+      elDiv.className = "dispatch-map-marker-photo";
+      elDiv.style.cssText = "width:36px;height:36px;border-radius:50%;border:3px solid " + borderColor + ";overflow:hidden;cursor:pointer;background:#fff;";
+      var img = document.createElement("img");
+      img.src = photoUrl; img.alt = "";
+      img.style.cssText = "width:100%;height:100%;object-fit:cover;";
+      elDiv.appendChild(img);
+      return { element: elDiv, offset: 15 };
+    }
+    return { color: borderColor, offset: 15 };
+  }
+
   function renderDriverMarkers(driverLocations, options) {
     const currentMap = ensureMap();
     if (!currentMap) {
       return;
     }
-    mapMarkers.forEach(function (marker) {
-      marker.remove();
-    });
-    mapMarkers = [];
     if (!driverLocations.length) {
+      mapMarkers.forEach(function (entry) { entry.marker.remove(); });
+      mapMarkers = new Map();
       return;
     }
     const markerOptions = options || {};
@@ -1982,53 +2019,62 @@
     let focusedDriver = null;
     const bounds = new window.maplibregl.LngLatBounds();
     var roster = Array.isArray(markerOptions.roster) ? markerOptions.roster : [];
+    var activeIds = new Set();
+
     driverLocations.forEach(function (item) {
+      activeIds.add(item.driver_id);
       const isSelectedDriver = !!focusDriverId && item.driver_id === focusDriverId;
       var rosterEntry = roster.find(function (r) { return r.user_id === item.driver_id; });
-      var photoUrl = rosterEntry && rosterEntry.photo_url;
-      var marker;
-      if (photoUrl) {
-        var el = document.createElement("div");
-        el.className = "dispatch-map-marker-photo";
-        el.style.cssText = "width:36px;height:36px;border-radius:50%;border:3px solid " + (isSelectedDriver ? "#e63946" : "#3498db") + ";overflow:hidden;cursor:pointer;background:#fff;";
-        var img = document.createElement("img");
-        img.src = photoUrl;
-        img.alt = "";
-        img.style.cssText = "width:100%;height:100%;object-fit:cover;";
-        el.appendChild(img);
-        marker = new window.maplibregl.Marker({ element: el })
-          .setLngLat([item.lng, item.lat])
-          .setPopup(
-            new window.maplibregl.Popup({ offset: 15 }).setHTML(
-              "<strong>" +
-                C.escapeHtml((rosterEntry && rosterEntry.username) || item.driver_id) +
-                "</strong><br>Updated: " +
-                C.escapeHtml(C.formatTimestamp(item.timestamp))
-            )
-          )
-          .addTo(currentMap);
+      var driverName = (rosterEntry && rosterEntry.username) || item.driver_id;
+      var isTsa = rosterEntry && rosterEntry.tsa_certified;
+      var popupHtml = "<strong>" + C.escapeHtml(driverName) + "</strong>" +
+        (isTsa ? "<br><span style=\"color:#1565c0;font-weight:700;font-size:.75rem;\">TSA CERTIFIED</span>" : "") +
+        "<br>Updated: " + C.escapeHtml(C.formatTimestamp(item.timestamp));
+
+      var existing = mapMarkers.get(item.driver_id);
+      if (existing) {
+        // Animate existing marker to new position
+        existing.marker.setLngLat([item.lng, item.lat]);
+        existing.marker.setPopup(new window.maplibregl.Popup({ offset: 15 }).setHTML(popupHtml));
+        existing.lat = item.lat;
+        existing.lng = item.lng;
       } else {
-        marker = new window.maplibregl.Marker({ color: isSelectedDriver ? "#e63946" : "#3498db" })
-          .setLngLat([item.lng, item.lat])
-          .setPopup(
-            new window.maplibregl.Popup({ offset: 15 }).setHTML(
-              "<strong>" +
-                C.escapeHtml(item.driver_id) +
-                "</strong><br>Updated: " +
-                C.escapeHtml(C.formatTimestamp(item.timestamp))
-            )
-          )
-          .addTo(currentMap);
+        // Create new marker
+        var markerConfig = _createDriverMarkerElement(item, rosterEntry, isSelectedDriver);
+        var marker;
+        if (markerConfig.element) {
+          marker = new window.maplibregl.Marker({ element: markerConfig.element })
+            .setLngLat([item.lng, item.lat])
+            .setPopup(new window.maplibregl.Popup({ offset: markerConfig.offset }).setHTML(popupHtml))
+            .addTo(currentMap);
+        } else {
+          marker = new window.maplibregl.Marker({ color: markerConfig.color })
+            .setLngLat([item.lng, item.lat])
+            .setPopup(new window.maplibregl.Popup({ offset: markerConfig.offset }).setHTML(popupHtml))
+            .addTo(currentMap);
+        }
+        // Enable CSS transition for smooth movement
+        var markerEl = marker.getElement();
+        markerEl.style.transition = "transform 1.5s ease-out";
+        markerEl.addEventListener("click", function () {
+          selectDriver(item.driver_id, { silent: true, keepViewport: false });
+        });
+        mapMarkers.set(item.driver_id, { marker: marker, lat: item.lat, lng: item.lng });
       }
-      marker.getElement().addEventListener("click", function () {
-        selectDriver(item.driver_id, { silent: true, keepViewport: false });
-      });
-      mapMarkers.push(marker);
       bounds.extend([item.lng, item.lat]);
       if (isSelectedDriver) {
         focusedDriver = item;
       }
     });
+
+    // Remove markers for drivers no longer active
+    mapMarkers.forEach(function (entry, driverId) {
+      if (!activeIds.has(driverId)) {
+        entry.marker.remove();
+        mapMarkers.delete(driverId);
+      }
+    });
+
     if (markerOptions.keepCurrentViewport) {
       return;
     }

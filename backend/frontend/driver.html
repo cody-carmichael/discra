@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/driver-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/driver-mobile.css?v=20260325a">
+  <link rel="stylesheet" href="assets/driver-mobile.css?v=20260326b">
 </head>
 <body>
 
@@ -97,8 +97,12 @@
             <div class="drv-profile-photo-row">
               <div id="profile-photo-preview" class="drv-profile-photo-preview">?</div>
               <div class="drv-field" style="flex:1;">
-                <span class="drv-field-label">Photo URL</span>
-                <input id="profile-photo-url" type="url" class="drv-input" placeholder="https://...">
+                <span class="drv-field-label">Profile Photo</span>
+                <label class="drv-file-upload-btn">
+                  <input id="profile-photo-file" type="file" accept="image/*" capture="environment" style="display:none;">
+                  <span class="drv-btn drv-btn-ghost drv-btn-sm" style="width:100%;text-align:center;">Choose Photo</span>
+                </label>
+                <input id="profile-photo-url" type="hidden">
               </div>
             </div>
           </div>
@@ -113,6 +117,12 @@
               <span class="drv-field-label">Email</span>
               <input id="profile-email" type="email" class="drv-input" placeholder="you@email.com">
             </div>
+          </div>
+          <div class="drv-detail-section">
+            <label class="drv-toggle-row">
+              <input id="profile-tsa" type="checkbox">
+              <span class="drv-toggle-label">TSA Certified</span>
+            </label>
           </div>
           <p id="profile-message" class="drv-msg"></p>
           <button type="submit" class="drv-btn drv-btn-accent" style="width:100%;">Save Profile</button>
@@ -139,7 +149,7 @@
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260325a"></script>
-  <script src="assets/driver.js?v=20260325a"></script>
+  <script src="assets/common.js?v=20260326b"></script>
+  <script src="assets/driver.js?v=20260326b"></script>
 </body>
 </html>

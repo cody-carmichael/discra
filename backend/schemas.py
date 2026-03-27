@@ -173,6 +173,7 @@ class UserRecord(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     photo_url: Optional[str] = None
+    tsa_certified: bool = False
     roles: List[str] = Field(default_factory=list)
     is_active: bool = True
     created_at: datetime
@@ -183,6 +184,7 @@ class UserProfileUpdate(BaseModel):
     phone: Optional[str] = Field(default=None, max_length=40)
     email: Optional[str] = Field(default=None, max_length=320)
     photo_url: Optional[str] = Field(default=None, max_length=500)
+    tsa_certified: Optional[bool] = None
 
 
 class SeatRole(str, Enum):

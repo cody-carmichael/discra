@@ -2053,10 +2053,7 @@
             .setPopup(new window.maplibregl.Popup({ offset: markerConfig.offset }).setHTML(popupHtml))
             .addTo(currentMap);
         }
-        // Enable CSS transition for smooth movement
-        var markerEl = marker.getElement();
-        markerEl.style.transition = "transform 1.5s ease-out";
-        markerEl.addEventListener("click", function () {
+        marker.getElement().addEventListener("click", function () {
           selectDriver(item.driver_id, { silent: true, keepViewport: false });
         });
         mapMarkers.set(item.driver_id, { marker: marker, lat: item.lat, lng: item.lng });
@@ -2208,7 +2205,7 @@
     try {
       var results = await Promise.all([
         C.requestJson(apiBase, "/drivers?active_minutes=120", { token }),
-        C.requestJson(apiBase, "/drivers/roster", { token }).catch(function () { return []; })
+        C.requestJson(apiBase, "/drivers/roster?active_minutes=120", { token }).catch(function () { return []; })
       ]);
       var drivers = results[0];
       var roster = results[1];

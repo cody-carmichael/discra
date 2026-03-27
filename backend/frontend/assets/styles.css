@@ -3106,6 +3106,27 @@ body.theme-admin .billing-seat-cards .stat-card small {
 .autocomplete-item small { color: var(--text-secondary, #94a3b8); }
 
 /* ── Map popup (dark theme) ─────────────────────────────────────── */
+.maplibregl-popup-content {
+  background: #141b24;
+  color: #e2e8f0;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 12px 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  font-size: 0.85rem;
+}
+.maplibregl-popup-tip {
+  border-top-color: #141b24;
+}
+.maplibregl-popup-close-button {
+  color: #94a3b8;
+  font-size: 18px;
+  right: 6px;
+  top: 4px;
+}
+.maplibregl-popup-close-button:hover {
+  color: #fff;
+}
 .order-popup .maplibregl-popup-content {
   background: #141b24;
   border: 1px solid rgba(255,255,255,0.12);

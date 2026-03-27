@@ -480,11 +480,19 @@ class RouteNavigateRequest(BaseModel):
     dest_lng: float = Field(..., ge=-180, le=180)
 
 
+class RouteStep(BaseModel):
+    instruction: str = ""
+    distance_meters: float = 0.0
+    duration_seconds: float = 0.0
+    type: int = 0
+
+
 class RouteNavigateResponse(BaseModel):
     coordinates: List[List[float]]  # [[lng, lat], ...] polyline
     distance_meters: float
     duration_seconds: float
     bbox: Optional[List[float]] = None
+    steps: List[RouteStep] = Field(default_factory=list)
 
 
 class DispatchSummaryResponse(BaseModel):

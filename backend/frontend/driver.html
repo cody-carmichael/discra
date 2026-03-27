@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/driver-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/driver-mobile.css?v=20260326b">
+  <link rel="stylesheet" href="assets/driver-mobile.css?v=20260326c">
 </head>
 <body>
 
@@ -64,15 +64,27 @@
       <span id="route-stats-text"></span>
     </div>
 
-    <!-- BOTTOM SHEET: Orders -->
-    <div id="bottom-sheet" class="drv-sheet">
+    <!-- BOTTOM SHEET: Orders & Directions -->
+    <div id="bottom-sheet" class="drv-sheet collapsed">
       <div class="drv-sheet-handle" id="sheet-handle"><div class="drv-sheet-bar"></div></div>
-      <div class="drv-sheet-header">
-        <h3 class="drv-sheet-title">My Stops <span id="stop-count" class="drv-stop-count">0</span></h3>
-        <button id="refresh-inbox" class="drv-btn drv-btn-ghost drv-btn-sm" type="button">Refresh</button>
+      <div class="drv-sheet-tabs">
+        <button class="drv-sheet-tab active" data-tab="stops">My Stops <span id="stop-count" class="drv-stop-count">0</span></button>
+        <button class="drv-sheet-tab" data-tab="directions">Directions</button>
       </div>
-      <div id="driver-orders" class="drv-orders-list"></div>
-      <p id="driver-orders-message" class="drv-msg"></p>
+      <div class="drv-sheet-tab-content">
+        <div id="tab-stops" class="drv-tab-pane active">
+          <div class="drv-sheet-tab-header">
+            <button id="refresh-inbox" class="drv-btn drv-btn-ghost drv-btn-sm" type="button">Refresh</button>
+          </div>
+          <div id="driver-orders" class="drv-orders-list"></div>
+          <p id="driver-orders-message" class="drv-msg"></p>
+        </div>
+        <div id="tab-directions" class="drv-tab-pane">
+          <div id="directions-list" class="drv-directions-list">
+            <div class="drv-empty"><div class="drv-empty-icon">&#x1F9ED;</div><div class="drv-empty-text">Select a stop and tap Go to see directions</div></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ORDER DETAIL SLIDE-UP -->
@@ -149,7 +161,7 @@
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260326b"></script>
-  <script src="assets/driver.js?v=20260326b"></script>
+  <script src="assets/common.js?v=20260326c"></script>
+  <script src="assets/driver.js?v=20260326c"></script>
 </body>
 </html>

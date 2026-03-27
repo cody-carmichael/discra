@@ -319,6 +319,10 @@ async def navigate_to_point(
                 distance_meters=round(directions.distance_meters, 2),
                 duration_seconds=round(directions.duration_seconds, 2),
                 bbox=directions.bbox,
+                steps=[
+                    {"instruction": s.instruction, "distance_meters": round(s.distance_meters, 2), "duration_seconds": round(s.duration_seconds, 2), "type": s.type}
+                    for s in directions.steps
+                ],
             )
         except Exception:
             pass
@@ -330,4 +334,5 @@ async def navigate_to_point(
         distance_meters=round(dist, 2),
         duration_seconds=round(dist / 13.89, 2),
         bbox=None,
+        steps=[],
     )

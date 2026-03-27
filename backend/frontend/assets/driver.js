@@ -22,6 +22,9 @@
     orders: document.getElementById("driver-orders"),
     ordersMessage: document.getElementById("driver-orders-message"),
     stopCount: document.getElementById("stop-count"),
+    directionsList: document.getElementById("directions-list"),
+    tabStops: document.getElementById("tab-stops"),
+    tabDirections: document.getElementById("tab-directions"),
     locationBar: document.getElementById("location-bar"),
     locationStatus: document.getElementById("location-status"),
     cognitoDomain: document.getElementById("driver-cognito-domain"),
@@ -75,6 +78,8 @@
   let currentOrders = [];
   let selectedOrderId = null;
   let pendingNavigation = null;
+  let activeNavigationOrderId = null; // tracks which order we're actively navigating to
+  let currentRouteSteps = [];
   const geocodeCache = {};
   const orderCoords = {};
   const activeRouteSourceId = "driver-active-route";
@@ -496,6 +501,8 @@
   // ── Route Prompt & Navigation ──────────────────────────────────
 
   function showRoutePrompt(order) {
+    // Don't re-prompt if we're already navigating to this order
+    if (activeNavigationOrderId === order.id) return;
     var status = String(order.status || "").toLowerCase();
     var label = (status === "pickedup" || status === "enroute") ? "Route to Delivery?" : "Route to Pickup?";
     el.routePromptText.textContent = label;
@@ -560,11 +567,22 @@
       });
 
       drawRoutePolyline(route.coordinates);
+      activeNavigationOrderId = order.id;
 
       var miles = (route.distance_meters / 1609.34).toFixed(1);
       var mins = Math.round(route.duration_seconds / 60);
       el.routeStatsText.textContent = miles + " mi \u00B7 ~" + mins + " min";
       el.routeStats.style.display = "flex";
+
+      // Render turn-by-turn directions
+      currentRouteSteps = route.steps || [];
+      renderDirections(currentRouteSteps, route.distance_meters, route.duration_seconds);
+
+      // Auto-switch to directions tab if we have steps
+      if (currentRouteSteps.length) {
+        switchTab("directions");
+        expandSheet();
+      }
 
       if (route.bbox && map) {
         map.fitBounds([[route.bbox[0], route.bbox[1]], [route.bbox[2], route.bbox[3]]], { padding: 60, duration: 600 });
@@ -832,14 +850,124 @@
     }
   }
 
+  // ── Directions Rendering ────────────────────────────────────────
+
+  function _dirIcon(type) {
+    // ORS maneuver types: 0=left, 1=right, 2=sharp left, 3=sharp right, 4=slight left, 5=slight right
+    // 6=straight, 10=depart, 11=arrive, etc.
+    if (type === 10) return "&#x1F3C1;"; // depart (flag)
+    if (type === 11) return "&#x1F4CD;"; // arrive (pin)
+    if (type === 0 || type === 2 || type === 4) return "&#x2B05;"; // left
+    if (type === 1 || type === 3 || type === 5) return "&#x27A1;"; // right
+    if (type === 6) return "&#x2B06;"; // straight
+    if (type === 12 || type === 13) return "&#x21BA;"; // roundabout
+    return "&#x25CF;"; // default dot
+  }
+
+  function renderDirections(steps, totalDistM, totalDurS) {
+    if (!el.directionsList) return;
+    if (!steps || !steps.length) {
+      el.directionsList.innerHTML = '<div class="drv-empty"><div class="drv-empty-icon">&#x1F9ED;</div><div class="drv-empty-text">Select a stop and tap Go to see directions</div></div>';
+      return;
+    }
+    var miles = (totalDistM / 1609.34).toFixed(1);
+    var mins = Math.round(totalDurS / 60);
+    var html = '<div class="drv-directions-summary"><span>Turn-by-turn</span><span class="drv-dir-total">' + miles + ' mi &middot; ~' + mins + ' min</span></div>';
+    steps.forEach(function (step, i) {
+      var stepMiles = (step.distance_meters / 1609.34);
+      var distLabel = stepMiles >= 0.1 ? stepMiles.toFixed(1) + " mi" : Math.round(step.distance_meters * 3.281) + " ft";
+      var isFirst = i === 0;
+      html += '<div class="drv-direction-step' + (isFirst ? ' current' : '') + '">' +
+        '<div class="drv-direction-icon">' + _dirIcon(step.type) + '</div>' +
+        '<div class="drv-direction-text">' +
+          '<div class="drv-dir-instruction">' + C.escapeHtml(step.instruction) + '</div>' +
+          '<div class="drv-direction-meta">' + distLabel + '</div>' +
+        '</div></div>';
+    });
+    el.directionsList.innerHTML = html;
+  }
+
+  // ── Tab Switching ─────────────────────────────────────────────
+
+  function switchTab(tabName) {
+    document.querySelectorAll(".drv-sheet-tab").forEach(function (t) {
+      t.classList.toggle("active", t.getAttribute("data-tab") === tabName);
+    });
+    if (el.tabStops) el.tabStops.classList.toggle("active", tabName === "stops");
+    if (el.tabDirections) el.tabDirections.classList.toggle("active", tabName === "directions");
+  }
+
+  function expandSheet() {
+    if (el.bottomSheet) el.bottomSheet.classList.remove("collapsed");
+  }
+
+  function collapseSheet() {
+    if (el.bottomSheet) el.bottomSheet.classList.add("collapsed");
+  }
+
   // ── Bottom Sheet Drag ──────────────────────────────────────────
 
   function setupBottomSheet() {
     if (!el.bottomSheet || !el.sheetHandle) return;
-    var collapsed = false;
+    var startY = 0, startTranslate = 0, isDragging = false;
+    var sheetHeight = 0;
+
+    // Tab click handlers
+    el.bottomSheet.querySelectorAll(".drv-sheet-tab").forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        switchTab(tab.getAttribute("data-tab"));
+        expandSheet();
+      });
+    });
+
+    function getTranslateY() {
+      var style = window.getComputedStyle(el.bottomSheet);
+      var matrix = style.transform;
+      if (!matrix || matrix === "none") return 0;
+      var m = matrix.match(/matrix\((.+)\)/);
+      if (!m) return 0;
+      var values = m[1].split(",");
+      return parseFloat(values[5]) || 0;
+    }
+
+    el.sheetHandle.addEventListener("touchstart", function (e) {
+      isDragging = true;
+      startY = e.touches[0].clientY;
+      sheetHeight = el.bottomSheet.offsetHeight;
+      startTranslate = getTranslateY();
+      el.bottomSheet.classList.add("dragging");
+    }, { passive: true });
+
+    document.addEventListener("touchmove", function (e) {
+      if (!isDragging) return;
+      var dy = e.touches[0].clientY - startY;
+      var newTranslate = startTranslate + dy;
+      // Clamp: 0 (fully expanded) to sheetHeight - 90 (collapsed)
+      newTranslate = Math.max(0, Math.min(newTranslate, sheetHeight - 90));
+      el.bottomSheet.style.transform = "translateY(" + newTranslate + "px)";
+    }, { passive: true });
+
+    document.addEventListener("touchend", function () {
+      if (!isDragging) return;
+      isDragging = false;
+      el.bottomSheet.classList.remove("dragging");
+      el.bottomSheet.style.transform = "";
+      var currentY = getTranslateY() || 0;
+      var threshold = (sheetHeight - 90) / 2;
+      if (currentY > threshold) {
+        collapseSheet();
+      } else {
+        expandSheet();
+      }
+    });
+
+    // Tap on handle toggles
     el.sheetHandle.addEventListener("click", function () {
-      collapsed = !collapsed;
-      el.bottomSheet.classList.toggle("collapsed", collapsed);
+      if (el.bottomSheet.classList.contains("collapsed")) {
+        expandSheet();
+      } else {
+        collapseSheet();
+      }
     });
   }
 
@@ -882,7 +1010,7 @@
 
   el.detailClose.addEventListener("click", closeDetailPanel);
   el.routeGo.addEventListener("click", function () { executeNavigation().catch(function (e) { C.showMessage(el.ordersMessage, e.message, "error"); }); });
-  el.routeCancel.addEventListener("click", function () { hideRoutePrompt(); clearRouteLayer(); });
+  el.routeCancel.addEventListener("click", function () { hideRoutePrompt(); clearRouteLayer(); activeNavigationOrderId = null; currentRouteSteps = []; renderDirections([], 0, 0); });
   el.refreshInbox.addEventListener("click", refreshInbox);
 
   // Profile

@@ -122,6 +122,7 @@
   let allOrders = [];
   let lastOrders = [];
   let lastDriverLocations = [];
+  let lastDriverRoster = [];
   let selectedDriverId = "";
   let isAuthorizedRole = false;
   let isAdminRole = false;
@@ -930,8 +931,8 @@
     if (el.bulkDriverId) {
       el.bulkDriverId.value = safeDriverId;
     }
-    renderDriverList(lastDriverLocations);
-    renderDriverMarkers(lastDriverLocations, { focusDriverId: safeDriverId, keepCurrentViewport: !!(options && options.keepViewport) });
+    renderDriverList(lastDriverLocations, lastDriverRoster);
+    renderDriverMarkers(lastDriverLocations, { focusDriverId: safeDriverId, keepCurrentViewport: !!(options && options.keepViewport), roster: lastDriverRoster });
     renderAssignmentQueues(allOrders);
     fetchAndDrawRoute(safeDriverId);
     if (!(options && options.silent) && safeDriverId) {
@@ -1076,10 +1077,11 @@
       allOrders = [];
       lastOrders = [];
       lastDriverLocations = [];
+      lastDriverRoster = [];
       selectedDriverId = "";
       _clearSelection();
       renderDriverOptions([]);
-      renderDriverList([]);
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues([]);
       updateOrderStats([]);
@@ -1102,6 +1104,7 @@
       allOrders = [];
       lastOrders = [];
       lastDriverLocations = [];
+      lastDriverRoster = [];
       selectedDriverId = "";
       _clearSelection();
     } else {
@@ -1112,7 +1115,7 @@
     if (!isAuthorizedRole) {
       el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";
       renderDriverOptions([]);
-      renderDriverList([]);
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues([]);
       C.showMessage(el.authMessage, "This console requires Admin or Dispatcher role.", "error");
@@ -1982,19 +1985,45 @@
     const focusDriverId = String(markerOptions.focusDriverId || selectedDriverId || "").trim();
     let focusedDriver = null;
     const bounds = new window.maplibregl.LngLatBounds();
+    var roster = Array.isArray(markerOptions.roster) ? markerOptions.roster : [];
     driverLocations.forEach(function (item) {
       const isSelectedDriver = !!focusDriverId && item.driver_id === focusDriverId;
-      const marker = new window.maplibregl.Marker({ color: isSelectedDriver ? "#e63946" : "#3498db" })
-        .setLngLat([item.lng, item.lat])
-        .setPopup(
-          new window.maplibregl.Popup({ offset: 15 }).setHTML(
-            "<strong>" +
-              C.escapeHtml(item.driver_id) +
-              "</strong><br>Updated: " +
-              C.escapeHtml(C.formatTimestamp(item.timestamp))
+      var rosterEntry = roster.find(function (r) { return r.user_id === item.driver_id; });
+      var photoUrl = rosterEntry && rosterEntry.photo_url;
+      var marker;
+      if (photoUrl) {
+        var el = document.createElement("div");
+        el.className = "dispatch-map-marker-photo";
+        el.style.cssText = "width:36px;height:36px;border-radius:50%;border:3px solid " + (isSelectedDriver ? "#e63946" : "#3498db") + ";overflow:hidden;cursor:pointer;background:#fff;";
+        var img = document.createElement("img");
+        img.src = photoUrl;
+        img.alt = "";
+        img.style.cssText = "width:100%;height:100%;object-fit:cover;";
+        el.appendChild(img);
+        marker = new window.maplibregl.Marker({ element: el })
+          .setLngLat([item.lng, item.lat])
+          .setPopup(
+            new window.maplibregl.Popup({ offset: 15 }).setHTML(
+              "<strong>" +
+                C.escapeHtml((rosterEntry && rosterEntry.username) || item.driver_id) +
+                "</strong><br>Updated: " +
+                C.escapeHtml(C.formatTimestamp(item.timestamp))
+            )
           )
-        )
-        .addTo(currentMap);
+          .addTo(currentMap);
+      } else {
+        marker = new window.maplibregl.Marker({ color: isSelectedDriver ? "#e63946" : "#3498db" })
+          .setLngLat([item.lng, item.lat])
+          .setPopup(
+            new window.maplibregl.Popup({ offset: 15 }).setHTML(
+              "<strong>" +
+                C.escapeHtml(item.driver_id) +
+                "</strong><br>Updated: " +
+                C.escapeHtml(C.formatTimestamp(item.timestamp))
+            )
+          )
+          .addTo(currentMap);
+      }
       marker.getElement().addEventListener("click", function () {
         selectDriver(item.driver_id, { silent: true, keepViewport: false });
       });
@@ -2126,37 +2155,44 @@
   async function refreshDrivers() {
     if (!requireAuthorized(el.driversMessage)) {
       lastDriverLocations = [];
+      lastDriverRoster = [];
       selectedDriverId = "";
-      renderDriverList([]);
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues(allOrders);
       updateActiveDriverStat(0);
       return;
     }
     try {
-      const drivers = await C.requestJson(apiBase, "/drivers?active_minutes=120", { token });
+      var results = await Promise.all([
+        C.requestJson(apiBase, "/drivers?active_minutes=120", { token }),
+        C.requestJson(apiBase, "/drivers/roster", { token }).catch(function () { return []; })
+      ]);
+      var drivers = results[0];
+      var roster = results[1];
       lastDriverLocations = Array.isArray(drivers) ? drivers : [];
-      const selectedStillActive = selectedDriverId && lastDriverLocations.some(function (item) {
-        return item.driver_id === selectedDriverId;
-      });
+      lastDriverRoster = Array.isArray(roster) ? roster : [];
+      const selectedStillActive = selectedDriverId && (
+        lastDriverLocations.some(function (item) {
+          return item.driver_id === selectedDriverId;
+        }) ||
+        lastDriverRoster.some(function (item) {
+          return item.user_id === selectedDriverId;
+        })
+      );
       if (!selectedStillActive) {
         selectedDriverId = "";
       }
-      // Also fetch roster for offline drivers
-      var roster = [];
-      try {
-        roster = await C.requestJson(apiBase, "/drivers/roster?active_minutes=120", { token });
-        if (!Array.isArray(roster)) roster = [];
-      } catch (e) { roster = []; }
-      renderDriverList(lastDriverLocations, roster);
-      renderDriverMarkers(lastDriverLocations, { keepCurrentViewport: !!selectedStillActive });
+      renderDriverList(lastDriverLocations, lastDriverRoster);
+      renderDriverMarkers(lastDriverLocations, { keepCurrentViewport: !!selectedStillActive, roster: lastDriverRoster });
       renderAssignmentQueues(allOrders);
       updateActiveDriverStat(lastDriverLocations.length);
       setLastSyncStamp();
-      C.showMessage(el.driversMessage, "Loaded " + lastDriverLocations.length + " active drivers.", "success");
+      C.showMessage(el.driversMessage, "Loaded " + lastDriverLocations.length + " active driver" + (lastDriverLocations.length === 1 ? "" : "s") + " (" + lastDriverRoster.length + " total).", "success");
     } catch (error) {
       lastDriverLocations = [];
-      renderDriverList([]);
+      lastDriverRoster = [];
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues(allOrders);
       updateActiveDriverStat(0);
@@ -2792,9 +2828,10 @@
     allOrders = [];
     lastOrders = [];
     lastDriverLocations = [];
+    lastDriverRoster = [];
     selectedDriverId = "";
     renderOrders([]);
-    renderDriverList([]);
+    renderDriverList([], []);
     renderDriverMarkers([]);
     renderAssignmentQueues([]);
     updateOrderStats([]);
@@ -2839,7 +2876,6 @@
     await finishHostedLoginCallback();
     await restoreWebAuthSession();
     await restoreDevAuthSession();
-    await maybeAutoBootstrapDevSession();
     _writeOrderFilters();
     _writeAuditFilters();
     _renderSelectionCount();
@@ -2863,9 +2899,10 @@
       allOrders = [];
       lastOrders = [];
       lastDriverLocations = [];
+      lastDriverRoster = [];
       selectedDriverId = "";
       renderOrders([]);
-      renderDriverList([]);
+      renderDriverList([], []);
       renderDriverMarkers([]);
       renderAssignmentQueues([]);
       updateActiveDriverStat(0);
@@ -2900,10 +2937,11 @@
         allOrders = [];
         lastOrders = [];
         lastDriverLocations = [];
+        lastDriverRoster = [];
         selectedDriverId = "";
         renderDriverOptions([]);
         renderOrders([]);
-        renderDriverList([]);
+        renderDriverList([], []);
         renderDriverMarkers([]);
         renderAssignmentQueues([]);
         el.dispatchSummaryView.innerHTML = "No dispatch summary loaded.";

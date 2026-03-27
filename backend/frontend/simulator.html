@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discra Driver Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <style>
+    :root {
+      --bg: #08111a; --bg-soft: #0d1823; --panel: #101f2f;
+      --panel-border: #1a2d42; --text: #dce4ec; --text-muted: #6b8299;
+      --accent: #1ca2d4; --green: #34d399; --red: #e63946; --yellow: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .sim-header { background: var(--bg-soft); border-bottom: 1px solid var(--panel-border); padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
+    .sim-header h1 { font-size: 1.1rem; font-weight: 700; }
+    .sim-header .logo { width: 32px; height: 32px; background: var(--accent); color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1rem; }
+    .sim-layout { display: grid; grid-template-columns: 340px 1fr; height: calc(100vh - 53px); }
+    .sim-sidebar { background: var(--bg-soft); border-right: 1px solid var(--panel-border); overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .sim-map { position: relative; }
+    #sim-map { width: 100%; height: 100%; }
+    .sim-section { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px; padding: 14px; }
+    .sim-section h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 10px; }
+    .sim-btn { border: none; border-radius: 8px; padding: 8px 16px; font-size: .82rem; font-weight: 600; cursor: pointer; transition: .15s; font-family: inherit; }
+    .sim-btn:hover { filter: brightness(1.1); }
+    .sim-btn-accent { background: var(--accent); color: #fff; }
+    .sim-btn-green { background: var(--green); color: #0a1019; }
+    .sim-btn-red { background: var(--red); color: #fff; }
+    .sim-btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--panel-border); }
+    .sim-btn-sm { padding: 5px 10px; font-size: .75rem; }
+    .sim-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .sim-driver-card { background: var(--bg); border: 1px solid var(--panel-border); border-radius: 8px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+    .sim-driver-card.active { border-color: var(--green); }
+    .sim-driver-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+    .sim-driver-dot.online { background: var(--green); }
+    .sim-driver-info { flex: 1; min-width: 0; }
+    .sim-driver-name { font-size: .82rem; font-weight: 600; }
+    .sim-driver-status { font-size: .7rem; color: var(--text-muted); }
+    .sim-label { font-size: .72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+    .sim-input { background: var(--bg); border: 1px solid var(--panel-border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: .82rem; width: 100%; font-family: inherit; }
+    .sim-input:focus { outline: none; border-color: var(--accent); }
+    .sim-select { background: var(--bg); border: 1px solid var(--panel-border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: .82rem; width: 100%; font-family: inherit; }
+    .sim-log { background: var(--bg); border: 1px solid var(--panel-border); border-radius: 6px; padding: 8px; max-height: 140px; overflow-y: auto; font-size: .7rem; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; }
+    .sim-log-entry { padding: 2px 0; border-bottom: 1px solid var(--panel-border); }
+    .sim-log-entry:last-child { border-bottom: none; }
+    .sim-stat { display: inline-flex; align-items: center; gap: 4px; font-size: .75rem; padding: 3px 8px; background: var(--bg); border-radius: 4px; }
+    .sim-controls { display: flex; gap: 6px; align-items: center; }
+  </style>
+</head>
+<body>
+
+<div class="sim-header">
+  <div class="logo">D</div>
+  <h1>Driver Simulator</h1>
+  <div style="flex:1"></div>
+  <span class="sim-stat" id="stat-active">Active: 0</span>
+  <span class="sim-stat" id="stat-updates">Updates: 0</span>
+  <a href="admin" style="color:var(--accent);font-size:.82rem;text-decoration:none;">Back to Admin</a>
+</div>
+
+<div class="sim-layout">
+  <div class="sim-sidebar">
+    <div class="sim-section">
+      <h3>Spawn Drivers</h3>
+      <div style="margin-bottom:8px;">
+        <div class="sim-label">Number of drivers</div>
+        <input id="driver-count" class="sim-input" type="number" value="5" min="1" max="20">
+      </div>
+      <div style="margin-bottom:8px;">
+        <div class="sim-label">Area</div>
+        <select id="sim-area" class="sim-select">
+          <option value="fortworth">Fort Worth, TX</option>
+          <option value="dallas">Dallas, TX</option>
+          <option value="austin">Austin, TX</option>
+          <option value="houston">Houston, TX</option>
+          <option value="nyc">New York City</option>
+          <option value="la">Los Angeles</option>
+        </select>
+      </div>
+      <div style="margin-bottom:8px;">
+        <div class="sim-label">Update interval (seconds)</div>
+        <input id="update-interval" class="sim-input" type="number" value="5" min="2" max="60">
+      </div>
+      <div class="sim-row">
+        <button id="btn-spawn" class="sim-btn sim-btn-accent">Spawn Drivers</button>
+        <button id="btn-stop" class="sim-btn sim-btn-red" disabled>Stop All</button>
+        <button id="btn-clear" class="sim-btn sim-btn-ghost">Clear</button>
+      </div>
+    </div>
+
+    <div class="sim-section">
+      <h3>Simulated Drivers</h3>
+      <div id="driver-list"></div>
+    </div>
+
+    <div class="sim-section">
+      <h3>Log</h3>
+      <div id="sim-log" class="sim-log">Ready.</div>
+    </div>
+  </div>
+
+  <div class="sim-map">
+    <div id="sim-map"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="assets/common.js?v=20260325a"></script>
+<script>
+(function() {
+  var C = window.DiscraCommon;
+  var apiBase = C.deriveApiBase("/ui/simulator");
+
+  // Area centers and radius (degrees)
+  var AREAS = {
+    fortworth: { lat: 32.7555, lng: -97.3308, r: 0.08 },
+    dallas:    { lat: 32.7767, lng: -96.7970, r: 0.10 },
+    austin:    { lat: 30.2672, lng: -97.7431, r: 0.08 },
+    houston:   { lat: 29.7604, lng: -95.3698, r: 0.12 },
+    nyc:       { lat: 40.7128, lng: -74.0060, r: 0.06 },
+    la:        { lat: 34.0522, lng: -118.2437, r: 0.10 },
+  };
+
+  var DRIVER_NAMES = [
+    "Alex Rivera", "Jordan Lee", "Taylor Kim", "Morgan Chen", "Casey Brooks",
+    "Riley Thompson", "Avery Garcia", "Quinn Martinez", "Drew Wilson", "Cameron Davis",
+    "Skyler Patel", "Dakota Nguyen", "Hayden Lopez", "Parker Adams", "Sawyer Hill",
+    "Finley Clark", "Emery Scott", "Reese Baker", "Blake Turner", "Rowan James",
+  ];
+
+  var COLORS = ["#1ca2d4", "#34d399", "#f59e0b", "#e63946", "#a78bfa", "#fb923c", "#38bdf8", "#f472b6", "#4ade80", "#facc15"];
+
+  var simMap = null;
+  var simDrivers = [];
+  var simTimer = null;
+  var updateCount = 0;
+  var devAuthCookie = null;
+
+  // DOM
+  var elDriverCount = document.getElementById("driver-count");
+  var elArea = document.getElementById("sim-area");
+  var elInterval = document.getElementById("update-interval");
+  var elSpawn = document.getElementById("btn-spawn");
+  var elStop = document.getElementById("btn-stop");
+  var elClear = document.getElementById("btn-clear");
+  var elDriverList = document.getElementById("driver-list");
+  var elLog = document.getElementById("sim-log");
+  var elStatActive = document.getElementById("stat-active");
+  var elStatUpdates = document.getElementById("stat-updates");
+
+  function log(msg) {
+    var t = new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    elLog.innerHTML = '<div class="sim-log-entry">[' + t + '] ' + msg + '</div>' + elLog.innerHTML;
+    if (elLog.children.length > 100) elLog.removeChild(elLog.lastChild);
+  }
+
+  function initMap() {
+    simMap = new maplibregl.Map({
+      container: "sim-map",
+      style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+      center: [-97.3308, 32.7555],
+      zoom: 11,
+    });
+  }
+
+  function randomInArea(area) {
+    return {
+      lat: area.lat + (Math.random() - 0.5) * 2 * area.r,
+      lng: area.lng + (Math.random() - 0.5) * 2 * area.r,
+    };
+  }
+
+  function randomDestInArea(area) {
+    return randomInArea(area);
+  }
+
+  function bearing(lat1, lng1, lat2, lng2) {
+    var dLng = (lng2 - lng1) * Math.PI / 180;
+    var y = Math.sin(dLng) * Math.cos(lat2 * Math.PI / 180);
+    var x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+            Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLng);
+    return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+  }
+
+  function moveToward(driver, speed) {
+    var dlat = driver.dest.lat - driver.lat;
+    var dlng = driver.dest.lng - driver.lng;
+    var dist = Math.sqrt(dlat*dlat + dlng*dlng);
+    if (dist < 0.001) {
+      // Arrived — pick new destination
+      var area = AREAS[elArea.value] || AREAS.fortworth;
+      driver.dest = randomDestInArea(area);
+      return;
+    }
+    var step = speed + (Math.random() - 0.5) * speed * 0.3; // slight randomness
+    var ratio = Math.min(step / dist, 1);
+    driver.lat += dlat * ratio;
+    driver.lng += dlng * ratio;
+    driver.heading = bearing(driver.lat, driver.lng, driver.dest.lat, driver.dest.lng);
+  }
+
+  async function loginAsDriver(driverId, orgId) {
+    try {
+      await C.loginDevAuthSession(apiBase, {
+        role: "Driver",
+        user_id: driverId,
+        org_id: orgId,
+        email: driverId.replace("sim-", "") + "@simulator.discra.test",
+      });
+      return true;
+    } catch(e) {
+      log("Auth failed for " + driverId + ": " + e.message);
+      return false;
+    }
+  }
+
+  async function sendLocation(driver) {
+    try {
+      // Login as this driver first (sets cookie)
+      await loginAsDriver(driver.id, "org-pilot-1");
+      await C.requestJson(apiBase, "/drivers/location", {
+        method: "POST",
+        json: { lat: driver.lat, lng: driver.lng, heading: driver.heading },
+      });
+      updateCount++;
+      elStatUpdates.textContent = "Updates: " + updateCount;
+      return true;
+    } catch(e) {
+      log("Location failed for " + driver.name + ": " + e.message);
+      return false;
+    }
+  }
+
+  function spawnDrivers() {
+    var count = parseInt(elDriverCount.value) || 5;
+    count = Math.min(count, 20);
+    var area = AREAS[elArea.value] || AREAS.fortworth;
+
+    // Center map on area
+    simMap.flyTo({ center: [area.lng, area.lat], zoom: 12, duration: 800 });
+
+    for (var i = 0; i < count; i++) {
+      var pos = randomInArea(area);
+      var dest = randomDestInArea(area);
+      var name = DRIVER_NAMES[simDrivers.length % DRIVER_NAMES.length];
+      var color = COLORS[simDrivers.length % COLORS.length];
+      var driverId = "sim-" + name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now().toString(36);
+
+      var markerEl = document.createElement("div");
+      markerEl.style.cssText = "width:14px;height:14px;background:" + color + ";border:2px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.4);";
+
+      var marker = new maplibregl.Marker({ element: markerEl })
+        .setLngLat([pos.lng, pos.lat])
+        .setPopup(new maplibregl.Popup({ offset: 10 }).setText(name))
+        .addTo(simMap);
+
+      simDrivers.push({
+        id: driverId,
+        name: name,
+        color: color,
+        lat: pos.lat,
+        lng: pos.lng,
+        dest: dest,
+        heading: 0,
+        marker: marker,
+        active: true,
+      });
+
+      log("Spawned: " + name + " (" + driverId.slice(0, 20) + "...)");
+    }
+
+    renderDriverCards();
+    elStatActive.textContent = "Active: " + simDrivers.filter(function(d){return d.active;}).length;
+    startSimulation();
+  }
+
+  function renderDriverCards() {
+    if (!simDrivers.length) {
+      elDriverList.innerHTML = '<div style="color:var(--text-muted);font-size:.8rem;">No drivers spawned.</div>';
+      return;
+    }
+    elDriverList.innerHTML = simDrivers.map(function(d) {
+      return '<div class="sim-driver-card' + (d.active ? ' active' : '') + '">' +
+        '<div class="sim-driver-dot' + (d.active ? ' online' : '') + '" style="' + (d.active ? 'background:'+d.color : '') + '"></div>' +
+        '<div class="sim-driver-info"><div class="sim-driver-name">' + d.name + '</div>' +
+        '<div class="sim-driver-status">' + (d.active ? d.lat.toFixed(4) + ', ' + d.lng.toFixed(4) : 'Stopped') + '</div></div>' +
+        '</div>';
+    }).join("");
+  }
+
+  async function tickAll() {
+    var speed = 0.002; // ~200m per tick
+    var active = simDrivers.filter(function(d) { return d.active; });
+    for (var i = 0; i < active.length; i++) {
+      var d = active[i];
+      moveToward(d, speed);
+      d.marker.setLngLat([d.lng, d.lat]);
+      await sendLocation(d);
+    }
+    renderDriverCards();
+  }
+
+  function startSimulation() {
+    if (simTimer) return;
+    var interval = (parseInt(elInterval.value) || 5) * 1000;
+    // Send initial positions immediately
+    tickAll();
+    simTimer = setInterval(tickAll, interval);
+    elSpawn.disabled = true;
+    elStop.disabled = false;
+    log("Simulation started (" + simDrivers.filter(function(d){return d.active;}).length + " drivers, " + (interval/1000) + "s interval)");
+  }
+
+  function stopSimulation() {
+    if (simTimer) { clearInterval(simTimer); simTimer = null; }
+    elSpawn.disabled = false;
+    elStop.disabled = true;
+    log("Simulation stopped.");
+  }
+
+  function clearAll() {
+    stopSimulation();
+    simDrivers.forEach(function(d) { d.marker.remove(); });
+    simDrivers = [];
+    updateCount = 0;
+    elStatActive.textContent = "Active: 0";
+    elStatUpdates.textContent = "Updates: 0";
+    renderDriverCards();
+    log("Cleared all drivers.");
+  }
+
+  elSpawn.addEventListener("click", spawnDrivers);
+  elStop.addEventListener("click", stopSimulation);
+  elClear.addEventListener("click", clearAll);
+
+  initMap();
+  log("Simulator ready. Dev auth required.");
+})();
+</script>
+</body>
+</html>

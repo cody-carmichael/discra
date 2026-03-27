@@ -182,7 +182,7 @@ class UserRecord(BaseModel):
 class UserProfileUpdate(BaseModel):
     phone: Optional[str] = Field(default=None, max_length=40)
     email: Optional[str] = Field(default=None, max_length=320)
-    photo_url: Optional[str] = Field(default=None, max_length=2048)
+    photo_url: Optional[str] = Field(default=None, max_length=500)
 
 
 class SeatRole(str, Enum):

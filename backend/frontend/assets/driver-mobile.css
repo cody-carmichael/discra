@@ -91,8 +91,8 @@ body {
   border-bottom: 1px solid var(--drv-border);
   flex-shrink: 0;
 }
-.drv-topbar-left { display: flex; align-items: center; gap: 8px; }
-.drv-topbar-right { display: flex; align-items: center; gap: 8px; }
+.drv-topbar-left { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.drv-topbar-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; overflow: hidden; }
 .drv-logo {
   width: 30px; height: 30px; border-radius: 8px;
   background: var(--drv-accent); color: #fff;

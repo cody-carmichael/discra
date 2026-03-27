@@ -372,6 +372,18 @@ def create_app() -> FastAPI:
     async def dev_backend_ui_driver_service_worker():
         return FileResponse(str(FRONTEND_DIR / "driver-sw.js"), media_type="application/javascript")
 
+    @app.get("/ui/simulator", include_in_schema=False)
+    async def ui_simulator():
+        return FileResponse(str(FRONTEND_DIR / "simulator.html"))
+
+    @app.get("/backend/ui/simulator", include_in_schema=False)
+    async def backend_ui_simulator():
+        return FileResponse(str(FRONTEND_DIR / "simulator.html"))
+
+    @app.get("/dev/backend/ui/simulator", include_in_schema=False)
+    async def dev_backend_ui_simulator():
+        return FileResponse(str(FRONTEND_DIR / "simulator.html"))
+
     @app.get("/ui/config", include_in_schema=False)
     async def ui_config():
         return _ui_config_payload(

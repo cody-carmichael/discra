@@ -902,7 +902,6 @@
     } else {
       await restoreWebAuthSession();
       await restoreDevAuthSession();
-      await maybeAutoBootstrapDevSession();
     }
 
     // Init map after auth

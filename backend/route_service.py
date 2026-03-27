@@ -117,12 +117,22 @@ class AmazonLocationRouteMatrixProvider(RouteMatrixProvider):
 
 
 @dataclass
+class OrsRouteStep:
+    """A single turn-by-turn instruction."""
+    instruction: str = ""
+    distance_meters: float = 0.0
+    duration_seconds: float = 0.0
+    type: int = 0  # ORS maneuver type
+
+
+@dataclass
 class OrsDirectionsResult:
     """Result from an ORS directions call with route geometry."""
     coordinates: List[List[float]] = field(default_factory=list)  # [[lng, lat], ...]
     distance_meters: float = 0.0
     duration_seconds: float = 0.0
     bbox: Optional[List[float]] = None
+    steps: List[OrsRouteStep] = field(default_factory=list)
 
 
 class OpenRouteServiceProvider(RouteMatrixProvider):
@@ -173,6 +183,7 @@ class OpenRouteServiceProvider(RouteMatrixProvider):
         body = {
             "coordinates": coordinates,
             "geometry": True,
+            "instructions": True,
             "format": "geojson",
         }
         result = self._ors_request("/v2/directions/driving-car/geojson", body)
@@ -182,12 +193,26 @@ class OpenRouteServiceProvider(RouteMatrixProvider):
 
         feature = features[0]
         geometry = feature.get("geometry", {})
-        props = feature.get("properties", {}).get("summary", {})
+        props = feature.get("properties", {})
+        summary = props.get("summary", {})
+
+        # Extract turn-by-turn steps from ORS segments
+        steps: List[OrsRouteStep] = []
+        for segment in props.get("segments", []):
+            for step in segment.get("steps", []):
+                steps.append(OrsRouteStep(
+                    instruction=step.get("instruction", ""),
+                    distance_meters=step.get("distance", 0.0),
+                    duration_seconds=step.get("duration", 0.0),
+                    type=step.get("type", 0),
+                ))
+
         return OrsDirectionsResult(
             coordinates=geometry.get("coordinates", []),
-            distance_meters=props.get("distance", 0.0),
-            duration_seconds=props.get("duration", 0.0),
+            distance_meters=summary.get("distance", 0.0),
+            duration_seconds=summary.get("duration", 0.0),
             bbox=result.get("bbox"),
+            steps=steps,
         )
 
 

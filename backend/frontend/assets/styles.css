@@ -2782,6 +2782,27 @@ body.theme-admin .billing-seat-cards .stat-card small {
   opacity: 0.4;
   cursor: not-allowed;
 }
+.dispatch-card-unassign-btn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(148,163,184,0.08);
+  color: #94a3b8;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  transition: background 0.15s, color 0.15s;
+}
+.dispatch-card-unassign-btn:hover {
+  background: #e63946;
+  color: #fff;
+  border-color: #e63946;
+}
 
 .dispatch-empty {
   padding: 2rem 1rem;

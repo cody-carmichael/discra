@@ -555,28 +555,81 @@
     }
 
     try {
-      var route = await C.requestJson(apiBase, "/routes/navigate", {
-        method: "POST",
-        token: token,
-        json: {
-          start_lat: driverLocation.lat,
-          start_lng: driverLocation.lng,
-          dest_lat: destCoords.lat,
-          dest_lng: destCoords.lng,
-        },
-      });
+      // Use OSRM public API for street-level routing with turn-by-turn directions
+      var osrmUrl = "https://router.project-osrm.org/route/v1/driving/" +
+        driverLocation.lng + "," + driverLocation.lat + ";" +
+        destCoords.lng + "," + destCoords.lat +
+        "?overview=full&geometries=geojson&steps=true";
+      var osrmResp = await fetch(osrmUrl);
+      var osrmData = await osrmResp.json();
 
-      drawRoutePolyline(route.coordinates);
+      var routeCoords = [];
+      var routeDistM = 0;
+      var routeDurS = 0;
+      var routeSteps = [];
+      var routeBbox = null;
+
+      if (osrmData.code === "Ok" && osrmData.routes && osrmData.routes.length) {
+        var osrmRoute = osrmData.routes[0];
+        routeCoords = osrmRoute.geometry.coordinates;
+        routeDistM = osrmRoute.distance;
+        routeDurS = osrmRoute.duration;
+
+        // Extract turn-by-turn from OSRM legs/steps
+        (osrmRoute.legs || []).forEach(function (leg) {
+          (leg.steps || []).forEach(function (step) {
+            if (!step.maneuver) return;
+            var instrParts = [];
+            var mod = step.maneuver.modifier || "";
+            var mtype = step.maneuver.type || "";
+            if (mtype === "depart") instrParts.push("Head " + (mod || "north"));
+            else if (mtype === "arrive") instrParts.push("Arrive at destination");
+            else if (mtype === "turn") instrParts.push("Turn " + mod);
+            else if (mtype === "new name" || mtype === "continue") instrParts.push("Continue " + (mod ? mod + " " : ""));
+            else if (mtype === "merge") instrParts.push("Merge " + mod);
+            else if (mtype === "fork") instrParts.push("Take the " + mod + " fork");
+            else if (mtype === "roundabout" || mtype === "rotary") instrParts.push("Enter roundabout, exit " + (step.maneuver.exit || ""));
+            else instrParts.push((mtype + " " + mod).trim());
+            if (step.name) instrParts.push("onto " + step.name);
+            var osrmType = 6; // straight default
+            if (mod.indexOf("left") >= 0) osrmType = mod.indexOf("sharp") >= 0 ? 2 : (mod.indexOf("slight") >= 0 ? 4 : 0);
+            else if (mod.indexOf("right") >= 0) osrmType = mod.indexOf("sharp") >= 0 ? 3 : (mod.indexOf("slight") >= 0 ? 5 : 1);
+            if (mtype === "depart") osrmType = 10;
+            if (mtype === "arrive") osrmType = 11;
+            if (mtype === "roundabout" || mtype === "rotary") osrmType = 12;
+            routeSteps.push({
+              instruction: instrParts.join(" ").replace(/\s+/g, " ").trim(),
+              distance_meters: step.distance || 0,
+              duration_seconds: step.duration || 0,
+              type: osrmType,
+            });
+          });
+        });
+
+        // Calculate bounding box from coordinates
+        if (routeCoords.length) {
+          var lngs = routeCoords.map(function (c) { return c[0]; });
+          var lats = routeCoords.map(function (c) { return c[1]; });
+          routeBbox = [Math.min.apply(null, lngs), Math.min.apply(null, lats), Math.max.apply(null, lngs), Math.max.apply(null, lats)];
+        }
+      } else {
+        // Fallback to straight line if OSRM fails
+        routeCoords = [[driverLocation.lng, driverLocation.lat], [destCoords.lng, destCoords.lat]];
+        routeDistM = _haversine(driverLocation.lat, driverLocation.lng, destCoords.lat, destCoords.lng);
+        routeDurS = routeDistM / 13.89;
+      }
+
+      drawRoutePolyline(routeCoords);
       activeNavigationOrderId = order.id;
 
-      var miles = (route.distance_meters / 1609.34).toFixed(1);
-      var mins = Math.round(route.duration_seconds / 60);
+      var miles = (routeDistM / 1609.34).toFixed(1);
+      var mins = Math.round(routeDurS / 60);
       el.routeStatsText.textContent = miles + " mi \u00B7 ~" + mins + " min";
       el.routeStats.style.display = "flex";
 
       // Render turn-by-turn directions
-      currentRouteSteps = route.steps || [];
-      renderDirections(currentRouteSteps, route.distance_meters, route.duration_seconds);
+      currentRouteSteps = routeSteps;
+      renderDirections(currentRouteSteps, routeDistM, routeDurS);
 
       // Auto-switch to directions tab if we have steps
       if (currentRouteSteps.length) {
@@ -584,8 +637,8 @@
         expandSheet();
       }
 
-      if (route.bbox && map) {
-        map.fitBounds([[route.bbox[0], route.bbox[1]], [route.bbox[2], route.bbox[3]]], { padding: 60, duration: 600 });
+      if (routeBbox && map) {
+        map.fitBounds([[routeBbox[0], routeBbox[1]], [routeBbox[2], routeBbox[3]]], { padding: 60, duration: 600 });
       } else if (map) {
         map.flyTo({ center: [destCoords.lng, destCoords.lat], zoom: 13, duration: 800 });
       }
@@ -930,7 +983,11 @@
       return parseFloat(values[5]) || 0;
     }
 
-    el.sheetHandle.addEventListener("touchstart", function (e) {
+    el.bottomSheet.addEventListener("touchstart", function (e) {
+      // Allow scrolling inside content, only drag from handle area or near top
+      var target = e.target;
+      var isHandle = target === el.sheetHandle || target.closest(".drv-sheet-handle") || target.closest(".drv-sheet-tabs");
+      if (!isHandle) return;
       isDragging = true;
       startY = e.touches[0].clientY;
       sheetHeight = el.bottomSheet.offsetHeight;
@@ -951,9 +1008,10 @@
       if (!isDragging) return;
       isDragging = false;
       el.bottomSheet.classList.remove("dragging");
-      el.bottomSheet.style.transform = "";
+      // Read current position BEFORE clearing inline transform
       var currentY = getTranslateY() || 0;
       var threshold = (sheetHeight - 90) / 2;
+      el.bottomSheet.style.transform = "";
       if (currentY > threshold) {
         collapseSheet();
       } else {

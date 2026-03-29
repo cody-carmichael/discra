@@ -151,17 +151,16 @@ Parameters:
     Default: ""
     Description: Absolute registration page URL base used in approval/rejection emails
   VapidPublicKey:
-    Type: String
-    Default: ""
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /discra/vapid-public-key
     Description: VAPID public key (URL-safe base64) for Web Push notifications
   VapidPrivateKey:
-    Type: String
-    Default: ""
-    NoEcho: true
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /discra/vapid-private-key
     Description: VAPID private key for signing Web Push messages
   VapidClaimEmail:
-    Type: String
-    Default: ""
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /discra/vapid-claim-email
     Description: Contact email for VAPID claims (mailto:you@example.com)
 
 Globals:

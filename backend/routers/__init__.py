@@ -4,6 +4,7 @@ from .identity import router as identity_router
 from .onboarding import router as onboarding_router
 from .orders import router as orders_router
 from .pod import router as pod_router
+from .push import router as push_router
 from .reports import router as reports_router
 from .routes import router as routes_router
 
@@ -14,6 +15,7 @@ __all__ = [
     "onboarding_router",
     "orders_router",
     "pod_router",
+    "push_router",
     "reports_router",
     "routes_router",
 ]

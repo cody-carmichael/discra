@@ -14,6 +14,7 @@ try:
     )
     from backend.audit_store import get_audit_log_store, new_event_id
     from backend.order_store import get_order_store
+    from backend.push_service import send_push_notification
     from backend.schemas import (
         AuditLogRecord,
         AssignRequest,
@@ -30,6 +31,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
     from audit_store import get_audit_log_store, new_event_id
     from order_store import get_order_store
+    from push_service import send_push_notification
     from schemas import (
         AuditLogRecord,
         AssignRequest,
@@ -232,6 +234,18 @@ async def assign_order(
             "status": saved.status.value,
         },
     )
+
+    send_push_notification(
+        org_id=user["org_id"],
+        driver_id=body.driver_id,
+        payload={
+            "type": "order.assigned",
+            "title": "New Order Assigned",
+            "body": f"Pickup: {saved.pick_up_street}, {saved.pick_up_city} for {saved.customer_name}",
+            "order_id": saved.id,
+            "customer_name": saved.customer_name,
+        },
+    )
     return saved
 
 
@@ -307,6 +321,19 @@ async def bulk_assign_orders(
             "status": OrderStatus.ASSIGNED.value,
         },
     )
+
+    if updated_ids:
+        send_push_notification(
+            org_id=user["org_id"],
+            driver_id=driver_id,
+            payload={
+                "type": "order.bulk_assigned",
+                "title": f"{len(updated_ids)} Order{'s' if len(updated_ids) != 1 else ''} Assigned",
+                "body": f"You have {len(updated_ids)} new order{'s' if len(updated_ids) != 1 else ''} to pick up.",
+                "order_ids": updated_ids,
+            },
+        )
+
     return BulkOrderMutationResponse(updated=len(updated_ids), order_ids=updated_ids)
 
 

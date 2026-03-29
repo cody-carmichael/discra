@@ -81,9 +81,8 @@ Parameters:
     Default: "true"
     Description: Enable cookie-based UI dev auth profiles for no-token manual testing
   DevAuthSecret:
-    Type: String
-    Default: discra-dev-auth-secret
-    NoEcho: true
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /discra/dev-auth-secret
     Description: Signing secret for UI dev-auth session cookies (dev only)
   UiDevAuthOrgId:
     Type: String

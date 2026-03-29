@@ -427,6 +427,16 @@ class DriverLocationRecord(BaseModel):
     expires_at_epoch: int
 
 
+class PushSubscriptionRecord(BaseModel):
+    org_id: str
+    driver_id: str
+    endpoint: str
+    p256dh: str
+    auth: str
+    created_at: datetime
+    expires_at_epoch: int
+
+
 class RouteStopInput(BaseModel):
     order_id: str
     lat: float = Field(..., ge=-90, le=90)

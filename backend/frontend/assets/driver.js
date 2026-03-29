@@ -66,6 +66,7 @@
   let isAuthorizedRole = false;
   let devAuthEnabled = false;
   let devAuthProfiles = [];
+  let vapidPublicKey = "";
   let devSessionClaims = null;
   let webSessionClaims = null;
   const autoDevBootstrapKey = storageKey + "_auto_dev_bootstrapped";
@@ -180,6 +181,7 @@
       if (config && config.cognito_client_id && el.cognitoClientId) el.cognitoClientId.value = config.cognito_client_id;
       devAuthEnabled = !!(config && config.dev_auth_enabled);
       devAuthProfiles = Array.isArray(config && config.dev_auth_profiles) ? config.dev_auth_profiles : [];
+      vapidPublicKey = (config && config.vapid_public_key) || "";
       renderDevAuthActions();
     } catch (e) { devAuthEnabled = false; devAuthProfiles = []; renderDevAuthActions(); }
   }
@@ -1105,6 +1107,60 @@
   if (el.saveToken) el.saveToken.addEventListener("click", function () { logoutDevAuthSession(true).then(function () { setToken(el.token.value); }); });
   if (el.clearToken) el.clearToken.addEventListener("click", function () { logoutDevAuthSession(true).then(function () { stopLocationShare(); setToken(""); renderOrders([]); }); });
 
+  // ── Push Notifications ─────────────────────────────────────────
+
+  function urlBase64ToUint8Array(base64String) {
+    var padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var rawData = window.atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+    for (var i = 0; i < rawData.length; i++) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  async function subscribeToPush() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!vapidPublicKey) return;
+
+    try {
+      var permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+
+      var registration = await navigator.serviceWorker.ready;
+      var existing = await registration.pushManager.getSubscription();
+
+      // Re-subscribe if no existing subscription
+      if (!existing) {
+        existing = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        });
+      }
+
+      var keyP256dh = existing.getKey("p256dh");
+      var keyAuth = existing.getKey("auth");
+      if (!keyP256dh || !keyAuth) return;
+
+      var p256dh = btoa(String.fromCharCode.apply(null, new Uint8Array(keyP256dh)));
+      var auth = btoa(String.fromCharCode.apply(null, new Uint8Array(keyAuth)));
+
+      var authToken = token || "";
+      await C.requestJson(apiBase, "/push/subscribe", {
+        method: "POST",
+        token: authToken,
+        json: {
+          endpoint: existing.endpoint,
+          p256dh: p256dh,
+          auth: auth,
+        },
+      });
+    } catch (e) {
+      // Push subscription failure should not block the driver app
+    }
+  }
+
   // ── Bootstrap ──────────────────────────────────────────────────
 
   function registerServiceWorker() {
@@ -1140,6 +1196,7 @@
       // Auto-share location immediately on login
       startAutoLocationShare();
       await loadProfile();
+      subscribeToPush();
       await refreshInbox();
     } else {
       renderOrders([]);

@@ -81,9 +81,8 @@ Parameters:
     Default: "true"
     Description: Enable cookie-based UI dev auth profiles for no-token manual testing
   DevAuthSecret:
-    Type: String
-    Default: discra-dev-auth-secret
-    NoEcho: true
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /discra/dev-auth-secret
     Description: Signing secret for UI dev-auth session cookies (dev only)
   UiDevAuthOrgId:
     Type: String
@@ -150,6 +149,18 @@ Parameters:
     Type: String
     Default: ""
     Description: Absolute registration page URL base used in approval/rejection emails
+  VapidPublicKey:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /discra/vapid-public-key
+    Description: VAPID public key (URL-safe base64) for Web Push notifications
+  VapidPrivateKey:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /discra/vapid-private-key
+    Description: VAPID private key for signing Web Push messages
+  VapidClaimEmail:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /discra/vapid-claim-email
+    Description: Contact email for VAPID claims (mailto:you@example.com)
 
 Globals:
   Function:
@@ -288,6 +299,30 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub "discra-driver-locations-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+        - AttributeName: driver_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+        - AttributeName: driver_id
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at_epoch
+        Enabled: true
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
+  PushSubscriptionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-push-subscriptions-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: org_id
@@ -510,6 +545,10 @@ Resources:
           ORDERS_WEBHOOK_HMAC_SECRET: !Ref OrdersWebhookHmacSecret
           ORDERS_WEBHOOK_MAX_SKEW_SECONDS: !Ref OrdersWebhookMaxSkewSeconds
           AUDIT_LOGS_TABLE: !Ref AuditLogsTable
+          PUSH_SUBSCRIPTIONS_TABLE: !Ref PushSubscriptionsTable
+          VAPID_PUBLIC_KEY: !Ref VapidPublicKey
+          VAPID_PRIVATE_KEY: !Ref VapidPrivateKey
+          VAPID_CLAIM_EMAIL: !Ref VapidClaimEmail
           COGNITO_HOSTED_UI_DOMAIN: !Ref CognitoHostedUiDomain
           FRONTEND_COGNITO_CLIENT_ID: !Ref CognitoAppClientId
           FRONTEND_MAP_STYLE_URL: !Ref FrontendMapStyleUrl
@@ -553,6 +592,7 @@ Resources:
               - !GetAtt SeatSubscriptionsTable.Arn
               - !GetAtt SeatInvitationsTable.Arn
               - !GetAtt AuditLogsTable.Arn
+              - !GetAtt PushSubscriptionsTable.Arn
               - !GetAtt OnboardingRegistrationsTable.Arn
               - !Sub "${OnboardingRegistrationsTable.Arn}/index/*"
         - Statement:
@@ -782,6 +822,10 @@ Outputs:
   DriverLocationsTableName:
     Description: DynamoDB table for latest driver GPS locations
     Value: !Ref DriverLocationsTable
+
+  PushSubscriptionsTableName:
+    Description: DynamoDB table for Web Push notification subscriptions
+    Value: !Ref PushSubscriptionsTable
 
   SeatSubscriptionsTableName:
     Description: DynamoDB table for Stripe subscription + seat limits per org

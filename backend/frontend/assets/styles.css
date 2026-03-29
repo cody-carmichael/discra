@@ -511,6 +511,46 @@ td small {
   min-width: 130px;
 }
 
+.assign-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--primary);
+  color: #f6fcff;
+  margin-bottom: 0.4rem;
+}
+
+.assign-badge--empty {
+  background: transparent;
+  border: 1px dashed var(--panel-border);
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.assign-controls {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.driver-select {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.driver-select:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
 .actions-stack {
   display: flex;
   flex-wrap: wrap;

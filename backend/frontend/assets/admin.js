@@ -1521,12 +1521,12 @@
     const nowDate = new Date();
     const rows = lastOrders.map(function (order) {
       const isSelected = selectedOrderIds.has(order.id);
-      const assignLabel = order.assigned_to ? "Reassign" : "Assign";
       const currentStatusClass = statusClass(order.status);
       const due = _dueBadge(order, nowDate);
-      const suggestedDriver = order.assigned_to || selectedDriverId || "";
       const pickup = [order.pick_up_street, order.pick_up_city, order.pick_up_state, order.pick_up_zip].filter(Boolean).join(", ") || "-";
       const delivery = [order.delivery_street, order.delivery_city, order.delivery_state, order.delivery_zip].filter(Boolean).join(", ") || "-";
+      const driverName = _driverDisplayName(order.assigned_to);
+      const hasDriver = !!order.assigned_to;
 
       return (
         "<tr>" +
@@ -1547,18 +1547,18 @@
         "</td>" +
         "<td><span class=\"table-status " + currentStatusClass + "\">" + C.escapeHtml(order.status) + "</span></td>" +
         "<td class=\"order-cell-assign\">" +
-        C.escapeHtml(order.assigned_to || "Unassigned") +
-        "<div class=\"mobile-order-actions\">" +
-        "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
-        C.escapeHtml(order.id) + "\" placeholder=\"driver sub\" value=\"" +
-        C.escapeHtml(suggestedDriver) + "\">" +
+        (hasDriver
+          ? "<span class=\"assign-badge\">" + C.escapeHtml(driverName) + "</span>"
+          : "<span class=\"assign-badge assign-badge--empty\">Unassigned</span>") +
+        "<div class=\"assign-controls\">" +
+        _buildDriverSelect(order.id, order.assigned_to || "") +
         "<div class=\"actions-stack\">" +
-        "<button class=\"btn btn-primary\" data-action=\"assign\" data-order-id=\"" +
-        C.escapeHtml(order.id) + "\">" + assignLabel + "</button>" +
-        "<button class=\"btn btn-accent\" data-action=\"assign-selected\" data-order-id=\"" +
-        C.escapeHtml(order.id) + "\">Assign Selected Driver</button>" +
-        "<button class=\"btn btn-ghost\" data-action=\"unassign\" data-order-id=\"" +
-        C.escapeHtml(order.id) + "\">Unassign</button>" +
+        "<button class=\"btn btn-primary btn-sm\" data-action=\"assign\" data-order-id=\"" +
+        C.escapeHtml(order.id) + "\" disabled>" + (hasDriver ? "Reassign" : "Assign") + "</button>" +
+        (hasDriver
+          ? "<button class=\"btn btn-ghost btn-sm\" data-action=\"unassign\" data-order-id=\"" +
+            C.escapeHtml(order.id) + "\">Unassign</button>"
+          : "") +
         "</div></div></td>" +
         "<td><button class=\"btn btn-ghost btn-sm\" data-action=\"edit\" data-order-id=\"" +
         C.escapeHtml(order.id) + "\">Edit</button></td>" +
@@ -1569,10 +1569,10 @@
 
     const mobileCards = lastOrders.map(function (order) {
       const isSelected = selectedOrderIds.has(order.id);
-      const assignLabel = order.assigned_to ? "Reassign" : "Assign";
       const currentStatusClass = statusClass(order.status);
       const due = _dueBadge(order, nowDate);
-      const suggestedDriver = order.assigned_to || selectedDriverId || "";
+      const driverNameMobile = _driverDisplayName(order.assigned_to);
+      const hasDriverMobile = !!order.assigned_to;
 
       return (
         "<article class=\"mobile-order-card\" data-order-id=\"" +
@@ -1587,20 +1587,20 @@
         "<br>Deadlines: " + C.escapeHtml(_formatOrderDeadlines(order)) +
         "<br>Due: <span class=\"" + C.escapeHtml(due.cssClass) + "\">" + C.escapeHtml(due.label) + "</span>" +
         "<br>Status: <span class=\"table-status " + currentStatusClass + "\">" + C.escapeHtml(order.status) + "</span>" +
-        "<br>Assigned: " + C.escapeHtml(order.assigned_to || "-") +
+        "<br>Assigned: " + (hasDriverMobile
+          ? "<span class=\"assign-badge\">" + C.escapeHtml(driverNameMobile) + "</span>"
+          : "<span class=\"assign-badge assign-badge--empty\">Unassigned</span>") +
         "</p>" +
         "<div class=\"mobile-order-actions\">" +
-        "<input class=\"compact-input\" list=\"driver-options\" data-driver-id=\"" +
-        C.escapeHtml(order.id) + "\" placeholder=\"driver sub\" value=\"" +
-        C.escapeHtml(suggestedDriver) + "\">" +
+        _buildDriverSelect(order.id, order.assigned_to || "") +
         "<div class=\"actions-stack\">" +
-        "<button class=\"btn btn-primary\" data-action=\"assign\" data-order-id=\"" +
-        C.escapeHtml(order.id) + "\">" + assignLabel + "</button>" +
-        "<button class=\"btn btn-accent\" data-action=\"assign-selected\" data-order-id=\"" +
-        C.escapeHtml(order.id) + "\">Assign Selected</button>" +
-        "<button class=\"btn btn-ghost\" data-action=\"unassign\" data-order-id=\"" +
-        C.escapeHtml(order.id) + "\">Unassign</button>" +
-        "<button class=\"btn btn-ghost\" data-action=\"edit\" data-order-id=\"" +
+        "<button class=\"btn btn-primary btn-sm\" data-action=\"assign\" data-order-id=\"" +
+        C.escapeHtml(order.id) + "\" disabled>" + (hasDriverMobile ? "Reassign" : "Assign") + "</button>" +
+        (hasDriverMobile
+          ? "<button class=\"btn btn-ghost btn-sm\" data-action=\"unassign\" data-order-id=\"" +
+            C.escapeHtml(order.id) + "\">Unassign</button>"
+          : "") +
+        "<button class=\"btn btn-ghost btn-sm\" data-action=\"edit\" data-order-id=\"" +
         C.escapeHtml(order.id) + "\">Edit</button>" +
         "</div></div>" +
         "</article>"
@@ -2151,7 +2151,68 @@
     el.driverList.innerHTML = html;
   }
 
+  let assignableDriverList = [];
+
+  function _driverDisplayName(driverId) {
+    if (!driverId) return "Unassigned";
+    var roster = lastDriverRoster || [];
+    var match = roster.find(function (r) { return r.user_id === driverId; });
+    if (match && match.username) return match.username;
+    var loc = (lastDriverLocations || []).find(function (d) { return d.driver_id === driverId; });
+    if (loc && loc.username) return loc.username;
+    var assignable = assignableDriverList.find(function (u) { return u.user_id === driverId; });
+    if (assignable && assignable.username) return assignable.username;
+    return driverId.length > 12 ? driverId.substring(0, 8) + "\u2026" : driverId;
+  }
+
+  function _buildDriverSelect(orderId, currentDriverId) {
+    var onlineIds = new Set((lastDriverLocations || []).map(function (d) { return d.driver_id; }));
+    var roster = lastDriverRoster || [];
+    var seen = new Set();
+    var onlineOpts = [];
+    var offlineOpts = [];
+
+    (lastDriverLocations || []).forEach(function (d) {
+      if (seen.has(d.driver_id)) return;
+      seen.add(d.driver_id);
+      var rosterEntry = roster.find(function (r) { return r.user_id === d.driver_id; });
+      var name = (rosterEntry && rosterEntry.username) || d.driver_id;
+      var sel = d.driver_id === currentDriverId ? " selected" : "";
+      onlineOpts.push("<option value=\"" + C.escapeHtml(d.driver_id) + "\"" + sel + ">" + C.escapeHtml(name) + "</option>");
+    });
+
+    roster.forEach(function (r) {
+      if (seen.has(r.user_id) || onlineIds.has(r.user_id)) return;
+      seen.add(r.user_id);
+      var name = r.username || r.user_id;
+      var sel = r.user_id === currentDriverId ? " selected" : "";
+      offlineOpts.push("<option value=\"" + C.escapeHtml(r.user_id) + "\"" + sel + ">" + C.escapeHtml(name) + "</option>");
+    });
+
+    assignableDriverList.forEach(function (u) {
+      var uid = u.user_id || "";
+      if (!uid || seen.has(uid)) return;
+      seen.add(uid);
+      var name = u.username || u.email || uid;
+      var sel = uid === currentDriverId ? " selected" : "";
+      offlineOpts.push("<option value=\"" + C.escapeHtml(uid) + "\"" + sel + ">" + C.escapeHtml(name) + "</option>");
+    });
+
+    var defaultSel = currentDriverId ? "" : " selected";
+    var html = "<select class=\"driver-select\" data-driver-select=\"" + C.escapeHtml(orderId) + "\" data-current-driver=\"" + C.escapeHtml(currentDriverId || "") + "\">";
+    html += "<option value=\"\"" + defaultSel + " disabled>Select a driver\u2026</option>";
+    if (onlineOpts.length) {
+      html += "<optgroup label=\"Online\">" + onlineOpts.join("") + "</optgroup>";
+    }
+    if (offlineOpts.length) {
+      html += "<optgroup label=\"Offline\">" + offlineOpts.join("") + "</optgroup>";
+    }
+    html += "</select>";
+    return html;
+  }
+
   function renderDriverOptions(users) {
+    assignableDriverList = Array.isArray(users) ? users : [];
     if (!el.driverOptions) {
       return;
     }
@@ -2756,20 +2817,15 @@
 
     try {
       if (action === "assign") {
-        const contextCard = target.closest(".mobile-order-card");
-        const input = contextCard
-          ? contextCard.querySelector("input[data-driver-id=\"" + orderId + "\"]")
-          : el.ordersBody.querySelector("input[data-driver-id=\"" + orderId + "\"]");
-        const driverId = input ? input.value.trim() : "";
+        const container = target.closest(".mobile-order-card") || target.closest("tr");
+        const select = container
+          ? container.querySelector("select[data-driver-select=\"" + orderId + "\"]")
+          : null;
+        const driverId = select ? select.value.trim() : "";
         if (!driverId) {
-          throw new Error("Driver ID is required to assign an order.");
+          throw new Error("Select a driver from the dropdown first.");
         }
         await assignOrder(orderId, driverId);
-      } else if (action === "assign-selected") {
-        if (!selectedDriverId) {
-          throw new Error("Select a driver from the map/list first.");
-        }
-        await assignOrder(orderId, selectedDriverId);
       } else if (action === "unassign") {
         await unassignOrder(orderId);
       } else if (action === "edit") {
@@ -3120,6 +3176,23 @@
   el.ordersMobile.addEventListener("change", onOrderSelectionChange);
   el.ordersBody.addEventListener("click", onOrderActionClick);
   el.ordersMobile.addEventListener("click", onOrderActionClick);
+
+  function onDriverSelectChange(event) {
+    var select = event.target;
+    if (!select || !select.matches || !select.matches("select[data-driver-select]")) return;
+    var orderId = select.getAttribute("data-driver-select");
+    var currentDriver = select.getAttribute("data-current-driver") || "";
+    var newDriver = select.value;
+    var container = select.closest(".mobile-order-card") || select.closest("tr");
+    if (!container) return;
+    var assignBtn = container.querySelector("button[data-action=\"assign\"][data-order-id=\"" + orderId + "\"]");
+    if (assignBtn) {
+      var changed = newDriver && newDriver !== currentDriver;
+      assignBtn.disabled = !changed;
+    }
+  }
+  el.ordersBody.addEventListener("change", onDriverSelectChange);
+  el.ordersMobile.addEventListener("change", onDriverSelectChange);
   if (el.unassignedOrdersList) {
     el.unassignedOrdersList.addEventListener("click", function (event) {
       applyQuickAssign(event).catch(function (error) {

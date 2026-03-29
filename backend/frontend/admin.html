@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/styles.css?v=20260328a">
+  <link rel="stylesheet" href="assets/styles.css?v=20260328b">
 </head>
 <body class="theme-admin">
 
@@ -103,15 +103,7 @@
 
           <div id="driver-map" class="dispatch-map-container"></div>
 
-          <div class="dispatch-map-actions">
-            <div class="dispatch-selected-driver">
-              <span>Selected Driver</span>
-              <strong id="selected-driver-label">None</strong>
-            </div>
-            <span id="assignment-context" class="dispatch-context-hint">Select a driver to begin assigning</span>
-            <button id="refresh-drivers" class="btn-dispatch btn-dispatch-ghost" type="button">Refresh Drivers</button>
-            <button id="refresh-orders" class="btn-dispatch btn-dispatch-ghost" type="button">Refresh Orders</button>
-          </div>
+          <!-- drivers & orders auto-refresh on a 15s interval -->
           <p id="drivers-message" class="message dispatch-message"></p>
         </div>
 
@@ -516,6 +508,6 @@
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="assets/common.js?v=20260326b"></script>
-  <script src="assets/admin.js?v=20260328a"></script>
+  <script src="assets/admin.js?v=20260328b"></script>
 </body>
 </html>

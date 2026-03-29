@@ -118,6 +118,7 @@
   let activeRouteSourceId = "route-line-source";
   let activeRouteLayerId = "route-line-layer";
   let driverRefreshTimer = null;
+  let orderRefreshTimer = null;
   let allOrders = [];
   let lastOrders = [];
   let lastDriverLocations = [];
@@ -1061,6 +1062,25 @@
     driverRefreshTimer = null;
   }
 
+  function startOrderAutoRefresh() {
+    if (orderRefreshTimer || !isAuthorizedRole) {
+      return;
+    }
+    orderRefreshTimer = window.setInterval(function () {
+      refreshOrders().catch(function () {
+        // Do not interrupt dispatch work if background refresh fails.
+      });
+    }, 15000);
+  }
+
+  function stopOrderAutoRefresh() {
+    if (!orderRefreshTimer) {
+      return;
+    }
+    window.clearInterval(orderRefreshTimer);
+    orderRefreshTimer = null;
+  }
+
   function showLoginScreen(show) {
     if (el.loginScreen) {
       el.loginScreen.classList.toggle("hidden", !show);
@@ -1073,6 +1093,7 @@
       isAdminRole = false;
       showLoginScreen(true);
       stopDriverAutoRefresh();
+      stopOrderAutoRefresh();
       allOrders = [];
       lastOrders = [];
       lastDriverLocations = [];
@@ -1100,6 +1121,7 @@
     if (!isAuthorizedRole) {
       showLoginScreen(true);
       stopDriverAutoRefresh();
+      stopOrderAutoRefresh();
       allOrders = [];
       lastOrders = [];
       lastDriverLocations = [];
@@ -1121,6 +1143,7 @@
       return;
     }
     startDriverAutoRefresh();
+    startOrderAutoRefresh();
     if (!isAdminRole) {
       C.showMessage(el.billingMessage, "Billing controls require Admin role.", "error");
     }
@@ -3115,7 +3138,7 @@
       });
   });
   el.createForm.addEventListener("submit", createOrder);
-  el.refreshOrders.addEventListener("click", refreshOrders);
+  if (el.refreshOrders) el.refreshOrders.addEventListener("click", refreshOrders);
   if (el.statsUpcomingDueCard) {
     el.statsUpcomingDueCard.addEventListener("click", function () {
       applyUpcomingDueFilter().catch(function (error) {
@@ -3207,7 +3230,7 @@
       });
     });
   }
-  el.refreshDrivers.addEventListener("click", refreshDrivers);
+  if (el.refreshDrivers) el.refreshDrivers.addEventListener("click", refreshDrivers);
   if (el.driverList) {
     el.driverList.addEventListener("click", function (event) {
       onDriverListClick(event).catch(function (error) {

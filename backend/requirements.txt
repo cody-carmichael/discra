@@ -9,3 +9,8 @@ boto3
 ortools
 pywebpush
 stripe
+beautifulsoup4
+pdfplumber
+google-api-python-client
+google-auth
+google-auth-oauthlib

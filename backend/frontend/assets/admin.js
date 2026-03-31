@@ -532,7 +532,7 @@
     el.createForm.querySelectorAll("input, textarea, button").forEach(function (element) {
       element.disabled = !enabled;
     });
-    el.refreshOrders.disabled = !enabled;
+    if (el.refreshOrders) el.refreshOrders.disabled = !enabled;
     el.bulkDriverId.disabled = !enabled;
     el.bulkAssignSelected.disabled = !enabled;
     el.bulkUnassignSelected.disabled = !enabled;
@@ -549,7 +549,7 @@
         button.disabled = !enabled;
       });
     }
-    el.refreshDrivers.disabled = !enabled;
+    if (el.refreshDrivers) el.refreshDrivers.disabled = !enabled;
     if (el.optimizeForm) {
       el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
         element.disabled = !enabled;

@@ -399,6 +399,49 @@
           </div>
         </section>
 
+        <!-- Email Integration -->
+        <section class="panel" id="email-settings-panel">
+          <div class="panel-title-row">
+            <h2>Email Integration</h2>
+          </div>
+          <p class="panel-help">Connect a Gmail inbox to automatically receive and create orders from dispatch emails.</p>
+          <p id="email-message" class="message"></p>
+
+          <div id="email-status-view">
+            <div id="email-not-connected" class="data-surface">
+              <p>No email connected.</p>
+              <button id="connect-gmail-btn" class="btn btn-accent" type="button">Connect Gmail</button>
+            </div>
+            <div id="email-connected" class="data-surface" hidden>
+              <div class="sidebar-stats">
+                <div class="sidebar-stat">
+                  <span>Connected Email</span>
+                  <strong id="email-connected-address">-</strong>
+                </div>
+                <div class="sidebar-stat">
+                  <span>Last Poll</span>
+                  <strong id="email-last-poll">-</strong>
+                </div>
+                <div class="sidebar-stat">
+                  <span>Status</span>
+                  <strong id="email-poll-status">-</strong>
+                </div>
+              </div>
+              <div class="row" style="margin-top:12px">
+                <button id="refresh-email-status" class="btn btn-ghost" type="button">Refresh</button>
+                <button id="disconnect-email-btn" class="btn btn-ghost" type="button">Disconnect</button>
+              </div>
+            </div>
+          </div>
+
+          <details class="auth-config" style="margin-top:12px">
+            <summary>Skipped Emails</summary>
+            <p class="panel-help">Recently skipped (non-order) emails. Review to make sure no orders were missed.</p>
+            <button id="refresh-skipped-emails" class="btn btn-ghost" type="button" style="margin-bottom:8px">Refresh</button>
+            <div id="skipped-emails-list" class="data-surface">No skipped emails loaded.</div>
+          </details>
+        </section>
+
         <!-- Billing & Seats -->
         <section class="panel">
           <div class="panel-title-row">
@@ -505,8 +548,19 @@
   <div id="assigned-orders-list" hidden></div>
   <span id="assigned-queue-count" hidden>0</span>
 
+  <!-- Toast notification container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Audio alert for new orders (short notification beep, generated via Web Audio API) -->
+  <audio id="order-alert-audio" preload="auto"></audio>
+
+  <!-- Audio alerts toggle -->
+  <button id="audio-alerts-toggle" class="audio-alerts-toggle" type="button" title="Enable audio alerts for new orders">
+    <span class="audio-toggle-icon" id="audio-toggle-icon">&#128264;</span>
+  </button>
+
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="assets/common.js?v=20260326b"></script>
-  <script src="assets/admin.js?v=20260328b"></script>
+  <script src="assets/admin.js?v=20260330a"></script>
 </body>
 </html>

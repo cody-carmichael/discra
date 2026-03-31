@@ -33,6 +33,7 @@ try:
     from backend.routers import (
         billing_router,
         drivers_router,
+        email_router,
         identity_router,
         onboarding_router,
         orders_router,
@@ -60,6 +61,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
     from routers import (
         billing_router,
         drivers_router,
+        email_router,
         identity_router,
         onboarding_router,
         orders_router,
@@ -139,6 +141,8 @@ def _ui_config_payload(*, admin_redirect_path: str, driver_redirect_path: str, r
         "review_url_path": review_redirect_path,
         "map_style_url": os.environ.get("FRONTEND_MAP_STYLE_URL", "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"),
         "vapid_public_key": os.environ.get("VAPID_PUBLIC_KEY", ""),
+        "ws_api_endpoint": os.environ.get("WS_API_ENDPOINT", "").replace("https://", "wss://"),
+        "google_oauth_client_id": os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""),
         "dev_auth_enabled": dev_auth_enabled,
         "dev_auth_profiles": _dev_auth_profiles() if dev_auth_enabled else [],
     }
@@ -596,6 +600,7 @@ def create_app() -> FastAPI:
     app.include_router(billing_router)
     app.include_router(onboarding_router)
     app.include_router(push_router)
+    app.include_router(email_router)
     app.include_router(identity_router, prefix="/backend")
     app.include_router(orders_router, prefix="/backend")
     app.include_router(drivers_router, prefix="/backend")
@@ -605,6 +610,7 @@ def create_app() -> FastAPI:
     app.include_router(billing_router, prefix="/backend")
     app.include_router(onboarding_router, prefix="/backend")
     app.include_router(push_router, prefix="/backend")
+    app.include_router(email_router, prefix="/backend")
     app.include_router(identity_router, prefix="/dev/backend")
     app.include_router(orders_router, prefix="/dev/backend")
     app.include_router(drivers_router, prefix="/dev/backend")
@@ -614,6 +620,7 @@ def create_app() -> FastAPI:
     app.include_router(billing_router, prefix="/dev/backend")
     app.include_router(onboarding_router, prefix="/dev/backend")
     app.include_router(push_router, prefix="/dev/backend")
+    app.include_router(email_router, prefix="/dev/backend")
 
     return app
 

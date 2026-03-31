@@ -586,3 +586,28 @@ class OnboardingReviewDecisionResponse(BaseModel):
 
 class OnboardingPendingRegistrationsResponse(BaseModel):
     items: List[OnboardingRegistrationRecord] = Field(default_factory=list)
+
+
+# ── Email ingestion ──────────────────────────────────────────────
+
+
+class EmailConfig(BaseModel):
+    org_id: str
+    gmail_email: str = ""
+    gmail_refresh_token: str = ""
+    gmail_history_id: Optional[str] = None
+    email_connected: bool = False
+    connected_at: Optional[datetime] = None
+    last_poll_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+
+
+class SkippedEmail(BaseModel):
+    org_id: str
+    email_message_id: str
+    sender: str = ""
+    subject: str = ""
+    received_at: Optional[datetime] = None
+    skip_reason: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at_epoch: int = 0

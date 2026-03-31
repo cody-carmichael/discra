@@ -161,6 +161,15 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /discra/vapid-claim-email
     Description: Contact email for VAPID claims (mailto:you@example.com)
+  GoogleOAuthClientId:
+    Type: String
+    Default: ""
+    Description: Google OAuth client ID for Gmail API access
+  GoogleOAuthClientSecret:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Google OAuth client secret for Gmail API access
 
 Globals:
   Function:
@@ -432,6 +441,76 @@ Resources:
         - Key: Env
           Value: dev
 
+  EmailConfigTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-email-config-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
+  SkippedEmailsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-skipped-emails-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+        - AttributeName: email_message_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+        - AttributeName: email_message_id
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at_epoch
+        Enabled: true
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
+  WsConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-ws-connections-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+        - AttributeName: org_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: connections_by_org
+          KeySchema:
+            - AttributeName: org_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expires_at_epoch
+        Enabled: true
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
   PodArtifactsBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -572,6 +651,12 @@ Resources:
           ONBOARDING_SES_FROM_EMAIL: !Ref OnboardingSesFromEmail
           ONBOARDING_APP_REVIEW_URL_BASE: !Ref OnboardingAppReviewUrlBase
           ONBOARDING_APP_REGISTER_URL_BASE: !Ref OnboardingAppRegisterUrlBase
+          EMAIL_CONFIG_TABLE: !Ref EmailConfigTable
+          SKIPPED_EMAILS_TABLE: !Ref SkippedEmailsTable
+          WS_CONNECTIONS_TABLE: !Ref WsConnectionsTable
+          GOOGLE_OAUTH_CLIENT_ID: !Ref GoogleOAuthClientId
+          GOOGLE_OAUTH_CLIENT_SECRET: !Ref GoogleOAuthClientSecret
+          WS_API_ENDPOINT: !Sub "https://${DiscraWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/dev"
       Policies:
         - Statement:
             Effect: Allow
@@ -595,6 +680,10 @@ Resources:
               - !GetAtt PushSubscriptionsTable.Arn
               - !GetAtt OnboardingRegistrationsTable.Arn
               - !Sub "${OnboardingRegistrationsTable.Arn}/index/*"
+              - !GetAtt EmailConfigTable.Arn
+              - !GetAtt SkippedEmailsTable.Arn
+              - !GetAtt WsConnectionsTable.Arn
+              - !Sub "${WsConnectionsTable.Arn}/index/*"
         - Statement:
             Effect: Allow
             Action:
@@ -619,6 +708,11 @@ Resources:
               - ses:SendEmail
               - ses:SendRawEmail
             Resource: "*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - execute-api:ManageConnections
+            Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
       Events:
         BackendHealthGet:
           Type: HttpApi
@@ -729,6 +823,164 @@ Resources:
             Path: /backend/{proxy+}
             Method: DELETE
       Tags: { App: Discra, Env: dev }
+
+  EmailPollerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      CodeUri: backend
+      Handler: email_poller.handler
+      MemorySize: 512
+      Timeout: 60
+      Tracing: Active
+      Environment:
+        Variables:
+          EMAIL_CONFIG_TABLE: !Ref EmailConfigTable
+          SKIPPED_EMAILS_TABLE: !Ref SkippedEmailsTable
+          ORDERS_TABLE: !Ref OrdersTable
+          GOOGLE_OAUTH_CLIENT_ID: !Ref GoogleOAuthClientId
+          GOOGLE_OAUTH_CLIENT_SECRET: !Ref GoogleOAuthClientSecret
+          WS_CONNECTIONS_TABLE: !Ref WsConnectionsTable
+          WS_API_ENDPOINT: !Sub "https://${DiscraWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/dev"
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !GetAtt EmailConfigTable.Arn
+              - !GetAtt SkippedEmailsTable.Arn
+              - !GetAtt OrdersTable.Arn
+              - !Sub "${OrdersTable.Arn}/index/*"
+              - !GetAtt WsConnectionsTable.Arn
+              - !Sub "${WsConnectionsTable.Arn}/index/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - execute-api:ManageConnections
+            Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
+      Events:
+        ScheduledPoll:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Enabled: true
+      Tags: { App: Discra, Env: dev }
+
+  # ── WebSocket API for real-time notifications ──
+  DiscraWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "discra-ws-${AWS::StackName}"
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+      Tags:
+        App: Discra
+        Env: dev
+
+  WsConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiscraWebSocketApi
+      RouteKey: "$connect"
+      AuthorizationType: NONE
+      Target: !Sub "integrations/${WsConnectIntegration}"
+
+  WsDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiscraWebSocketApi
+      RouteKey: "$disconnect"
+      Target: !Sub "integrations/${WsDisconnectIntegration}"
+
+  WsDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiscraWebSocketApi
+      RouteKey: "$default"
+      Target: !Sub "integrations/${WsDefaultIntegration}"
+
+  WsConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiscraWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WsHandlerFunction.Arn}/invocations"
+
+  WsDisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiscraWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WsHandlerFunction.Arn}/invocations"
+
+  WsDefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiscraWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WsHandlerFunction.Arn}/invocations"
+
+  WsStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref DiscraWebSocketApi
+      StageName: dev
+      AutoDeploy: true
+      Tags:
+        App: Discra
+        Env: dev
+
+  WsDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+      - WsConnectRoute
+      - WsDisconnectRoute
+      - WsDefaultRoute
+    Properties:
+      ApiId: !Ref DiscraWebSocketApi
+
+  WsHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      CodeUri: backend
+      Handler: ws_handler.handler
+      MemorySize: 256
+      Timeout: 10
+      Tracing: Active
+      Environment:
+        Variables:
+          WS_CONNECTIONS_TABLE: !Ref WsConnectionsTable
+          COGNITO_ISSUER: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}"
+          COGNITO_AUDIENCE: !Ref CognitoAppClientId
+          JWT_VERIFY_SIGNATURE: "true"
+          ENABLE_UI_DEV_AUTH: !Ref EnableUiDevAuth
+          DEV_AUTH_SECRET: !Ref DevAuthSecret
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+            Resource:
+              - !GetAtt WsConnectionsTable.Arn
+              - !Sub "${WsConnectionsTable.Arn}/index/*"
+      Tags: { App: Discra, Env: dev }
+
+  WsHandlerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WsHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
 
 Outputs:
   ApiId:
@@ -842,3 +1094,11 @@ Outputs:
   OnboardingRegistrationsTableName:
     Description: DynamoDB table for onboarding registration requests and review status
     Value: !Ref OnboardingRegistrationsTable
+
+  WebSocketApiId:
+    Description: WebSocket API ID for real-time notifications
+    Value: !Ref DiscraWebSocketApi
+
+  WebSocketApiEndpoint:
+    Description: WebSocket API endpoint URL (wss://)
+    Value: !Sub "wss://${DiscraWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/dev"

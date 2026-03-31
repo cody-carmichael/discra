@@ -88,6 +88,17 @@
     openPurchaseModal: document.getElementById("open-purchase-modal"),
     closePurchaseModal: document.getElementById("close-purchase-modal"),
     purchaseModal: document.getElementById("purchase-modal"),
+    emailMessage: document.getElementById("email-message"),
+    emailNotConnected: document.getElementById("email-not-connected"),
+    emailConnected: document.getElementById("email-connected"),
+    emailConnectedAddress: document.getElementById("email-connected-address"),
+    emailLastPoll: document.getElementById("email-last-poll"),
+    emailPollStatus: document.getElementById("email-poll-status"),
+    connectGmailBtn: document.getElementById("connect-gmail-btn"),
+    disconnectEmailBtn: document.getElementById("disconnect-email-btn"),
+    refreshEmailStatus: document.getElementById("refresh-email-status"),
+    refreshSkippedEmails: document.getElementById("refresh-skipped-emails"),
+    skippedEmailsList: document.getElementById("skipped-emails-list"),
     mapContainer: document.getElementById("driver-map"),
     cognitoDomain: document.getElementById("cognito-domain"),
     cognitoClientId: document.getElementById("cognito-client-id"),
@@ -127,6 +138,8 @@
   let isAuthorizedRole = false;
   let isAdminRole = false;
   let devAuthEnabled = false;
+  let wsEndpoint = "";
+  let googleOAuthClientId = "";
   let devAuthProfiles = [];
   let devSessionClaims = null;
   let webSessionClaims = null;
@@ -1220,6 +1233,8 @@
       devAuthProfiles = Array.isArray(config && config.dev_auth_profiles) ? config.dev_auth_profiles : [];
       renderDevAuthActions();
       mapStyleUrl = (config && config.map_style_url) || defaultMapStyle;
+      if (config && config.ws_api_endpoint) wsEndpoint = config.ws_api_endpoint;
+      if (config && config.google_oauth_client_id) googleOAuthClientId = config.google_oauth_client_id;
       ensureMap();
     } catch (error) {
       devAuthEnabled = false;
@@ -3096,6 +3111,13 @@
       el.auditLogsView.innerHTML = "No audit logs loaded.";
       if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
     }
+    // Initialize email settings and real-time notifications
+    initEmailSettings();
+    initAudioAlerts();
+    if (isAuthorizedRole) {
+      refreshEmailStatus().catch(function () {});
+      if (wsEndpoint) connectWebSocket();
+    }
   }
 
   el.saveToken.addEventListener("click", function () {
@@ -3365,6 +3387,299 @@
         flyToOrderPin(clickedOrderId);
       }
     });
+  }
+
+  // ── Email integration settings ─────────────────────────────────
+
+  async function refreshEmailStatus() {
+    try {
+      var status = await C.requestJson(apiBase, "/email/status", { token: token });
+      if (status && status.connected) {
+        if (el.emailNotConnected) el.emailNotConnected.hidden = true;
+        if (el.emailConnected) el.emailConnected.hidden = false;
+        if (el.emailConnectedAddress) el.emailConnectedAddress.textContent = status.email || "-";
+        if (el.emailLastPoll) {
+          el.emailLastPoll.textContent = status.last_poll_at
+            ? new Date(status.last_poll_at).toLocaleString()
+            : "Never";
+        }
+        if (el.emailPollStatus) {
+          el.emailPollStatus.textContent = status.last_error || "OK";
+          el.emailPollStatus.style.color = status.last_error ? "#ef4444" : "#22c55e";
+        }
+      } else {
+        if (el.emailNotConnected) el.emailNotConnected.hidden = false;
+        if (el.emailConnected) el.emailConnected.hidden = true;
+      }
+    } catch (error) {
+      C.showMessage(el.emailMessage, error.message, "error");
+    }
+  }
+
+  async function refreshSkippedEmails() {
+    try {
+      var resp = await C.requestJson(apiBase, "/email/skipped?limit=50", { token: token });
+      var items = (resp && resp.items) || [];
+      if (!items.length) {
+        if (el.skippedEmailsList) el.skippedEmailsList.innerHTML = "<p>No skipped emails.</p>";
+        return;
+      }
+      var html = '<table class="orders-table"><thead><tr><th>Sender</th><th>Subject</th><th>Reason</th><th>Date</th></tr></thead><tbody>';
+      items.forEach(function (item) {
+        html += "<tr>" +
+          "<td>" + C.escapeHtml(item.sender) + "</td>" +
+          "<td>" + C.escapeHtml(item.subject) + "</td>" +
+          "<td>" + C.escapeHtml(item.skip_reason) + "</td>" +
+          "<td>" + (item.created_at ? new Date(item.created_at).toLocaleString() : "-") + "</td>" +
+          "</tr>";
+      });
+      html += "</tbody></table>";
+      if (el.skippedEmailsList) el.skippedEmailsList.innerHTML = html;
+    } catch (error) {
+      C.showMessage(el.emailMessage, error.message, "error");
+    }
+  }
+
+  function initConnectGmail() {
+    if (!googleOAuthClientId) {
+      if (el.connectGmailBtn) el.connectGmailBtn.disabled = true;
+      return;
+    }
+    if (el.connectGmailBtn) {
+      el.connectGmailBtn.addEventListener("click", function () {
+        // Open Google OAuth consent in a popup
+        var redirectUri = window.location.origin + window.location.pathname;
+        var scope = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.labels";
+        var authUrl = "https://accounts.google.com/o/oauth2/v2/auth" +
+          "?client_id=" + encodeURIComponent(googleOAuthClientId) +
+          "&redirect_uri=" + encodeURIComponent(redirectUri) +
+          "&response_type=code" +
+          "&scope=" + encodeURIComponent(scope) +
+          "&access_type=offline" +
+          "&prompt=consent" +
+          "&state=gmail_connect";
+        var popup = window.open(authUrl, "gmail_connect", "width=500,height=600");
+        // Listen for the OAuth callback
+        window._gmailConnectInterval = setInterval(function () {
+          try {
+            if (!popup || popup.closed) {
+              clearInterval(window._gmailConnectInterval);
+              return;
+            }
+            var popupUrl = popup.location.href;
+            if (popupUrl && popupUrl.indexOf("code=") > -1) {
+              var params = new URLSearchParams(popup.location.search);
+              var code = params.get("code");
+              popup.close();
+              clearInterval(window._gmailConnectInterval);
+              if (code) {
+                connectGmailWithCode(code, redirectUri);
+              }
+            }
+          } catch (e) {
+            // Cross-origin -- popup still on Google's domain, keep waiting
+          }
+        }, 500);
+      });
+    }
+  }
+
+  async function connectGmailWithCode(code, redirectUri) {
+    try {
+      C.showMessage(el.emailMessage, "Connecting Gmail...", "success");
+      var resp = await C.requestJson(apiBase, "/email/connect", {
+        method: "POST",
+        token: token,
+        json: { code: code, redirect_uri: redirectUri },
+      });
+      if (resp && resp.ok) {
+        C.showMessage(el.emailMessage, "Gmail connected: " + (resp.email || ""), "success");
+        await refreshEmailStatus();
+      } else {
+        C.showMessage(el.emailMessage, "Connection failed.", "error");
+      }
+    } catch (error) {
+      C.showMessage(el.emailMessage, error.message, "error");
+    }
+  }
+
+  function initDisconnectEmail() {
+    if (el.disconnectEmailBtn) {
+      el.disconnectEmailBtn.addEventListener("click", async function () {
+        if (!confirm("Disconnect email integration? New orders will no longer be created from email.")) return;
+        try {
+          await C.requestJson(apiBase, "/email/disconnect", { method: "POST", token: token });
+          C.showMessage(el.emailMessage, "Email disconnected.", "success");
+          await refreshEmailStatus();
+        } catch (error) {
+          C.showMessage(el.emailMessage, error.message, "error");
+        }
+      });
+    }
+  }
+
+  function initEmailSettings() {
+    initConnectGmail();
+    initDisconnectEmail();
+    if (el.refreshEmailStatus) {
+      el.refreshEmailStatus.addEventListener("click", refreshEmailStatus);
+    }
+    if (el.refreshSkippedEmails) {
+      el.refreshSkippedEmails.addEventListener("click", refreshSkippedEmails);
+    }
+  }
+
+  // ── WebSocket real-time notifications ──────────────────────────
+
+  let wsConnection = null;
+  let wsReconnectTimer = null;
+  let wsReconnectDelay = 1000;
+  let audioAlertsEnabled = false;
+  let audioContext = null;
+
+  function initAudioAlerts() {
+    var toggle = document.getElementById("audio-alerts-toggle");
+    if (!toggle) return;
+    toggle.addEventListener("click", function () {
+      audioAlertsEnabled = !audioAlertsEnabled;
+      toggle.classList.toggle("is-active", audioAlertsEnabled);
+      var icon = document.getElementById("audio-toggle-icon");
+      if (icon) icon.innerHTML = audioAlertsEnabled ? "&#128266;" : "&#128264;";
+      // Create AudioContext on first user interaction (browser autoplay policy)
+      if (audioAlertsEnabled && !audioContext) {
+        try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { /* ignore */ }
+      }
+    });
+  }
+
+  function playAlertSound() {
+    if (!audioAlertsEnabled || !audioContext) return;
+    try {
+      // Generate a short two-tone notification beep
+      var now = audioContext.currentTime;
+      var osc1 = audioContext.createOscillator();
+      var osc2 = audioContext.createOscillator();
+      var gain = audioContext.createGain();
+      gain.connect(audioContext.destination);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(880, now);
+      osc1.connect(gain);
+      osc1.start(now);
+      osc1.stop(now + 0.15);
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(1100, now + 0.15);
+      osc2.connect(gain);
+      osc2.start(now + 0.15);
+      osc2.stop(now + 0.35);
+    } catch (e) { /* ignore audio errors */ }
+  }
+
+  function showToast(title, body, detail, durationMs) {
+    var container = document.getElementById("toast-container");
+    if (!container) return;
+    var toast = document.createElement("div");
+    toast.className = "toast";
+    toast.innerHTML =
+      '<div class="toast-title">' + C.escapeHtml(title) + '</div>' +
+      '<div class="toast-body">' + C.escapeHtml(body) +
+      (detail ? '<span class="toast-detail">' + C.escapeHtml(detail) + '</span>' : '') +
+      '</div>';
+    toast.addEventListener("click", function () { dismissToast(toast); });
+    container.appendChild(toast);
+    // Auto-dismiss after duration
+    var timeout = setTimeout(function () { dismissToast(toast); }, durationMs || 10000);
+    toast._timeout = timeout;
+  }
+
+  function dismissToast(toast) {
+    if (!toast || !toast.parentNode) return;
+    clearTimeout(toast._timeout);
+    toast.classList.add("toast-exit");
+    setTimeout(function () {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }
+
+  function connectWebSocket() {
+    if (!wsEndpoint || !isAuthorizedRole) return;
+
+    // Build the WS URL with auth token
+    var wsToken = token || "";
+    if (!wsToken) return;
+
+    var url = wsEndpoint + "?token=" + encodeURIComponent(wsToken);
+
+    try {
+      wsConnection = new WebSocket(url);
+    } catch (e) {
+      return;
+    }
+
+    wsConnection.onopen = function () {
+      wsReconnectDelay = 1000;
+    };
+
+    wsConnection.onmessage = function (event) {
+      try {
+        var msg = JSON.parse(event.data);
+        if (msg.type === "new_order") {
+          handleNewOrderNotification(msg.order || {});
+        }
+      } catch (e) { /* ignore malformed messages */ }
+    };
+
+    wsConnection.onclose = function () {
+      wsConnection = null;
+      scheduleReconnect();
+    };
+
+    wsConnection.onerror = function () {
+      if (wsConnection) {
+        try { wsConnection.close(); } catch (e) { /* ignore */ }
+      }
+    };
+  }
+
+  function scheduleReconnect() {
+    if (wsReconnectTimer) return;
+    wsReconnectTimer = setTimeout(function () {
+      wsReconnectTimer = null;
+      if (isAuthorizedRole && wsEndpoint) {
+        connectWebSocket();
+      }
+    }, wsReconnectDelay);
+    // Exponential backoff, max 30s
+    wsReconnectDelay = Math.min(wsReconnectDelay * 2, 30000);
+  }
+
+  function disconnectWebSocket() {
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+    if (wsConnection) {
+      try { wsConnection.close(); } catch (e) { /* ignore */ }
+      wsConnection = null;
+    }
+  }
+
+  function handleNewOrderNotification(order) {
+    // Play alert sound
+    playAlertSound();
+
+    // Show toast
+    var source = order.source || "email";
+    var pickup = [order.pick_up_city, order.pick_up_state].filter(Boolean).join(", ");
+    var delivery = [order.delivery_city, order.delivery_state].filter(Boolean).join(", ");
+    var title = "New Order: " + (order.reference_id || order.id || "");
+    var body = (order.customer_name || "Unknown") + " - " + source;
+    var detail = pickup && delivery ? pickup + " \u2192 " + delivery : "";
+    showToast(title, body, detail, 12000);
+
+    // Refresh orders to show the new one
+    refreshOrders().catch(function () {});
   }
 
   bootstrap();

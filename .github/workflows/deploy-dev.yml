@@ -146,6 +146,10 @@ jobs:
             "Version=$GITHUB_SHA"
             "AdminToken=$ADMIN_TOKEN"
             "OrdersWebhookAllowedOrgId=$ORDERS_WEBHOOK_ALLOWED_ORG_ID"
+            "DevAuthSecret=/discra/dev-auth-secret"
+            "VapidPublicKey=/discra/vapid-public-key"
+            "VapidPrivateKey=/discra/vapid-private-key"
+            "VapidClaimEmail=/discra/vapid-claim-email"
           )
 
           if [ -n "$ORDERS_WEBHOOK_TOKEN" ]; then

@@ -1,0 +1,7 @@
+-r requirements.txt
+pytest
+httpx
+uvicorn
+boto3
+beautifulsoup4
+pdfplumber

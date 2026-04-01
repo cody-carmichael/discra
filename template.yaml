@@ -828,7 +828,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Runtime: python3.12
-      CodeUri: backend
+      CodeUri: email_poller_fn
       Handler: email_poller.handler
       MemorySize: 512
       Timeout: 60
@@ -948,7 +948,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Runtime: python3.12
-      CodeUri: backend
+      CodeUri: ws_handler_fn
       Handler: ws_handler.handler
       MemorySize: 256
       Timeout: 10

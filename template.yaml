@@ -584,6 +584,16 @@ Resources:
             Method: GET
       Tags: { App: Discra, Env: dev }
 
+  OrtoolsLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: discra-ortools
+      CompatibleRuntimes:
+        - python3.12
+      ContentUri: layers/ortools/
+    Metadata:
+      BuildMethod: makefile
+
   BackendApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -592,6 +602,8 @@ Resources:
       Handler: app.handler
       MemorySize: 512
       Timeout: 15
+      Layers:
+        - !Ref OrtoolsLayer
       Tracing: Active
       Environment:
         Variables:

@@ -2,7 +2,6 @@ fastapi
 mangum
 requests
 PyJWT[crypto]
-ortools
 pywebpush
 stripe
 google-api-python-client

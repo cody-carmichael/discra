@@ -173,7 +173,6 @@ Parameters:
 
 Globals:
   Function:
-    Runtime: java21
     MemorySize: 512
     Timeout: 10
     Tracing: Active
@@ -542,6 +541,7 @@ Resources:
   HealthFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Runtime: java21
       CodeUri: .
       Handler: com.discra.api.HealthHandler::handleRequest
       Events:
@@ -556,6 +556,7 @@ Resources:
   VersionFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Runtime: java21
       CodeUri: .
       Handler: com.discra.api.VersionHandler::handleRequest
       Events:
@@ -570,6 +571,7 @@ Resources:
   AdminPingFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Runtime: java21
       CodeUri: .
       Handler: com.discra.api.AdminPingHandler::handleRequest
       Environment:

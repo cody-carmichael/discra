@@ -584,26 +584,12 @@ Resources:
             Method: GET
       Tags: { App: Discra, Env: dev }
 
-  OrtoolsLayer:
-    Type: AWS::Serverless::LayerVersion
-    Properties:
-      LayerName: discra-ortools
-      CompatibleRuntimes:
-        - python3.12
-      ContentUri: layers/ortools/
-    Metadata:
-      BuildMethod: makefile
-
   BackendApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Runtime: python3.12
-      CodeUri: backend
-      Handler: app.handler
+      PackageType: Image
       MemorySize: 512
       Timeout: 15
-      Layers:
-        - !Ref OrtoolsLayer
       Tracing: Active
       Environment:
         Variables:
@@ -835,6 +821,10 @@ Resources:
             Path: /backend/{proxy+}
             Method: DELETE
       Tags: { App: Discra, Env: dev }
+    Metadata:
+      DockerTag: python3.12-v1
+      DockerContext: ./backend
+      Dockerfile: Dockerfile
 
   EmailPollerFunction:
     Type: AWS::Serverless::Function

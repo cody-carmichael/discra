@@ -1,0 +1,16 @@
+tests/
+test_*.py
+frontend/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+.git/
+.gitignore
+Dockerfile
+.dockerignore
+*.md
+requirements-dev.txt
+run_local.ps1

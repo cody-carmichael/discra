@@ -545,12 +545,12 @@
     el.createForm.querySelectorAll("input, textarea, button").forEach(function (element) {
       element.disabled = !enabled;
     });
-    el.refreshOrders.disabled = !enabled;
-    el.bulkDriverId.disabled = !enabled;
-    el.bulkAssignSelected.disabled = !enabled;
-    el.bulkUnassignSelected.disabled = !enabled;
-    el.clearSelection.disabled = !enabled;
-    el.selectAllOrders.disabled = !enabled;
+    if (el.refreshOrders) el.refreshOrders.disabled = !enabled;
+    if (el.bulkDriverId) el.bulkDriverId.disabled = !enabled;
+    if (el.bulkAssignSelected) el.bulkAssignSelected.disabled = !enabled;
+    if (el.bulkUnassignSelected) el.bulkUnassignSelected.disabled = !enabled;
+    if (el.clearSelection) el.clearSelection.disabled = !enabled;
+    if (el.selectAllOrders) el.selectAllOrders.disabled = !enabled;
     el.ordersFilterForm.querySelectorAll("input, select, button").forEach(function (element) {
       element.disabled = !enabled;
     });
@@ -562,15 +562,15 @@
         button.disabled = !enabled;
       });
     }
-    el.refreshDrivers.disabled = !enabled;
+    if (el.refreshDrivers) el.refreshDrivers.disabled = !enabled;
     if (el.optimizeForm) {
       el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
         element.disabled = !enabled;
       });
     }
     if (el.refreshInflight) el.refreshInflight.disabled = !enabled;
-    el.refreshAuditLogs.disabled = !enabled;
-    el.auditFilterForm.querySelectorAll("input, button").forEach(function (element) {
+    if (el.refreshAuditLogs) el.refreshAuditLogs.disabled = !enabled;
+    if (el.auditFilterForm) el.auditFilterForm.querySelectorAll("input, button").forEach(function (element) {
       element.disabled = !enabled;
     });
   }

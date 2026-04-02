@@ -6,7 +6,7 @@ param(
     [string]$OrdersWebhookToken = "",
     [string]$OrdersWebhookHmacSecret = "",
     [string]$OrgId = "org-smoke",
-    [int]$TimeoutSeconds = 20
+    [int]$TimeoutSeconds = 60
 )
 
 Set-StrictMode -Version Latest

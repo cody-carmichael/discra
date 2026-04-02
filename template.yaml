@@ -591,7 +591,7 @@ Resources:
     Properties:
       PackageType: Image
       MemorySize: 512
-      Timeout: 15
+      Timeout: 30
       Tracing: Active
       Environment:
         Variables:

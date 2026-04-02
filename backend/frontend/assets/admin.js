@@ -1883,19 +1883,94 @@
   var _orderGeoCache = {};
   var _orderPinCoords = {};  // orderId → [lng, lat]
 
-  function _unassignedPinSvg() {
+  // WoW-style quest marker pins: dark circle background with bold symbol + outer glow
+  function _wowPinSvg(symbol, symbolColor, glowColor, borderColor) {
     return (
-      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36">' +
-      '<text x="12" y="28" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="36" font-weight="900" fill="#f5c542" stroke="#1a1a2e" stroke-width="1.5" paint-order="stroke">!</text>' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+      '<defs>' +
+      '<filter id="glow-' + symbolColor.replace('#','') + '" x="-50%" y="-50%" width="200%" height="200%">' +
+      '<feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur"/>' +
+      '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+      '</filter>' +
+      '</defs>' +
+      '<circle cx="16" cy="16" r="14" fill="#1a1a2e" stroke="' + borderColor + '" stroke-width="2.5"/>' +
+      '<circle cx="16" cy="16" r="14" fill="none" stroke="' + glowColor + '" stroke-width="1" opacity="0.3"/>' +
+      '<text x="16" y="22" text-anchor="middle" font-family="Georgia,\'Times New Roman\',serif" font-size="20" font-weight="900" fill="' + symbolColor + '" filter="url(#glow-' + symbolColor.replace('#','') + ')">' + symbol + '</text>' +
       '</svg>'
     );
   }
 
-  function _createPinElement() {
+  // Arrow pins for active delivery states (picked up / en route)
+  function _wowArrowPinSvg(arrowPath, fillColor, glowColor) {
+    return (
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+      '<defs>' +
+      '<filter id="glow-arrow" x="-50%" y="-50%" width="200%" height="200%">' +
+      '<feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blur"/>' +
+      '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+      '</filter>' +
+      '</defs>' +
+      '<circle cx="16" cy="16" r="14" fill="#1a1a2e" stroke="' + fillColor + '" stroke-width="2.5"/>' +
+      '<circle cx="16" cy="16" r="14" fill="none" stroke="' + glowColor + '" stroke-width="1" opacity="0.25"/>' +
+      '<g transform="translate(16,16)" filter="url(#glow-arrow)">' + arrowPath + '</g>' +
+      '</svg>'
+    );
+  }
+
+  var _pinConfigs = {
+    unassigned: {
+      // Gold ! on dark circle — "quest available, needs pickup"
+      svg: function () {
+        return _wowPinSvg("!", "#FFD100", "#FFD100", "#c8a400");
+      }
+    },
+    assigned_online: {
+      // Gold ? on dark circle — "quest in progress, driver active"
+      svg: function () {
+        return _wowPinSvg("?", "#FFD100", "#FFD100", "#c8a400");
+      }
+    },
+    assigned_offline: {
+      // Silver/grey ! on dark circle — "quest unavailable, driver offline"
+      svg: function () {
+        return _wowPinSvg("!", "#8a8a8a", "#6a6a6a", "#555555");
+      }
+    },
+    picked_up: {
+      // Blue up-arrow on dark circle — "active objective, package in hand"
+      svg: function () {
+        return _wowArrowPinSvg(
+          '<path d="M0,-9 L5,2 L2,2 L2,9 L-2,9 L-2,2 L-5,2 Z" fill="#4FC3F7"/>',
+          "#4FC3F7", "#4FC3F7"
+        );
+      }
+    },
+    en_route: {
+      // Green arrow on dark circle — "moving toward objective"
+      svg: function () {
+        return _wowArrowPinSvg(
+          '<path d="M-9,0 L2,-5 L2,-2 L9,0 L2,2 L2,5 Z" fill="#66BB6A"/>',
+          "#66BB6A", "#66BB6A"
+        );
+      }
+    },
+  };
+
+  function _orderPinType(order) {
+    if (!order.assigned_to) return "unassigned";
+    if (order.status === "PickedUp") return "picked_up";
+    if (order.status === "EnRoute") return "en_route";
+    var rosterEntry = lastDriverRoster.find(function (r) { return r.user_id === order.assigned_to; });
+    var isOnline = rosterEntry && rosterEntry.is_online;
+    return isOnline ? "assigned_online" : "assigned_offline";
+  }
+
+  function _createPinElement(pinType) {
+    var config = _pinConfigs[pinType] || _pinConfigs.unassigned;
     var el = document.createElement("div");
-    el.innerHTML = _unassignedPinSvg();
+    el.innerHTML = config.svg();
     el.style.cursor = "pointer";
-    el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.5))";
+    el.style.filter = "drop-shadow(0 2px 6px rgba(0,0,0,0.6))";
     return el;
   }
 
@@ -1925,17 +2000,41 @@
       .catch(function () { /* silently skip */ });
   }
 
+  function _statusLabel(order) {
+    if (!order.assigned_to) return "UNASSIGNED";
+    if (order.status === "PickedUp") return "PICKED UP";
+    if (order.status === "EnRoute") return "EN ROUTE";
+    var rosterEntry = lastDriverRoster.find(function (r) { return r.user_id === order.assigned_to; });
+    var isOnline = rosterEntry && rosterEntry.is_online;
+    return isOnline ? "ASSIGNED" : "ASSIGNED \u2022 DRIVER OFFLINE";
+  }
+
+  var _statusColors = {
+    unassigned: "#FFD100",
+    assigned_online: "#FFD100",
+    assigned_offline: "#8a8a8a",
+    picked_up: "#4FC3F7",
+    en_route: "#66BB6A",
+  };
+
   function _placeOrderPin(order, coords, currentMap) {
-    var pinEl = _createPinElement();
+    var pinType = _orderPinType(order);
+    var pinEl = _createPinElement(pinType);
+    var statusText = _statusLabel(order);
+    var statusColor = _statusColors[pinType] || "#f5c542";
+    var driverLine = order.assigned_to
+      ? "<span class='order-popup-driver'>" + C.escapeHtml(order.assigned_to) + "</span>"
+      : "";
     var popup = new window.maplibregl.Popup({ offset: 15, className: "order-popup" }).setHTML(
       "<div class='order-popup-content'>" +
       "<strong class='order-popup-name'>" + C.escapeHtml(order.customer_name) + "</strong>" +
-      "<span class='order-popup-status'>UNASSIGNED</span>" +
+      "<span class='order-popup-status' style='color:" + statusColor + "'>" + statusText + "</span>" +
+      driverLine +
       "<span class='order-popup-address'>" + C.escapeHtml(order.delivery_street || "") + "</span>" +
       "<span class='order-popup-ref'>Ref: " + C.escapeHtml(order.reference_id || "-") + "</span>" +
       "</div>"
     );
-    var marker = new window.maplibregl.Marker({ element: pinEl, anchor: "center" })
+    var marker = new window.maplibregl.Marker({ element: pinEl, anchor: "bottom" })
       .setLngLat(coords)
       .setPopup(popup)
       .addTo(currentMap);
@@ -1948,13 +2047,13 @@
     if (!currentMap || !window.maplibregl) return;
     clearOrderMarkers();
 
-    var unassigned = (orders || []).filter(function (o) {
-      return !o.assigned_to && o.status !== "Delivered" && o.status !== "Failed";
+    var active = (orders || []).filter(function (o) {
+      return o.status !== "Delivered" && o.status !== "Failed";
     });
-    if (!unassigned.length) return;
+    if (!active.length) return;
 
     // Stagger geocode requests to respect Photon rate limits (1 req/s max).
-    unassigned.forEach(function (order, i) {
+    active.forEach(function (order, i) {
       setTimeout(function () { _geocodeAndPin(order, currentMap); }, i * 200);
     });
   }

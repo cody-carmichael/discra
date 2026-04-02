@@ -1,6 +1,5 @@
 tests/
 test_*.py
-frontend/
 __pycache__/
 *.pyc
 *.pyo

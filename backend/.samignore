@@ -2,9 +2,6 @@
 tests/
 test_*.py
 
-# Exclude frontend assets (served separately or from S3)
-frontend/
-
 # Python cache
 __pycache__/
 *.pyc

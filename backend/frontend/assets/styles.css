@@ -2347,6 +2347,9 @@ body.theme-admin .billing-seat-cards .stat-card small {
 .login-title { font-size: 1.75rem; font-weight: 700; color: var(--text); margin: 0 0 .25rem; }
 .login-subtitle { font-size: .95rem; color: var(--text-muted); margin: 0 0 2rem; }
 .login-btn { width: 100%; padding: .75rem; font-size: 1rem; }
+.login-register-link { margin-top: 1rem; font-size: .85rem; color: var(--text-muted); }
+.login-register-link a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.login-register-link a:hover { text-decoration: underline; }
 .login-message { margin-top: 1rem; }
 
 /* ===== IN FLIGHT ===== */

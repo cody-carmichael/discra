@@ -3227,6 +3227,11 @@ body.theme-admin .billing-seat-cards .stat-card small {
   color: #94a3b8;
   font-size: 0.78rem;
 }
+.order-popup-driver {
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  font-style: italic;
+}
 .order-popup-ref {
   color: #64748b;
   font-size: 0.72rem;

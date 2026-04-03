@@ -306,7 +306,14 @@
       C.showMessage(el.message, "Secure sign-in is unavailable right now.", "error");
       return;
     }
-    window.location.assign(loginUrl);
+    // Force Cognito to show login form even if user has an existing session
+    try {
+      const parsed = new URL(loginUrl);
+      parsed.searchParams.set("prompt", "login");
+      window.location.assign(parsed.toString());
+    } catch (_) {
+      window.location.assign(loginUrl);
+    }
   }
 
   async function launchHostedSignup() {
@@ -327,6 +334,8 @@
     try {
       const parsed = new URL(authorizeUrl);
       parsed.pathname = "/signup";
+      // Force Cognito to show signup form even if user has an existing session
+      parsed.searchParams.set("prompt", "login");
       signupUrl = parsed.toString();
     } catch (error) {
       signupUrl = "";

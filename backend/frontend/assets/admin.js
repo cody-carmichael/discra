@@ -3126,55 +3126,13 @@
     }
   }
 
-  function clearAuthCookies() {
-    document.cookie = "discra_web_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
-    document.cookie = "discra_dev_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
-  }
-
-  async function launchHostedLogout() {
-    // Clear cookies client-side immediately to prevent refresh race condition
-    clearAuthCookies();
-    const logoutUri = window.location.origin + window.location.pathname;
-    let logoutUrl = "";
-    try {
-      const result = await C.logoutAuthSession(apiBase, {
-        domain: el.cognitoDomain.value.trim(),
-        client_id: el.cognitoClientId.value.trim(),
-        logout_uri: logoutUri,
-      });
-      if (result && result.logout_url) {
-        logoutUrl = result.logout_url;
-      }
-    } catch (error) {
-      logoutUrl = C.buildHostedLogoutUrl({
-        domain: el.cognitoDomain.value.trim(),
-        clientId: el.cognitoClientId.value.trim(),
-        logoutUri,
-      });
-    }
-    await logoutDevAuthSession(true);
-    webSessionClaims = null;
-    setToken("");
-    allOrders = [];
-    lastOrders = [];
-    lastDriverLocations = [];
-    lastDriverRoster = [];
-    selectedDriverId = "";
-    renderOrders([]);
-    renderDriverList([], []);
-    renderDriverMarkers([]);
-    renderAssignmentQueues([]);
-    updateOrderStats([]);
-    updateActiveDriverStat(0);
-    renderBillingStatus(null);
-    renderBillingSummary(null);
-    renderBillingInvitations([]);
-    renderInflight([]);
-    el.auditLogsView.innerHTML = "No audit logs loaded.";
-    el.routeResult.innerHTML = "No route computed yet.";
-    if (logoutUrl) {
-      window.location.assign(logoutUrl);
-    }
+  function launchHostedLogout() {
+    // Navigate directly to server-side logout endpoint which clears HttpOnly
+    // cookies and redirects to Cognito logout in a single round-trip.
+    // No async calls = no race condition on refresh.
+    var redirectTo = window.location.origin + window.location.pathname;
+    var logoutPath = apiBase + "/ui/auth/logout/redirect?redirect=" + encodeURIComponent(redirectTo);
+    window.location.assign(logoutPath);
   }
 
   async function bootstrap() {

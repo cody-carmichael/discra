@@ -3077,7 +3077,16 @@
     };
   }
 
+  var configReady = null;
+
+  async function ensureConfig() {
+    if (el.cognitoDomain.value.trim() && el.cognitoClientId.value.trim()) return;
+    if (!configReady) configReady = loadUiConfig();
+    await configReady;
+  }
+
   async function launchHostedLogin() {
+    await ensureConfig();
     const loginUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!loginUrl) {
       C.showMessage(el.authMessage, "Secure sign-in is not configured yet. Please contact support.", "error");
@@ -3087,6 +3096,7 @@
   }
 
   async function launchHostedSignup() {
+    await ensureConfig();
     const authorizeUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!authorizeUrl) {
       var msgEl = el.loginScreenMessage || el.authMessage;

@@ -472,6 +472,11 @@
     }
   }
 
+  function redirectToAdmin() {
+    var adminPath = window.location.pathname.replace(/\/register$/, "/admin");
+    window.location.replace(window.location.origin + adminPath);
+  }
+
   async function bootstrap() {
     if (el.authDebug) {
       el.authDebug.hidden = !debugAuth;
@@ -480,9 +485,15 @@
     await loadUiConfig();
     await restoreWebSession();
     await finishHostedLoginCallback();
-    if (sessionClaims) {
-      await refreshStatus();
+
+    // If not signed in after all auth checks, redirect to admin login screen.
+    // The register page should only be accessible to authenticated users.
+    if (!sessionClaims) {
+      redirectToAdmin();
+      return;
     }
+
+    await refreshStatus();
     if (currentRegistration && currentRegistration.status === "Approved") {
       C.showMessage(el.message, "Registration is approved. Sign in again, then continue to Admin.", "success");
     }

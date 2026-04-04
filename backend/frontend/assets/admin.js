@@ -3126,7 +3126,14 @@
     }
   }
 
+  function clearAuthCookies() {
+    document.cookie = "discra_web_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+    document.cookie = "discra_dev_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+  }
+
   async function launchHostedLogout() {
+    // Clear cookies client-side immediately to prevent refresh race condition
+    clearAuthCookies();
     const logoutUri = window.location.origin + window.location.pathname;
     let logoutUrl = "";
     try {

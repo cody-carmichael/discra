@@ -1136,6 +1136,9 @@
   }
 
   el.logoutHostedUi.addEventListener("click", function () {
+    // Clear cookies client-side immediately to prevent refresh race condition
+    document.cookie = "discra_web_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+    document.cookie = "discra_dev_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
     stopLocationShare();
     logoutDevAuthSession(true).then(function () {
       webSessionClaims = null; setToken(""); renderOrders([]); clearRouteLayer(); clearStopMarkers();

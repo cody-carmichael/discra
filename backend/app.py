@@ -10,7 +10,7 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from mangum import Mangum
 
@@ -525,6 +525,33 @@ def create_app() -> FastAPI:
                 url = urllib_parse.urlencode({"client_id": client_id, "logout_uri": logout_uri})
                 logout_url = f"{target}?{url}"
         return {"ok": True, "logout_url": logout_url}
+
+    @app.get("/ui/auth/logout/redirect", include_in_schema=False)
+    @app.get("/backend/ui/auth/logout/redirect", include_in_schema=False)
+    @app.get("/dev/backend/ui/auth/logout/redirect", include_in_schema=False)
+    async def ui_auth_logout_redirect(request: Request):
+        """Navigate here directly to clear all auth cookies and redirect to Cognito logout."""
+        redirect_to = str(request.query_params.get("redirect") or "").strip()
+
+        domain = str(os.environ.get("COGNITO_HOSTED_UI_DOMAIN") or "").strip()
+        client_id = (
+            str(os.environ.get("FRONTEND_COGNITO_CLIENT_ID") or "").strip()
+            or str(os.environ.get("COGNITO_AUDIENCE") or "").strip()
+        )
+
+        # Build Cognito logout URL if possible
+        logout_url = redirect_to or "/"
+        if domain and client_id and redirect_to:
+            normalized_domain = _normalize_hosted_domain(domain)
+            if normalized_domain:
+                target = f"https://{normalized_domain}/logout"
+                qs = urllib_parse.urlencode({"client_id": client_id, "logout_uri": redirect_to})
+                logout_url = f"{target}?{qs}"
+
+        response = RedirectResponse(url=logout_url, status_code=302)
+        response.delete_cookie(key=web_auth_cookie_name(), path="/")
+        response.delete_cookie(key=dev_auth_cookie_name(), path="/")
+        return response
 
     @app.get("/ui/dev-auth/session", include_in_schema=False)
     @app.get("/backend/ui/dev-auth/session", include_in_schema=False)

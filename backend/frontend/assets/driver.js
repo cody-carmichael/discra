@@ -1136,13 +1136,12 @@
   }
 
   el.logoutHostedUi.addEventListener("click", function () {
-    // Clear cookies client-side immediately to prevent refresh race condition
-    document.cookie = "discra_web_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
-    document.cookie = "discra_dev_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
     stopLocationShare();
-    logoutDevAuthSession(true).then(function () {
-      webSessionClaims = null; setToken(""); renderOrders([]); clearRouteLayer(); clearStopMarkers();
-    });
+    // Navigate directly to server-side logout endpoint which clears HttpOnly
+    // cookies and redirects to Cognito logout in a single round-trip.
+    var redirectTo = window.location.origin + window.location.pathname;
+    var logoutPath = apiBase + "/ui/auth/logout/redirect?redirect=" + encodeURIComponent(redirectTo);
+    window.location.assign(logoutPath);
   });
 
   if (el.saveToken) el.saveToken.addEventListener("click", function () { logoutDevAuthSession(true).then(function () { setToken(el.token.value); }); });

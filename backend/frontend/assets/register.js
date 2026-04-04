@@ -404,8 +404,6 @@
     try {
       const parsed = new URL(authorizeUrl);
       parsed.pathname = "/signup";
-      // Force Cognito to show signup form even if user has an existing session
-      parsed.searchParams.set("prompt", "login");
       signupUrl = parsed.toString();
     } catch (error) {
       signupUrl = "";
@@ -442,7 +440,9 @@
   }
 
   async function launchHostedLogout() {
-    const logoutUri = window.location.origin + window.location.pathname;
+    // After logout, redirect to admin login screen instead of back to register page
+    const adminPath = window.location.pathname.replace(/\/register$/, "/admin");
+    const logoutUri = window.location.origin + adminPath;
     let logoutUrl = "";
     try {
       const result = await C.logoutAuthSession(apiBase, {

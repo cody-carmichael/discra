@@ -25,6 +25,9 @@
     logoutHostedUi: document.getElementById("register-logout-hosted-ui"),
     claims: document.getElementById("register-claims-view"),
     authDebug: document.getElementById("register-auth-debug"),
+    confirmationPanel: document.getElementById("register-confirmation-panel"),
+    confirmationDetails: document.getElementById("register-confirmation-details"),
+    checkStatus: document.getElementById("register-check-status"),
   };
 
   let currentRegistration = null;
@@ -82,6 +85,63 @@
     return normalized === "pending" || normalized === "approved";
   }
 
+  // ── Confirmation Panel ─────────────────────────────────────────
+  function showConfirmation(registration) {
+    if (!el.confirmationPanel || !registration) {
+      return;
+    }
+    // Hide the form panel, show the confirmation panel
+    if (el.tenantPanel) {
+      el.tenantPanel.hidden = true;
+    }
+    el.confirmationPanel.hidden = false;
+
+    var submittedAt = registration.submitted_at ? C.formatTimestamp(registration.submitted_at) : "-";
+    var status = registration.status || "Pending";
+
+    // Build confirmation details
+    var detailsHtml =
+      '<div class="kv-grid">' +
+      '<div class="kv-item"><span class="kv-label">Tenant</span><span class="kv-value">' +
+      C.escapeHtml(registration.tenant_name || "-") +
+      '</span></div>' +
+      '<div class="kv-item"><span class="kv-label">Status</span><span class="kv-value">' +
+      statusLabel(status) +
+      '</span></div>' +
+      '<div class="kv-item"><span class="kv-label">Submitted</span><span class="kv-value">' +
+      C.escapeHtml(submittedAt) +
+      '</span></div>' +
+      '</div>';
+
+    if (el.confirmationDetails) {
+      el.confirmationDetails.innerHTML = detailsHtml;
+    }
+
+    // Update the heading and message based on status
+    var heading = el.confirmationPanel.querySelector("h2");
+    var messageParagraph = el.confirmationPanel.querySelector("p");
+    var icon = el.confirmationPanel.querySelector(".register-confirmation-icon");
+
+    if (status === "Approved") {
+      if (heading) heading.textContent = "Registration Approved";
+      if (messageParagraph) messageParagraph.textContent = "Your tenant has been approved! Sign in to the Admin console to get started.";
+      if (icon) { icon.textContent = "\u2713"; icon.style.background = "var(--accent, #12b886)"; }
+    } else if (status === "Rejected") {
+      if (heading) heading.textContent = "Registration Update Needed";
+      if (messageParagraph) messageParagraph.textContent = "Your registration needs updates. Please revise your details and resubmit.";
+      if (icon) { icon.textContent = "!"; icon.style.background = "#e03131"; }
+      // Show the form again for resubmission
+      el.confirmationPanel.hidden = true;
+      if (el.tenantPanel) {
+        el.tenantPanel.hidden = false;
+      }
+    } else {
+      if (heading) heading.textContent = "Request Received";
+      if (messageParagraph) messageParagraph.textContent = "We've received your request to try Discra. Our team will review your registration and respond soon.";
+      if (icon) { icon.textContent = "\u2713"; icon.style.background = "var(--accent, #12b886)"; }
+    }
+  }
+
   function syncSubmitButtonState() {
     const submitButton = el.form.querySelector('button[type="submit"]');
     if (!submitButton) {
@@ -115,11 +175,14 @@
           "You are signed in. Complete your tenant details below and submit for App Dev approval.";
       } else {
         el.accountHint.innerHTML =
-          "You will be redirected to secure authentication. <strong>Create Account</strong> opens sign-up directly.";
+          'Just created your account? Click <strong>Sign In</strong> to continue. ' +
+          'New here? Click <strong>Create Account</strong> to get started.';
       }
     }
     if (el.tenantPanel) {
-      el.tenantPanel.hidden = !authenticated;
+      // Only show the form if authenticated AND not already showing confirmation
+      var showForm = authenticated && (el.confirmationPanel ? el.confirmationPanel.hidden : true);
+      el.tenantPanel.hidden = !showForm;
     }
     if (el.gateSurface) {
       el.gateSurface.hidden = authenticated;
@@ -129,7 +192,7 @@
           "Cognito Hosted UI domain/client are not configured for this environment.";
       } else if (!authenticated) {
         el.gateSurface.innerHTML =
-          "<strong>Next step locked:</strong> Sign in first, then the tenant registration form will appear automatically.";
+          "<strong>Almost there!</strong> Sign in with your new account to complete your tenant registration.";
       } else {
         el.gateSurface.textContent = "";
       }
@@ -140,9 +203,19 @@
     currentRegistration = registration || null;
     if (!registration) {
       el.statusSurface.innerHTML = "No registration found for this user yet.";
+      // Hide confirmation if no registration
+      if (el.confirmationPanel) {
+        el.confirmationPanel.hidden = true;
+      }
       syncSubmitButtonState();
       return;
     }
+
+    // If registration is pending or approved, show the confirmation panel instead of the form
+    if (isSubmissionLocked(registration)) {
+      showConfirmation(registration);
+    }
+
     const decidedAt = registration.decided_at ? C.formatTimestamp(registration.decided_at) : "-";
     const submittedAt = registration.submitted_at ? C.formatTimestamp(registration.submitted_at) : "-";
     const nextStep =
@@ -243,18 +316,11 @@
 
   async function refreshStatus() {
     if (!sessionClaims) {
-      C.showMessage(el.message, "Sign in first to check registration status.", "error");
-      renderRegistration(null);
       return;
     }
     try {
       const payload = await C.requestJson(apiBase, "/onboarding/registrations/me");
       renderRegistration(payload && payload.exists ? payload.registration : null);
-      if (payload && payload.exists && payload.registration) {
-        C.showMessage(el.message, "Registration status loaded.", "success");
-      } else {
-        C.showMessage(el.message, "No registration found yet. Submit the form to start review.", "success");
-      }
     } catch (error) {
       C.showMessage(el.message, error.message, "error");
     }
@@ -285,8 +351,12 @@
         method: "POST",
         json: payload,
       });
-      renderRegistration(result && result.registration ? result.registration : null);
-      C.showMessage(el.message, "Registration submitted for App Dev review.", "success");
+      var registration = result && result.registration ? result.registration : null;
+      renderRegistration(registration);
+      if (registration) {
+        showConfirmation(registration);
+      }
+      C.showMessage(el.message, "", "success");
     } catch (error) {
       C.showMessage(el.message, error.message, "error");
     }
@@ -362,7 +432,7 @@
     }
     if (result.status === "success") {
       await restoreWebSession();
-      C.showMessage(el.message, "Sign-in complete.", "success");
+      C.showMessage(el.message, "Sign-in complete. Fill out your tenant details below to finish registration.", "success");
       await refreshStatus();
       return;
     }
@@ -393,6 +463,9 @@
     sessionClaims = null;
     renderClaims();
     renderRegistration(null);
+    if (el.confirmationPanel) {
+      el.confirmationPanel.hidden = true;
+    }
     C.showMessage(el.message, "Signed out.", "success");
     if (logoutUrl) {
       window.location.assign(logoutUrl);
@@ -436,6 +509,13 @@
       C.showMessage(el.message, error.message, "error");
     });
   });
+  if (el.checkStatus) {
+    el.checkStatus.addEventListener("click", function () {
+      refreshStatus().catch(function (error) {
+        C.showMessage(el.message, error.message, "error");
+      });
+    });
+  }
 
   bootstrap();
 })();

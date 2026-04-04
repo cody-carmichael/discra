@@ -404,8 +404,6 @@
     try {
       const parsed = new URL(authorizeUrl);
       parsed.pathname = "/signup";
-      // Force Cognito to show signup form even if user has an existing session
-      parsed.searchParams.set("prompt", "login");
       signupUrl = parsed.toString();
     } catch (error) {
       signupUrl = "";

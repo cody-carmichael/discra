@@ -3096,7 +3096,6 @@
     try {
       const parsed = new URL(authorizeUrl);
       parsed.pathname = "/signup";
-      parsed.searchParams.set("prompt", "login");
       window.location.assign(parsed.toString());
     } catch (_) {
       window.location.assign(authorizeUrl);

@@ -282,6 +282,23 @@
     window.location.assign(loginUrl);
   }
 
+  async function launchHostedSignup() {
+    var authorizeUrl = await C.startHostedLogin(hostedFlowConfig());
+    if (!authorizeUrl) {
+      var msgEl = el.loginScreenMessage || el.authMessage;
+      if (msgEl) C.showMessage(msgEl, "Sign-up is not configured. Contact support.", "error");
+      return;
+    }
+    try {
+      var parsed = new URL(authorizeUrl);
+      parsed.pathname = "/signup";
+      parsed.searchParams.set("prompt", "login");
+      window.location.assign(parsed.toString());
+    } catch (_) {
+      window.location.assign(authorizeUrl);
+    }
+  }
+
   // ── Map ─────────────────────────────────────────────────────────
 
   function ensureMap() {
@@ -1085,6 +1102,16 @@
     el.loginScreenBtn.addEventListener("click", function () {
       launchHostedLogin().catch(function (e) {
         if (el.loginScreenMessage) C.showMessage(el.loginScreenMessage, e.message, "error");
+      });
+    });
+  }
+  var loginCreateAccount = document.getElementById("login-create-account");
+  if (loginCreateAccount) {
+    loginCreateAccount.addEventListener("click", function (e) {
+      e.preventDefault();
+      launchHostedSignup().catch(function (err) {
+        var msgEl = el.loginScreenMessage || el.authMessage;
+        if (msgEl) C.showMessage(msgEl, err.message, "error");
       });
     });
   }

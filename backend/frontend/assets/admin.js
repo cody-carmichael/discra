@@ -3086,6 +3086,23 @@
     window.location.assign(loginUrl);
   }
 
+  async function launchHostedSignup() {
+    const authorizeUrl = await C.startHostedLogin(hostedFlowConfig());
+    if (!authorizeUrl) {
+      var msgEl = el.loginScreenMessage || el.authMessage;
+      C.showMessage(msgEl, "Secure sign-up is not configured yet. Please contact support.", "error");
+      return;
+    }
+    try {
+      const parsed = new URL(authorizeUrl);
+      parsed.pathname = "/signup";
+      parsed.searchParams.set("prompt", "login");
+      window.location.assign(parsed.toString());
+    } catch (_) {
+      window.location.assign(authorizeUrl);
+    }
+  }
+
   async function finishHostedLoginCallback() {
     const result = await C.consumeHostedLoginCallback(apiBase, hostedFlowConfig());
     if (result.status === "success") {
@@ -3406,6 +3423,16 @@
     el.loginScreenBtn.addEventListener("click", function () {
       launchHostedLogin().catch(function (error) {
         C.showMessage(el.loginScreenMessage, error.message, "error");
+      });
+    });
+  }
+  var loginCreateAccount = document.getElementById("login-create-account");
+  if (loginCreateAccount) {
+    loginCreateAccount.addEventListener("click", function (e) {
+      e.preventDefault();
+      launchHostedSignup().catch(function (error) {
+        var msgEl = el.loginScreenMessage || el.authMessage;
+        C.showMessage(msgEl, error.message, "error");
       });
     });
   }

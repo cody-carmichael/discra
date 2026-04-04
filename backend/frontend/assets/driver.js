@@ -272,7 +272,18 @@
     };
   }
 
+  var configReady = null;
+
+  async function ensureConfig() {
+    var d = el.cognitoDomain ? el.cognitoDomain.value.trim() : "";
+    var c = el.cognitoClientId ? el.cognitoClientId.value.trim() : "";
+    if (d && c) return;
+    if (!configReady) configReady = loadUiConfig();
+    await configReady;
+  }
+
   async function launchHostedLogin() {
+    await ensureConfig();
     var loginUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!loginUrl) {
       var msgEl = el.loginScreenMessage || el.authMessage;
@@ -283,6 +294,7 @@
   }
 
   async function launchHostedSignup() {
+    await ensureConfig();
     var authorizeUrl = await C.startHostedLogin(hostedFlowConfig());
     if (!authorizeUrl) {
       var msgEl = el.loginScreenMessage || el.authMessage;
@@ -1124,6 +1136,9 @@
   }
 
   el.logoutHostedUi.addEventListener("click", function () {
+    // Clear cookies client-side immediately to prevent refresh race condition
+    document.cookie = "discra_web_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+    document.cookie = "discra_dev_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
     stopLocationShare();
     logoutDevAuthSession(true).then(function () {
       webSessionClaims = null; setToken(""); renderOrders([]); clearRouteLayer(); clearStopMarkers();

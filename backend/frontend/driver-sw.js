@@ -1,4 +1,4 @@
-const CACHE_NAME = "discra-driver-v20260328a";
+const CACHE_NAME = "discra-driver-v20260404a";
 const PRECACHE_URLS = [
   "driver",
   "assets/driver-mobile.css",
@@ -24,6 +24,25 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") {
     return;
   }
+
+  // Only cache static assets — never cache API calls.  Caching auth
+  // session endpoints caused stale responses after logout.
+  const url = new URL(event.request.url);
+  const path = url.pathname;
+  const isStaticAsset =
+    path.endsWith(".js") ||
+    path.endsWith(".css") ||
+    path.endsWith(".png") ||
+    path.endsWith(".svg") ||
+    path.endsWith(".ico") ||
+    path.endsWith(".woff2") ||
+    path.endsWith(".json");
+
+  if (!isStaticAsset && event.request.mode !== "navigate") {
+    // Let API calls go straight to the network.
+    return;
+  }
+
   // Network-first: try fresh content, fall back to cache for offline
   event.respondWith(
     fetch(event.request)

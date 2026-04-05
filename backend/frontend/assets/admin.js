@@ -3117,12 +3117,16 @@
     if (result.status === "success") {
       await logoutDevAuthSession(true);
       setToken("");
-      await restoreWebAuthSession();
-      C.showMessage(el.authMessage, "Sign-in complete.", "success");
+      var ok = await restoreWebAuthSession();
+      if (ok) {
+        C.showMessage(el.authMessage, "Sign-in complete.", "success");
+      } else {
+        C.showMessage(el.authMessage, "Sign-in completed but session could not be verified. Please click Sign In again.", "error");
+      }
       return;
     }
     if (result.status === "error") {
-      C.showMessage(el.authMessage, result.message || "Sign-in failed.", "error");
+      C.showMessage(el.loginScreenMessage || el.authMessage, "Sign-in failed: " + (result.message || "unknown error") + " — please click Sign In to try again.", "error");
     }
   }
 

@@ -1228,7 +1228,14 @@
     if (cbResult && cbResult.status === "success") {
       await logoutDevAuthSession(true);
       setToken("");
+      var ok = await restoreWebAuthSession();
+      if (!ok) {
+        C.showMessage(el.authMessage, "Sign-in completed but session could not be verified. Please click Sign In again.", "error");
+      }
+    } else if (cbResult && cbResult.status === "error") {
+      C.showMessage(el.authMessage, "Sign-in failed: " + (cbResult.message || "unknown error") + " — please click Sign In to try again.", "error");
       await restoreWebAuthSession();
+      await restoreDevAuthSession();
     } else {
       await restoreWebAuthSession();
       await restoreDevAuthSession();

@@ -10,7 +10,7 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from mangum import Mangum
 
@@ -543,7 +543,13 @@ def create_app() -> FastAPI:
     @app.get("/backend/ui/auth/logout/redirect", include_in_schema=False)
     @app.get("/dev/backend/ui/auth/logout/redirect", include_in_schema=False)
     async def ui_auth_logout_redirect(request: Request):
-        """Navigate here directly to clear all auth cookies and redirect to Cognito logout."""
+        """Navigate here directly to clear all auth cookies and redirect to Cognito logout.
+
+        Uses an HTML intermediary page instead of a 302 redirect so that
+        Set-Cookie headers are reliably processed by the browser before
+        navigating away.  (API Gateway can drop Set-Cookie headers on 302
+        responses when multiple cookies are involved.)
+        """
         redirect_to = str(request.query_params.get("redirect") or "").strip()
 
         domain = str(os.environ.get("COGNITO_HOSTED_UI_DOMAIN") or "").strip()
@@ -561,7 +567,19 @@ def create_app() -> FastAPI:
                 qs = urllib_parse.urlencode({"client_id": client_id, "logout_uri": redirect_to})
                 logout_url = f"{target}?{qs}"
 
-        response = RedirectResponse(url=logout_url, status_code=302)
+        import html as _html
+
+        safe_url = _html.escape(logout_url, quote=True)
+        body = (
+            "<!DOCTYPE html><html><head>"
+            f'<meta http-equiv="refresh" content="0;url={safe_url}">'
+            "</head><body>"
+            f'<p>Signing out&hellip; <a href="{safe_url}">Click here</a> if not redirected.</p>'
+            f"<script>window.location.replace({json.dumps(logout_url)});</script>"
+            "</body></html>"
+        )
+        response = HTMLResponse(content=body, status_code=200)
+        response.headers["Cache-Control"] = "no-store"
         _secure = _cookie_secure(request)
         for _cookie_name in (web_auth_cookie_name(), dev_auth_cookie_name()):
             response.delete_cookie(

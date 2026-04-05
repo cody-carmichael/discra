@@ -1137,7 +1137,12 @@
 
   el.logoutHostedUi.addEventListener("click", function () {
     stopLocationShare();
-    // Navigate directly to server-side logout endpoint which clears HttpOnly
+    // Clear any in-flight PKCE state so the next login starts fresh.
+    C.clearAuthFlowState(storageKey);
+    webSessionClaims = null;
+    devSessionClaims = null;
+    renderClaims();
+    // Navigate to server-side logout endpoint which clears HttpOnly
     // cookies and redirects to Cognito logout in a single round-trip.
     var redirectTo = window.location.origin + window.location.pathname;
     var logoutPath = apiBase + "/ui/auth/logout/redirect?redirect=" + encodeURIComponent(redirectTo);

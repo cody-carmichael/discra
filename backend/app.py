@@ -422,11 +422,18 @@ def create_app() -> FastAPI:
     @app.get("/backend/ui/auth/session", include_in_schema=False)
     @app.get("/dev/backend/ui/auth/session", include_in_schema=False)
     async def ui_auth_session(request: Request, response: Response):
+        response.headers["Cache-Control"] = "no-store"
         try:
             identity = await get_optional_authenticated_identity(request)
         except HTTPException as exc:
             if exc.status_code == status.HTTP_401_UNAUTHORIZED:
-                response.delete_cookie(key=web_auth_cookie_name(), path="/")
+                response.delete_cookie(
+                    key=web_auth_cookie_name(),
+                    path="/",
+                    secure=_cookie_secure(request),
+                    httponly=True,
+                    samesite="lax",
+                )
                 return {"active": False}
             raise
         return {
@@ -515,7 +522,13 @@ def create_app() -> FastAPI:
         )
         logout_uri = str(payload.get("logout_uri") or "").strip()
 
-        response.delete_cookie(key=web_auth_cookie_name(), path="/")
+        response.delete_cookie(
+            key=web_auth_cookie_name(),
+            path="/",
+            secure=_cookie_secure(request),
+            httponly=True,
+            samesite="lax",
+        )
 
         logout_url = ""
         if domain and client_id and logout_uri:
@@ -549,14 +562,22 @@ def create_app() -> FastAPI:
                 logout_url = f"{target}?{qs}"
 
         response = RedirectResponse(url=logout_url, status_code=302)
-        response.delete_cookie(key=web_auth_cookie_name(), path="/")
-        response.delete_cookie(key=dev_auth_cookie_name(), path="/")
+        _secure = _cookie_secure(request)
+        for _cookie_name in (web_auth_cookie_name(), dev_auth_cookie_name()):
+            response.delete_cookie(
+                key=_cookie_name,
+                path="/",
+                secure=_secure,
+                httponly=True,
+                samesite="lax",
+            )
         return response
 
     @app.get("/ui/dev-auth/session", include_in_schema=False)
     @app.get("/backend/ui/dev-auth/session", include_in_schema=False)
     @app.get("/dev/backend/ui/dev-auth/session", include_in_schema=False)
-    async def ui_dev_auth_session(request: Request):
+    async def ui_dev_auth_session(request: Request, response: Response):
+        response.headers["Cache-Control"] = "no-store"
         if not is_dev_auth_enabled():
             return {"active": False}
         user = get_dev_auth_user(request)
@@ -614,8 +635,14 @@ def create_app() -> FastAPI:
     @app.post("/ui/dev-auth/logout", include_in_schema=False)
     @app.post("/backend/ui/dev-auth/logout", include_in_schema=False)
     @app.post("/dev/backend/ui/dev-auth/logout", include_in_schema=False)
-    async def ui_dev_auth_logout(response: Response):
-        response.delete_cookie(key=dev_auth_cookie_name(), path="/")
+    async def ui_dev_auth_logout(request: Request, response: Response):
+        response.delete_cookie(
+            key=dev_auth_cookie_name(),
+            path="/",
+            secure=_cookie_secure(request),
+            httponly=True,
+            samesite="lax",
+        )
         return {"ok": True}
 
     app.include_router(identity_router)

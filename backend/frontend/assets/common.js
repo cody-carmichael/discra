@@ -150,6 +150,7 @@
       headers,
       body: requestOptions.json === undefined ? requestOptions.body : JSON.stringify(requestOptions.json),
       credentials: requestOptions.credentials || "same-origin",
+      cache: "no-store",
     });
     const responseText = await response.text();
     let payload = null;
@@ -405,6 +406,7 @@
     logoutDevAuthSession,
     getAuthSession,
     logoutAuthSession,
+    clearAuthFlowState: _clearAuthFlowState,
   };
 })();
 

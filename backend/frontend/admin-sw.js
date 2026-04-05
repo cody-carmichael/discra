@@ -1,4 +1,4 @@
-const CACHE_NAME = "discra-admin-v20260327a";
+const CACHE_NAME = "discra-admin-v20260404a";
 const CACHE_PREFIX = "discra-admin-";
 const PRECACHE_URLS = [
   "assets/styles.css?v=20260322e",
@@ -67,8 +67,26 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Never cache API calls — only cache static assets (JS, CSS, images,
+  // manifests).  Caching auth session endpoints caused stale {active:true}
+  // responses to persist after logout.
+  const path = url.pathname;
+  const isStaticAsset =
+    path.endsWith(".js") ||
+    path.endsWith(".css") ||
+    path.endsWith(".png") ||
+    path.endsWith(".svg") ||
+    path.endsWith(".ico") ||
+    path.endsWith(".woff2") ||
+    path.endsWith(".json");
+
   if (request.mode === "navigate") {
     event.respondWith(networkFirst(request));
+    return;
+  }
+
+  if (!isStaticAsset) {
+    // Let API calls go straight to the network, bypassing the cache.
     return;
   }
 

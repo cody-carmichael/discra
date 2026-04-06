@@ -163,6 +163,11 @@ jobs:
             parameter_overrides+=("OrdersWebhookHmacSecret=$ORDERS_WEBHOOK_HMAC_SECRET")
           fi
 
+          GOOGLE_OAUTH_CLIENT_ID="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}"
+          if [ -n "$GOOGLE_OAUTH_CLIENT_ID" ]; then
+            parameter_overrides+=("GoogleOAuthClientId=$GOOGLE_OAUTH_CLIENT_ID")
+          fi
+
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name "$STACK_NAME" \

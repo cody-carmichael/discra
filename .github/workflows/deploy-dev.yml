@@ -192,6 +192,11 @@ jobs:
             parameter_overrides+=("GoogleOAuthClientId=$GOOGLE_OAUTH_CLIENT_ID")
           fi
 
+          GOOGLE_OAUTH_CLIENT_SECRET="${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}"
+          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            parameter_overrides+=("GoogleOAuthClientSecret=$GOOGLE_OAUTH_CLIENT_SECRET")
+          fi
+
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name "$STACK_NAME" \

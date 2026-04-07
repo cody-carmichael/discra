@@ -9,6 +9,16 @@
   const query = new URLSearchParams(window.location.search || "");
   const debugAuth = query.get("debug_auth") === "1";
 
+  // If this page was loaded as a Gmail OAuth callback popup, forward the code
+  // to the opener via postMessage before anything else strips the query params.
+  if (query.get("state") === "gmail_connect" && query.get("code") && window.opener) {
+    window.opener.postMessage(
+      { type: "gmail_oauth_callback", code: query.get("code") },
+      window.location.origin
+    );
+    window.close();
+  }
+
   const el = {
     loginScreen: document.getElementById("login-screen"),
     loginScreenBtn: document.getElementById("login-screen-btn"),
@@ -3569,27 +3579,17 @@
           "&prompt=consent" +
           "&state=gmail_connect";
         var popup = window.open(authUrl, "gmail_connect", "width=500,height=600");
-        // Listen for the OAuth callback
-        window._gmailConnectInterval = setInterval(function () {
-          try {
-            if (!popup || popup.closed) {
-              clearInterval(window._gmailConnectInterval);
-              return;
-            }
-            var popupUrl = popup.location.href;
-            if (popupUrl && popupUrl.indexOf("code=") > -1) {
-              var params = new URLSearchParams(popup.location.search);
-              var code = params.get("code");
-              popup.close();
-              clearInterval(window._gmailConnectInterval);
-              if (code) {
-                connectGmailWithCode(code, redirectUri);
-              }
-            }
-          } catch (e) {
-            // Cross-origin -- popup still on Google's domain, keep waiting
+        // Listen for the OAuth code posted back by the popup callback
+        function onGmailMessage(event) {
+          if (event.origin !== window.location.origin) return;
+          if (!event.data || event.data.type !== "gmail_oauth_callback") return;
+          window.removeEventListener("message", onGmailMessage);
+          if (popup && !popup.closed) popup.close();
+          if (event.data.code) {
+            connectGmailWithCode(event.data.code, redirectUri);
           }
-        }, 500);
+        }
+        window.addEventListener("message", onGmailMessage);
       });
     }
   }

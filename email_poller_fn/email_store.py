@@ -8,9 +8,10 @@ from typing import Dict, List, Optional, Tuple
 
 try:
     import boto3
-    from boto3.dynamodb.conditions import Key
+    from boto3.dynamodb.conditions import Attr, Key
 except ImportError:  # pragma: no cover - boto3 available in Lambda
     boto3 = None
+    Attr = None
     Key = None
 
 from schemas import EmailConfig, SkippedEmail
@@ -97,14 +98,12 @@ class DynamoEmailConfigStore(EmailConfigStore):
 
     def list_connected_orgs(self) -> List[EmailConfig]:
         resp = self._table.scan(
-            FilterExpression="email_connected = :val",
-            ExpressionAttributeValues={":val": True},
+            FilterExpression=Attr("email_connected").eq(True),
         )
         items = resp.get("Items", [])
         while resp.get("LastEvaluatedKey"):
             resp = self._table.scan(
-                FilterExpression="email_connected = :val",
-                ExpressionAttributeValues={":val": True},
+                FilterExpression=Attr("email_connected").eq(True),
                 ExclusiveStartKey=resp["LastEvaluatedKey"],
             )
             items.extend(resp.get("Items", []))

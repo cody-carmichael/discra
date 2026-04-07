@@ -3548,7 +3548,7 @@
       el.connectGmailBtn.addEventListener("click", function () {
         // Open Google OAuth consent in a popup
         var redirectUri = window.location.origin + window.location.pathname;
-        var scope = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.labels";
+        var scope = "https://www.googleapis.com/auth/gmail.readonly";
         var authUrl = "https://accounts.google.com/o/oauth2/v2/auth" +
           "?client_id=" + encodeURIComponent(googleOAuthClientId) +
           "&redirect_uri=" + encodeURIComponent(redirectUri) +

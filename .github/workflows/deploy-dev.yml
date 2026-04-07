@@ -74,6 +74,30 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Build and push backend base image
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          BASE_REPO=discra-backend-base
+          BASE_REPO_URI="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com/$BASE_REPO"
+
+          aws ecr create-repository --repository-name "$BASE_REPO" --region "$AWS_REGION" 2>/dev/null || true
+
+          REQ_HASH=$(sha256sum backend/requirements.txt | cut -c1-12)
+          BASE_IMAGE_URI="$BASE_REPO_URI:$REQ_HASH"
+
+          if aws ecr describe-images --repository-name "$BASE_REPO" --image-ids "imageTag=$REQ_HASH" --region "$AWS_REGION" &>/dev/null; then
+            echo "Base image already exists: $BASE_IMAGE_URI"
+            docker pull "$BASE_IMAGE_URI"
+          else
+            echo "Building and pushing base image: $BASE_IMAGE_URI"
+            docker build -f backend/Dockerfile.base -t "$BASE_IMAGE_URI" backend/
+            docker push "$BASE_IMAGE_URI"
+          fi
+
+          sed -i "s|ARG BASE_IMAGE=.*|ARG BASE_IMAGE=$BASE_IMAGE_URI|" backend/Dockerfile
+
       # ✅ Build first
       - name: SAM build (no cache)
         run: sam build -t "$TEMPLATE_PATH" --no-cached --debug

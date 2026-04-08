@@ -591,6 +591,17 @@ class OnboardingPendingRegistrationsResponse(BaseModel):
 # ── Email ingestion ──────────────────────────────────────────────
 
 
+class EmailRule(BaseModel):
+    rule_id: str
+    name: str = Field(..., max_length=120)
+    sender_pattern: str = Field(..., max_length=200)
+    subject_pattern: str = Field(default="", max_length=200)
+    parser_type: str = Field(..., max_length=40)
+    enabled: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
 class EmailConfig(BaseModel):
     org_id: str
     gmail_email: str = ""
@@ -600,6 +611,7 @@ class EmailConfig(BaseModel):
     connected_at: Optional[datetime] = None
     last_poll_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    email_rules: List[EmailRule] = Field(default_factory=list)
 
 
 class SkippedEmail(BaseModel):

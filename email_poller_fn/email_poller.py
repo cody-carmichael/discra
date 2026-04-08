@@ -71,12 +71,14 @@ def _process_org(org_config):
 
                 message = gmail.get_message(msg_id)
 
-                # Classify the email
+                # Classify the email (custom org rules checked first)
+                custom_rules = [r.model_dump() for r in (org_config.email_rules or [])]
                 result = classify_email(
                     subject=message.subject,
                     sender=message.sender,
                     html_body=message.html_body,
                     text_body=message.text_body,
+                    custom_rules=custom_rules,
                 )
 
                 if not result.is_order:
@@ -98,8 +100,9 @@ def _process_org(org_config):
                     )
                     continue
 
-                # Parse the order
-                parser = get_parser(result.source.value)
+                # Parse the order (source may be an EmailSource enum or a plain string from a custom rule)
+                source_key = getattr(result.source, "value", result.source)
+                parser = get_parser(source_key)
                 if not parser:
                     logger.warning("Org %s: no parser for source %s", org_id, result.source)
                     continue
@@ -122,7 +125,7 @@ def _process_org(org_config):
 
                 # Use the email message ID as external_order_id for dedup
                 external_id = parsed.external_order_id or msg_id
-                source = parsed.source or result.source.value
+                source = parsed.source or getattr(result.source, "value", result.source)
 
                 # Check for duplicates
                 existing = order_store.find_order_by_external_id(org_id, source, external_id)

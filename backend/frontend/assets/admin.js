@@ -109,6 +109,20 @@
     refreshEmailStatus: document.getElementById("refresh-email-status"),
     refreshSkippedEmails: document.getElementById("refresh-skipped-emails"),
     skippedEmailsList: document.getElementById("skipped-emails-list"),
+    refreshEmailRules: document.getElementById("refresh-email-rules"),
+    addEmailRuleBtn: document.getElementById("add-email-rule-btn"),
+    emailRulesList: document.getElementById("email-rules-list"),
+    emailRuleModal: document.getElementById("email-rule-modal"),
+    emailRuleForm: document.getElementById("email-rule-form"),
+    emailRuleModalTitle: document.getElementById("email-rule-modal-title"),
+    emailRuleModalClose: document.getElementById("email-rule-modal-close"),
+    emailRuleCancel: document.getElementById("email-rule-cancel"),
+    emailRuleId: document.getElementById("email-rule-id"),
+    emailRuleName: document.getElementById("email-rule-name"),
+    emailRuleSender: document.getElementById("email-rule-sender"),
+    emailRuleSubject: document.getElementById("email-rule-subject"),
+    emailRuleParser: document.getElementById("email-rule-parser"),
+    emailRuleEnabled: document.getElementById("email-rule-enabled"),
     mapContainer: document.getElementById("driver-map"),
     cognitoDomain: document.getElementById("cognito-domain"),
     cognitoClientId: document.getElementById("cognito-client-id"),
@@ -3536,6 +3550,101 @@
     }
   }
 
+  var _availableParsers = [];
+
+  async function refreshEmailRules() {
+    try {
+      var resp = await C.requestJson(apiBase, "/email/rules", { token: token });
+      _availableParsers = (resp && resp.available_parsers) || [];
+      var items = (resp && resp.items) || [];
+      if (!items.length) {
+        if (el.emailRulesList) el.emailRulesList.innerHTML = "<p>No rules configured.</p>";
+        return;
+      }
+      var html = '<table class="orders-table"><thead><tr><th>Name</th><th>Sender Contains</th><th>Subject Contains</th><th>Parser</th><th>Enabled</th><th></th></tr></thead><tbody>';
+      items.forEach(function (rule) {
+        html += "<tr>" +
+          "<td>" + C.escapeHtml(rule.name) + "</td>" +
+          "<td><code>" + C.escapeHtml(rule.sender_pattern) + "</code></td>" +
+          "<td>" + (rule.subject_pattern ? "<code>" + C.escapeHtml(rule.subject_pattern) + "</code>" : "<em>any</em>") + "</td>" +
+          "<td>" + C.escapeHtml(rule.parser_type) + "</td>" +
+          "<td>" + (rule.enabled ? "Yes" : "No") + "</td>" +
+          '<td style="white-space:nowrap">' +
+            '<button class="btn btn-ghost" data-rule-edit="' + C.escapeHtml(rule.rule_id) + '" data-rule-name="' + C.escapeHtml(rule.name) + '" data-rule-sender="' + C.escapeHtml(rule.sender_pattern) + '" data-rule-subject="' + C.escapeHtml(rule.subject_pattern || "") + '" data-rule-parser="' + C.escapeHtml(rule.parser_type) + '" data-rule-enabled="' + rule.enabled + '">Edit</button> ' +
+            '<button class="btn btn-ghost" data-rule-delete="' + C.escapeHtml(rule.rule_id) + '" data-rule-name="' + C.escapeHtml(rule.name) + '">Delete</button>' +
+          "</td>" +
+          "</tr>";
+      });
+      html += "</tbody></table>";
+      if (el.emailRulesList) el.emailRulesList.innerHTML = html;
+    } catch (error) {
+      C.showMessage(el.emailMessage, error.message, "error");
+    }
+  }
+
+  function _populateParserSelect(selectedParser) {
+    if (!el.emailRuleParser) return;
+    el.emailRuleParser.innerHTML = "";
+    _availableParsers.forEach(function (p) {
+      var opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      if (p === selectedParser) opt.selected = true;
+      el.emailRuleParser.appendChild(opt);
+    });
+  }
+
+  function openRuleModal(prefill) {
+    prefill = prefill || {};
+    if (el.emailRuleModalTitle) el.emailRuleModalTitle.textContent = prefill.rule_id ? "Edit Rule" : "Add Classification Rule";
+    if (el.emailRuleId) el.emailRuleId.value = prefill.rule_id || "";
+    if (el.emailRuleName) el.emailRuleName.value = prefill.name || "";
+    if (el.emailRuleSender) el.emailRuleSender.value = prefill.sender || "";
+    if (el.emailRuleSubject) el.emailRuleSubject.value = prefill.subject || "";
+    if (el.emailRuleEnabled) el.emailRuleEnabled.checked = prefill.enabled !== false;
+    _populateParserSelect(prefill.parser || "");
+    if (el.emailRuleModal) el.emailRuleModal.hidden = false;
+  }
+
+  function closeRuleModal() {
+    if (el.emailRuleModal) el.emailRuleModal.hidden = true;
+    if (el.emailRuleForm) el.emailRuleForm.reset();
+    if (el.emailRuleId) el.emailRuleId.value = "";
+  }
+
+  async function saveEmailRule(e) {
+    e.preventDefault();
+    var ruleId = el.emailRuleId ? el.emailRuleId.value : "";
+    var payload = {
+      name: el.emailRuleName ? el.emailRuleName.value.trim() : "",
+      sender_pattern: el.emailRuleSender ? el.emailRuleSender.value.trim() : "",
+      subject_pattern: el.emailRuleSubject ? el.emailRuleSubject.value.trim() : "",
+      parser_type: el.emailRuleParser ? el.emailRuleParser.value : "",
+      enabled: el.emailRuleEnabled ? el.emailRuleEnabled.checked : true,
+    };
+    try {
+      if (ruleId) {
+        await C.requestJson(apiBase, "/email/rules/" + encodeURIComponent(ruleId), { method: "PUT", token: token, json: payload });
+      } else {
+        await C.requestJson(apiBase, "/email/rules", { method: "POST", token: token, json: payload });
+      }
+      closeRuleModal();
+      await refreshEmailRules();
+    } catch (error) {
+      C.showMessage(el.emailMessage, error.message, "error");
+    }
+  }
+
+  async function deleteEmailRule(ruleId, ruleName) {
+    if (!confirm("Delete rule \"" + ruleName + "\"?")) return;
+    try {
+      await C.requestJson(apiBase, "/email/rules/" + encodeURIComponent(ruleId), { method: "DELETE", token: token });
+      await refreshEmailRules();
+    } catch (error) {
+      C.showMessage(el.emailMessage, error.message, "error");
+    }
+  }
+
   async function refreshSkippedEmails() {
     try {
       var resp = await C.requestJson(apiBase, "/email/skipped?limit=50", { token: token });
@@ -3544,13 +3653,14 @@
         if (el.skippedEmailsList) el.skippedEmailsList.innerHTML = "<p>No skipped emails.</p>";
         return;
       }
-      var html = '<table class="orders-table"><thead><tr><th>Sender</th><th>Subject</th><th>Reason</th><th>Date</th></tr></thead><tbody>';
+      var html = '<table class="orders-table"><thead><tr><th>Sender</th><th>Subject</th><th>Reason</th><th>Date</th><th></th></tr></thead><tbody>';
       items.forEach(function (item) {
         html += "<tr>" +
           "<td>" + C.escapeHtml(item.sender) + "</td>" +
           "<td>" + C.escapeHtml(item.subject) + "</td>" +
           "<td>" + C.escapeHtml(item.skip_reason) + "</td>" +
           "<td>" + (item.created_at ? new Date(item.created_at).toLocaleString() : "-") + "</td>" +
+          '<td><button class="btn btn-ghost" data-create-rule-sender="' + C.escapeHtml(item.sender) + '" data-create-rule-subject="' + C.escapeHtml(item.subject) + '">Create Rule</button></td>' +
           "</tr>";
       });
       html += "</tbody></table>";
@@ -3569,7 +3679,7 @@
       el.connectGmailBtn.addEventListener("click", function () {
         // Open Google OAuth consent in a popup
         var redirectUri = window.location.origin + window.location.pathname;
-        var scope = "https://www.googleapis.com/auth/gmail.readonly";
+        var scope = "https://www.googleapis.com/auth/gmail.modify";
         var authUrl = "https://accounts.google.com/o/oauth2/v2/auth" +
           "?client_id=" + encodeURIComponent(googleOAuthClientId) +
           "&redirect_uri=" + encodeURIComponent(redirectUri) +
@@ -3636,6 +3746,69 @@
     }
     if (el.refreshSkippedEmails) {
       el.refreshSkippedEmails.addEventListener("click", refreshSkippedEmails);
+    }
+    if (el.refreshEmailRules) {
+      el.refreshEmailRules.addEventListener("click", refreshEmailRules);
+    }
+    if (el.addEmailRuleBtn) {
+      el.addEmailRuleBtn.addEventListener("click", function () {
+        if (!_availableParsers.length) {
+          // Fetch parsers first if not yet loaded
+          refreshEmailRules().then(function () { openRuleModal(); });
+        } else {
+          openRuleModal();
+        }
+      });
+    }
+    if (el.emailRuleModalClose) {
+      el.emailRuleModalClose.addEventListener("click", closeRuleModal);
+    }
+    if (el.emailRuleCancel) {
+      el.emailRuleCancel.addEventListener("click", closeRuleModal);
+    }
+    if (el.emailRuleModal) {
+      el.emailRuleModal.addEventListener("click", function (e) {
+        if (e.target === el.emailRuleModal) closeRuleModal();
+      });
+    }
+    if (el.emailRuleForm) {
+      el.emailRuleForm.addEventListener("submit", saveEmailRule);
+    }
+    // Event delegation for edit/delete buttons in rules table
+    if (el.emailRulesList) {
+      el.emailRulesList.addEventListener("click", function (e) {
+        var editBtn = e.target.closest("[data-rule-edit]");
+        if (editBtn) {
+          var ds = editBtn.dataset;
+          if (!_availableParsers.length) {
+            refreshEmailRules().then(function () {
+              openRuleModal({ rule_id: ds.ruleEdit, name: ds.ruleName, sender: ds.ruleSender, subject: ds.ruleSubject, parser: ds.ruleParser, enabled: ds.ruleEnabled !== "false" });
+            });
+          } else {
+            openRuleModal({ rule_id: ds.ruleEdit, name: ds.ruleName, sender: ds.ruleSender, subject: ds.ruleSubject, parser: ds.ruleParser, enabled: ds.ruleEnabled !== "false" });
+          }
+        }
+        var deleteBtn = e.target.closest("[data-rule-delete]");
+        if (deleteBtn) {
+          deleteEmailRule(deleteBtn.dataset.ruleDelete, deleteBtn.dataset.ruleName);
+        }
+      });
+    }
+    // Event delegation for "Create Rule" buttons in skipped emails table
+    if (el.skippedEmailsList) {
+      el.skippedEmailsList.addEventListener("click", function (e) {
+        var createBtn = e.target.closest("[data-create-rule-sender]");
+        if (createBtn) {
+          var sender = createBtn.dataset.createRuleSender || "";
+          // Extract domain from email address for a sensible default pattern
+          var domain = sender.includes("@") ? sender.split("@")[1] : sender;
+          if (!_availableParsers.length) {
+            refreshEmailRules().then(function () { openRuleModal({ sender: domain, subject: createBtn.dataset.createRuleSubject || "" }); });
+          } else {
+            openRuleModal({ sender: domain, subject: createBtn.dataset.createRuleSubject || "" });
+          }
+        }
+      });
     }
   }
 

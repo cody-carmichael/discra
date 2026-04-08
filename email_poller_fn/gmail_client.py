@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover
     Credentials = None
     build = None
 
-GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 

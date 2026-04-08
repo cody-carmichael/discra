@@ -3552,11 +3552,13 @@
 
   var _availableParsers = [];
 
-  // Human-readable labels for each internal parser key
+  // Human-readable labels for each internal parser key.
+  // Descriptions focus on the email format/layout, not the company name,
+  // so any business can identify the right option regardless of carrier.
   var _PARSER_LABELS = {
-    "email-marken":  "Marken — PICKUP ALERT emails",
-    "email-airspace": "Airspace — Pickup / Delivery Dispatch emails",
-    "email-cap":     "CAP Logistics — Agent Alert emails (PDF attachment)",
+    "email-marken":   "HTML table layout — order #, pickup address, and delivery address in columns (e.g. Marken)",
+    "email-airspace": "Labeled sections — PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP/DELIVER BY blocks in the email body (e.g. Airspace)",
+    "email-cap":      "PDF attachment — order details are in an attached PDF, not the email body (e.g. CAP Logistics)",
   };
 
   function _parserLabel(key) {

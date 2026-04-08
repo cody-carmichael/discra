@@ -3552,6 +3552,17 @@
 
   var _availableParsers = [];
 
+  // Human-readable labels for each internal parser key
+  var _PARSER_LABELS = {
+    "email-marken":  "Marken — PICKUP ALERT emails",
+    "email-airspace": "Airspace — Pickup / Delivery Dispatch emails",
+    "email-cap":     "CAP Logistics — Agent Alert emails (PDF attachment)",
+  };
+
+  function _parserLabel(key) {
+    return _PARSER_LABELS[key] || key;
+  }
+
   async function refreshEmailRules() {
     try {
       var resp = await C.requestJson(apiBase, "/email/rules", { token: token });
@@ -3561,13 +3572,13 @@
         if (el.emailRulesList) el.emailRulesList.innerHTML = "<p>No rules configured.</p>";
         return;
       }
-      var html = '<table class="orders-table"><thead><tr><th>Name</th><th>Sender Contains</th><th>Subject Contains</th><th>Parser</th><th>Enabled</th><th></th></tr></thead><tbody>';
+      var html = '<table class="orders-table"><thead><tr><th>Name</th><th>Emails from</th><th>Subject contains</th><th>Company / format</th><th>Active</th><th></th></tr></thead><tbody>';
       items.forEach(function (rule) {
         html += "<tr>" +
           "<td>" + C.escapeHtml(rule.name) + "</td>" +
           "<td><code>" + C.escapeHtml(rule.sender_pattern) + "</code></td>" +
           "<td>" + (rule.subject_pattern ? "<code>" + C.escapeHtml(rule.subject_pattern) + "</code>" : "<em>any</em>") + "</td>" +
-          "<td>" + C.escapeHtml(rule.parser_type) + "</td>" +
+          "<td>" + C.escapeHtml(_parserLabel(rule.parser_type)) + "</td>" +
           "<td>" + (rule.enabled ? "Yes" : "No") + "</td>" +
           '<td style="white-space:nowrap">' +
             '<button class="btn btn-ghost" data-rule-edit="' + C.escapeHtml(rule.rule_id) + '" data-rule-name="' + C.escapeHtml(rule.name) + '" data-rule-sender="' + C.escapeHtml(rule.sender_pattern) + '" data-rule-subject="' + C.escapeHtml(rule.subject_pattern || "") + '" data-rule-parser="' + C.escapeHtml(rule.parser_type) + '" data-rule-enabled="' + rule.enabled + '">Edit</button> ' +
@@ -3588,7 +3599,7 @@
     _availableParsers.forEach(function (p) {
       var opt = document.createElement("option");
       opt.value = p;
-      opt.textContent = p;
+      opt.textContent = _parserLabel(p);
       if (p === selectedParser) opt.selected = true;
       el.emailRuleParser.appendChild(opt);
     });
@@ -3596,7 +3607,7 @@
 
   function openRuleModal(prefill) {
     prefill = prefill || {};
-    if (el.emailRuleModalTitle) el.emailRuleModalTitle.textContent = prefill.rule_id ? "Edit Rule" : "Add Classification Rule";
+    if (el.emailRuleModalTitle) el.emailRuleModalTitle.textContent = prefill.rule_id ? "Edit Email Rule" : "New Email Rule";
     if (el.emailRuleId) el.emailRuleId.value = prefill.rule_id || "";
     if (el.emailRuleName) el.emailRuleName.value = prefill.name || "";
     if (el.emailRuleSender) el.emailRuleSender.value = prefill.sender || "";

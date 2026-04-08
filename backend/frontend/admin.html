@@ -563,33 +563,37 @@
   <div id="email-rule-modal" class="modal-overlay" hidden>
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3 id="email-rule-modal-title">Add Classification Rule</h3>
+        <h3 id="email-rule-modal-title">New Email Rule</h3>
         <button id="email-rule-modal-close" class="btn btn-ghost modal-close" type="button" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
+        <p class="panel-help" style="margin-bottom:16px">Tell the system which emails to watch for and how to read them as orders.</p>
         <form id="email-rule-form" class="form-grid">
           <input type="hidden" id="email-rule-id" value="">
           <label class="field field-span-2">
-            <span>Rule Name</span>
-            <input id="email-rule-name" type="text" maxlength="120" placeholder="e.g. Vel Logistix Airspace" required>
+            <span>Rule name</span>
+            <input id="email-rule-name" type="text" maxlength="120" placeholder="e.g. Vel Logistix, Marken Chicago" required>
           </label>
           <label class="field field-span-2">
-            <span>Sender Contains</span>
-            <input id="email-rule-sender" type="text" maxlength="200" placeholder="e.g. vellogistix.com" required>
+            <span>Emails from…</span>
+            <small class="field-help">The sender's email address or domain must contain this text.</small>
+            <input id="email-rule-sender" type="text" maxlength="200" placeholder="e.g. vellogistix.com or dispatch@example.com" required>
           </label>
           <label class="field field-span-2">
-            <span>Subject Contains <small style="font-weight:normal">(optional — leave blank to match any subject)</small></span>
-            <input id="email-rule-subject" type="text" maxlength="200" placeholder="e.g. dispatch">
+            <span>With a subject containing… <em style="font-weight:normal;font-style:normal">(optional)</em></span>
+            <small class="field-help">Leave blank to match any email from that sender.</small>
+            <input id="email-rule-subject" type="text" maxlength="200" placeholder="e.g. Dispatch, Pickup Alert, Order">
           </label>
           <label class="field field-span-2">
-            <span>Parser Format</span>
+            <span>Who sends these orders?</span>
+            <small class="field-help">Pick the company that sends this email so we know how to read it.</small>
             <select id="email-rule-parser" required></select>
           </label>
-          <label class="field field-span-2" style="flex-direction:row;align-items:center;gap:8px">
+          <label class="field field-span-2" style="flex-direction:row;align-items:center;gap:8px;padding-top:4px">
             <input id="email-rule-enabled" type="checkbox" checked style="width:auto">
-            <span>Enabled</span>
+            <span>Rule is active</span>
           </label>
-          <div class="row field-span-2" style="justify-content:flex-end;gap:8px">
+          <div class="row field-span-2" style="justify-content:flex-end;gap:8px;margin-top:4px">
             <button type="button" id="email-rule-cancel" class="btn btn-ghost">Cancel</button>
             <button type="submit" class="btn btn-primary">Save Rule</button>
           </div>

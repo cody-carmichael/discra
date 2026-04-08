@@ -284,11 +284,13 @@ class MarkenEmailParser(EmailParser):
 
 
 class AirspaceEmailParser(EmailParser):
-    """Parser for Airspace Pickup Dispatch emails.
+    """Parser for Airspace Pickup/Delivery Dispatch emails.
 
     These emails have a well-structured HTML layout with labeled sections:
-    ORDER REFERENCES, PICKUP ADDRESS, PICKUP CONTACT, DELIVERY ADDRESS,
+    ORDER REFERENCES, PICKUP ADDRESS, PICKUP/DELIVERY CONTACT, DELIVERY ADDRESS,
     FLIGHT INFO, VEHICLE TYPE, DANGEROUS GOODS, TOTAL PIECES, TOTAL WEIGHT.
+    Handles both "Pickup Dispatch" (PICKUP BY / TENDER BY TIME / PICKUP CONTACT)
+    and "Delivery Dispatch" (PICKUP TIME / DELIVER BY / DELIVERY CONTACT) formats.
     """
 
     def parse(self, message: GmailMessage) -> Optional[ParsedOrder]:
@@ -317,13 +319,13 @@ class AirspaceEmailParser(EmailParser):
         )
         tracking_id = tracking_match.group(1) if tracking_match else ""
 
-        # PICKUP TIME / PICKUP BY
-        pickup_by_match = re.search(r"PICKUP BY:\s*\n?\s*(.+?)(?:\n|$)", body_text)
+        # PICKUP BY (Pickup Dispatch) or PICKUP TIME (Delivery Dispatch)
+        pickup_by_match = re.search(r"PICKUP(?:\s+BY|TIME):\s*\n?\s*(.+?)(?:\n|$)", body_text)
         if pickup_by_match:
             order.pickup_deadline = _parse_datetime_flexible(pickup_by_match.group(1).strip())
 
-        # TENDER BY TIME
-        tender_match = re.search(r"TENDER BY TIME:\s*\n?\s*(.+?)(?:\n|$)", body_text)
+        # TENDER BY TIME (Pickup Dispatch) or DELIVER BY (Delivery Dispatch)
+        tender_match = re.search(r"(?:TENDER BY TIME|DELIVER BY):\s*\n?\s*(.+?)(?:\n|$)", body_text)
         if tender_match:
             order.dropoff_deadline = _parse_datetime_flexible(tender_match.group(1).strip())
 
@@ -338,8 +340,8 @@ class AirspaceEmailParser(EmailParser):
         # PICKUP ADDRESS - look for labeled section
         self._parse_address_section(order, body_text, "PICKUP ADDRESS:", "pick_up")
 
-        # PICKUP CONTACT
-        contact_match = re.search(r"PICKUP CONTACT:\s*\n?\s*(.+?)(?:\n\+|\n[A-Z])", body_text, re.DOTALL)
+        # PICKUP CONTACT (Pickup Dispatch) or DELIVERY CONTACT (Delivery Dispatch)
+        contact_match = re.search(r"(?:PICKUP|DELIVERY) CONTACT:\s*\n?\s*(.+?)(?:\n\+|\n[A-Z])", body_text, re.DOTALL)
         if contact_match:
             contact_lines = [l.strip() for l in contact_match.group(1).strip().split("\n") if l.strip()]
             if contact_lines:
@@ -383,7 +385,7 @@ class AirspaceEmailParser(EmailParser):
         order.notes = " | ".join(notes_parts)
 
         if not order.customer_name:
-            order.customer_name = "Airspace Pickup"
+            order.customer_name = "Airspace Dispatch"
 
         return order if order.reference_id else None
 

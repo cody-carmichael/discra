@@ -122,6 +122,10 @@
     emailRuleSender: document.getElementById("email-rule-sender"),
     emailRuleSubject: document.getElementById("email-rule-subject"),
     emailRuleParser: document.getElementById("email-rule-parser"),
+    emailDetectFile: document.getElementById("email-detect-file"),
+    emailDetectText: document.getElementById("email-detect-text"),
+    emailDetectBtn: document.getElementById("email-detect-btn"),
+    emailDetectResult: document.getElementById("email-detect-result"),
     emailRuleEnabled: document.getElementById("email-rule-enabled"),
     mapContainer: document.getElementById("driver-map"),
     cognitoDomain: document.getElementById("cognito-domain"),
@@ -3623,6 +3627,74 @@
     if (el.emailRuleModal) el.emailRuleModal.hidden = true;
     if (el.emailRuleForm) el.emailRuleForm.reset();
     if (el.emailRuleId) el.emailRuleId.value = "";
+    if (el.emailDetectResult) { el.emailDetectResult.style.display = "none"; el.emailDetectResult.textContent = ""; }
+  }
+
+  async function detectEmailFormat() {
+    var file = el.emailDetectFile && el.emailDetectFile.files && el.emailDetectFile.files[0];
+    var text = el.emailDetectText && el.emailDetectText.value.trim();
+
+    if (!file && !text) {
+      if (el.emailDetectResult) {
+        el.emailDetectResult.style.display = "block";
+        el.emailDetectResult.style.color = "var(--color-error, #e55)";
+        el.emailDetectResult.textContent = "Please upload a file or paste the email text first.";
+      }
+      return;
+    }
+
+    if (el.emailDetectBtn) el.emailDetectBtn.disabled = true;
+    if (el.emailDetectResult) {
+      el.emailDetectResult.style.display = "block";
+      el.emailDetectResult.style.color = "var(--text-muted, #aaa)";
+      el.emailDetectResult.textContent = "Analyzing…";
+    }
+
+    try {
+      var formData = new FormData();
+      if (file) {
+        formData.append("file", file);
+      } else {
+        formData.append("text", text);
+      }
+
+      var resp = await C.requestJson(apiBase, "/email/rules/detect-format", {
+        method: "POST",
+        token: token,
+        body: formData,
+      });
+
+      var parserType = resp && resp.parser_type;
+      var confidence = resp && resp.confidence;
+      var reason = resp && resp.reason;
+
+      if (!parserType || parserType === "unknown") {
+        if (el.emailDetectResult) {
+          el.emailDetectResult.style.color = "var(--color-warn, #f90)";
+          el.emailDetectResult.textContent = "Couldn't confidently match a format. " + (reason || "Try selecting one manually.");
+        }
+        return;
+      }
+
+      // Pre-select the detected parser in the dropdown
+      if (el.emailRuleParser) {
+        el.emailRuleParser.value = parserType;
+      }
+
+      var label = _parserLabel(parserType);
+      var confidenceText = confidence === "high" ? "High confidence" : confidence === "medium" ? "Medium confidence" : "Low confidence";
+      if (el.emailDetectResult) {
+        el.emailDetectResult.style.color = "var(--color-success, #4c4)";
+        el.emailDetectResult.textContent = "✓ " + confidenceText + " — " + label + ". " + (reason || "");
+      }
+    } catch (error) {
+      if (el.emailDetectResult) {
+        el.emailDetectResult.style.color = "var(--color-error, #e55)";
+        el.emailDetectResult.textContent = "Detection failed: " + error.message;
+      }
+    } finally {
+      if (el.emailDetectBtn) el.emailDetectBtn.disabled = false;
+    }
   }
 
   async function saveEmailRule(e) {
@@ -3786,6 +3858,9 @@
     }
     if (el.emailRuleForm) {
       el.emailRuleForm.addEventListener("submit", saveEmailRule);
+    }
+    if (el.emailDetectBtn) {
+      el.emailDetectBtn.addEventListener("click", detectEmailFormat);
     }
     // Event delegation for edit/delete buttons in rules table
     if (el.emailRulesList) {

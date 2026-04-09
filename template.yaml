@@ -153,10 +153,7 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /discra/vapid-public-key
     Description: VAPID public key (URL-safe base64) for Web Push notifications
-  VapidPrivateKey:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /discra/vapid-private-key
-    Description: VAPID private key for signing Web Push messages (SSM parameter must be String type, not SecureString)
+  # VapidPrivateKey is a SecureString in SSM — fetched at runtime by push_service.py via boto3, not injected as env var
   AnthropicApiKey:
     Type: String
     Default: ""
@@ -631,7 +628,7 @@ Resources:
           AUDIT_LOGS_TABLE: !Ref AuditLogsTable
           PUSH_SUBSCRIPTIONS_TABLE: !Ref PushSubscriptionsTable
           VAPID_PUBLIC_KEY: !Ref VapidPublicKey
-          VAPID_PRIVATE_KEY: !Ref VapidPrivateKey
+          VAPID_PRIVATE_KEY_PARAM: /discra/vapid-private-key
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
           VAPID_CLAIM_EMAIL: !Ref VapidClaimEmail
           COGNITO_HOSTED_UI_DOMAIN: !Ref CognitoHostedUiDomain
@@ -720,6 +717,16 @@ Resources:
             Action:
               - execute-api:ManageConnections
             Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - ssm:GetParameter
+            Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/discra/vapid-private-key"
+        - Statement:
+            Effect: Allow
+            Action:
+              - kms:Decrypt
+            Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
       Events:
         BackendHealthGet:
           Type: HttpApi

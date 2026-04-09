@@ -15,6 +15,40 @@ except ModuleNotFoundError:  # local run from backend/ directory
 
 logger = logging.getLogger(__name__)
 
+_vapid_private_key_cache: str = ""
+
+
+def _get_vapid_private_key() -> str:
+    """Fetch the VAPID private key from SSM SecureString at runtime.
+
+    The env var VAPID_PRIVATE_KEY_PARAM holds the SSM parameter path.
+    Falls back to VAPID_PRIVATE_KEY env var for local development.
+    Result is cached for the lifetime of the Lambda container.
+    """
+    global _vapid_private_key_cache
+    if _vapid_private_key_cache:
+        return _vapid_private_key_cache
+
+    # Local dev fallback
+    direct = os.environ.get("VAPID_PRIVATE_KEY", "")
+    if direct:
+        _vapid_private_key_cache = direct
+        return _vapid_private_key_cache
+
+    param_path = os.environ.get("VAPID_PRIVATE_KEY_PARAM", "")
+    if not param_path:
+        return ""
+
+    try:
+        import boto3
+        ssm = boto3.client("ssm")
+        resp = ssm.get_parameter(Name=param_path, WithDecryption=True)
+        _vapid_private_key_cache = resp["Parameter"]["Value"]
+    except Exception as e:
+        logger.error("Failed to fetch VAPID private key from SSM: %s", e)
+
+    return _vapid_private_key_cache
+
 
 def send_push_notification(org_id: str, driver_id: str, payload: dict) -> bool:
     """Send a Web Push notification to a driver. Returns True if sent successfully.
@@ -26,7 +60,7 @@ def send_push_notification(org_id: str, driver_id: str, payload: dict) -> bool:
         logger.debug("pywebpush not installed, skipping push notification")
         return False
 
-    vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY", "")
+    vapid_private_key = _get_vapid_private_key()
     vapid_claim_email = os.environ.get("VAPID_CLAIM_EMAIL", "")
     if not vapid_private_key or not vapid_claim_email:
         logger.debug("VAPID keys not configured, skipping push notification")

@@ -153,7 +153,15 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /discra/vapid-public-key
     Description: VAPID public key (URL-safe base64) for Web Push notifications
-  # VapidPrivateKey is SecureString — resolved inline via dynamic reference, not a Parameter
+  VapidPrivateKey:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /discra/vapid-private-key
+    Description: VAPID private key for signing Web Push messages (SSM parameter must be String type, not SecureString)
+  AnthropicApiKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Anthropic API key for AI email format detection and parsing
   VapidClaimEmail:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /discra/vapid-claim-email
@@ -623,8 +631,8 @@ Resources:
           AUDIT_LOGS_TABLE: !Ref AuditLogsTable
           PUSH_SUBSCRIPTIONS_TABLE: !Ref PushSubscriptionsTable
           VAPID_PUBLIC_KEY: !Ref VapidPublicKey
-          VAPID_PRIVATE_KEY: "{{resolve:ssm-secure:/discra/vapid-private-key}}"
-          ANTHROPIC_API_KEY: "{{resolve:ssm-secure:/discra/dev-auth-anthropic}}"
+          VAPID_PRIVATE_KEY: !Ref VapidPrivateKey
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
           VAPID_CLAIM_EMAIL: !Ref VapidClaimEmail
           COGNITO_HOSTED_UI_DOMAIN: !Ref CognitoHostedUiDomain
           FRONTEND_COGNITO_CLIENT_ID: !Ref CognitoAppClientId
@@ -712,11 +720,6 @@ Resources:
             Action:
               - execute-api:ManageConnections
             Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
-        - Statement:
-            Effect: Allow
-            Action:
-              - kms:Decrypt
-            Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
       Events:
         BackendHealthGet:
           Type: HttpApi
@@ -850,7 +853,7 @@ Resources:
           GOOGLE_OAUTH_CLIENT_SECRET: !Ref GoogleOAuthClientSecret
           WS_CONNECTIONS_TABLE: !Ref WsConnectionsTable
           WS_API_ENDPOINT: !Sub "https://${DiscraWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/dev"
-          ANTHROPIC_API_KEY: "{{resolve:ssm-secure:/discra/dev-auth-anthropic}}"
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
       Policies:
         - Statement:
             Effect: Allow
@@ -872,11 +875,6 @@ Resources:
             Action:
               - execute-api:ManageConnections
             Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
-        - Statement:
-            Effect: Allow
-            Action:
-              - kms:Decrypt
-            Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
       Events:
         ScheduledPoll:
           Type: Schedule

@@ -1,11 +1,13 @@
 """REST endpoints for email integration: connect, disconnect, status, skipped emails, rules."""
 
+import base64
+import email as _email_stdlib
 import os
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 try:
@@ -334,3 +336,163 @@ async def delete_email_rule(
 
     config_store.put_config(config)
     return None
+
+
+# ── AI Format Detection ───────────────────────────────────────────
+
+_DETECT_PROMPT = """You are an email format classifier for a logistics dispatch system. Classify the email into one of these formats based on its layout and content structure:
+
+- "email-marken": The email body contains an HTML table with columns showing order number, pickup address, delivery address, pieces, weight, and timing fields arranged side by side. Fields like PCS/WT, DIMS, PICKUP START, PICKUP END, DELIVER BY. Contains a "PICKUP FROM:" section.
+- "email-airspace": The email body uses labeled sections — each field is on its own line: PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP BY / PICKUP TIME, TENDER BY TIME / DELIVER BY, PICKUP CONTACT / DELIVERY CONTACT, TOTAL PIECES, TOTAL WEIGHT, AIR WAYBILLS, FLIGHT INFO.
+- "email-cap": The email body has minimal order detail and references a PDF attachment that contains the full order.
+- "email-ai": None of the above formats match, or the content is ambiguous — use this when the email layout doesn't clearly fit the three formats above.
+
+Respond with JSON only — no explanation, no markdown, just the object:
+{
+  "parser_type": "email-marken" | "email-airspace" | "email-cap" | "email-ai",
+  "confidence": "high" | "medium" | "low",
+  "reason": "one sentence explaining what you found that led to this choice"
+}"""
+
+
+class DetectFormatResponse(BaseModel):
+    parser_type: str
+    confidence: str
+    reason: str
+
+
+def _extract_eml_text(raw_bytes: bytes) -> str:
+    """Extract readable text from a raw .eml file."""
+    msg = _email_stdlib.message_from_bytes(raw_bytes)
+    parts = []
+    subject = msg.get("Subject", "")
+    if subject:
+        parts.append(f"Subject: {subject}")
+    sender = msg.get("From", "")
+    if sender:
+        parts.append(f"From: {sender}")
+
+    for part in msg.walk():
+        ct = part.get_content_type()
+        if ct in ("text/plain", "text/html"):
+            try:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    parts.append(payload.decode(part.get_content_charset() or "utf-8", errors="replace"))
+            except Exception:
+                pass
+        elif part.get_filename():
+            parts.append(f"[Attachment: {part.get_filename()}]")
+
+    return "\n\n".join(parts)[:12000]  # cap at ~12k chars to stay within token budget
+
+
+@router.post("/rules/detect-format", response_model=DetectFormatResponse)
+async def detect_email_format(
+    file: Optional[UploadFile] = File(default=None),
+    text: Optional[str] = Form(default=None),
+    user=Depends(require_roles([ROLE_ADMIN])),
+):
+    """
+    Use Claude to classify an email's format from a screenshot, .eml file, or pasted text.
+    Returns the best-matching parser_type, confidence, and a short reason.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI format detection is not configured (missing ANTHROPIC_API_KEY)",
+        )
+
+    try:
+        import anthropic
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="anthropic package not available",
+        )
+
+    if not file and not text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide either a file upload or pasted text",
+        )
+
+    client = anthropic.Anthropic(api_key=api_key)
+    messages: list = []
+
+    if file:
+        raw = await file.read()
+        filename = (file.filename or "").lower()
+        content_type = (file.content_type or "").lower()
+
+        is_image = content_type.startswith("image/") or any(
+            filename.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")
+        )
+        is_eml = filename.endswith(".eml") or content_type in ("message/rfc822", "application/octet-stream")
+
+        if is_image:
+            # Vision: send image to Claude
+            media_type = content_type if content_type.startswith("image/") else "image/png"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": base64.standard_b64encode(raw).decode(),
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": "This is a screenshot of a dispatch email. " + _DETECT_PROMPT,
+                        },
+                    ],
+                }
+            ]
+        elif is_eml:
+            email_text = _extract_eml_text(raw)
+            messages = [{"role": "user", "content": f"Email content:\n\n{email_text}\n\n{_DETECT_PROMPT}"}]
+        else:
+            # Unknown file type — try treating as text
+            try:
+                email_text = raw.decode("utf-8", errors="replace")[:12000]
+            except Exception:
+                raise HTTPException(status_code=400, detail="Could not read file. Upload a PNG/JPG screenshot or .eml file.")
+            messages = [{"role": "user", "content": f"Email content:\n\n{email_text}\n\n{_DETECT_PROMPT}"}]
+    else:
+        messages = [{"role": "user", "content": f"Email content:\n\n{text[:12000]}\n\n{_DETECT_PROMPT}"}]
+
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=256,
+            messages=messages,
+        )
+        raw_text = response.content[0].text.strip()
+        # Strip markdown code fences if present
+        if raw_text.startswith("```"):
+            raw_text = raw_text.split("```")[1]
+            if raw_text.startswith("json"):
+                raw_text = raw_text[4:]
+        import json
+        result = json.loads(raw_text)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI classification failed: {e}",
+        )
+
+    parser_type = result.get("parser_type", "email-ai")
+    # Validate — if AI returned something unexpected, fall back to email-ai
+    if parser_type not in PARSERS:
+        parser_type = "email-ai"
+
+    return DetectFormatResponse(
+        parser_type=parser_type,
+        confidence=result.get("confidence", "low"),
+        reason=result.get("reason", ""),
+    )

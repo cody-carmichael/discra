@@ -122,6 +122,10 @@
     emailRuleSender: document.getElementById("email-rule-sender"),
     emailRuleSubject: document.getElementById("email-rule-subject"),
     emailRuleParser: document.getElementById("email-rule-parser"),
+    emailDetectFile: document.getElementById("email-detect-file"),
+    emailDetectText: document.getElementById("email-detect-text"),
+    emailDetectBtn: document.getElementById("email-detect-btn"),
+    emailDetectResult: document.getElementById("email-detect-result"),
     emailRuleEnabled: document.getElementById("email-rule-enabled"),
     mapContainer: document.getElementById("driver-map"),
     cognitoDomain: document.getElementById("cognito-domain"),
@@ -3556,9 +3560,10 @@
   // Descriptions focus on the email format/layout, not the company name,
   // so any business can identify the right option regardless of carrier.
   var _PARSER_LABELS = {
-    "email-marken":   "HTML table layout — order #, pickup address, and delivery address in columns (e.g. Marken)",
-    "email-airspace": "Labeled sections — PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP/DELIVER BY blocks in the email body (e.g. Airspace)",
-    "email-cap":      "PDF attachment — order details are in an attached PDF, not the email body (e.g. CAP Logistics)",
+    "email-marken":   "Table layout — order details appear in an HTML table with columns for pickup, delivery, and timing",
+    "email-airspace": "Labeled sections — each field is on its own line: PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP BY / DELIVER BY",
+    "email-cap":      "PDF attachment — the email body has little detail; the full order is inside an attached PDF",
+    "email-ai":       "Let AI read it — works with any email format (we'll figure it out automatically)",
   };
 
   function _parserLabel(key) {
@@ -3623,6 +3628,81 @@
     if (el.emailRuleModal) el.emailRuleModal.hidden = true;
     if (el.emailRuleForm) el.emailRuleForm.reset();
     if (el.emailRuleId) el.emailRuleId.value = "";
+    if (el.emailDetectResult) { el.emailDetectResult.style.display = "none"; el.emailDetectResult.textContent = ""; }
+  }
+
+  async function detectEmailFormat() {
+    var file = el.emailDetectFile && el.emailDetectFile.files && el.emailDetectFile.files[0];
+    var text = el.emailDetectText && el.emailDetectText.value.trim();
+
+    if (!file && !text) {
+      if (el.emailDetectResult) {
+        el.emailDetectResult.style.display = "block";
+        el.emailDetectResult.style.color = "var(--color-error, #e55)";
+        el.emailDetectResult.textContent = "Please upload a file or paste the email text first.";
+      }
+      return;
+    }
+
+    if (el.emailDetectBtn) el.emailDetectBtn.disabled = true;
+    if (el.emailDetectResult) {
+      el.emailDetectResult.style.display = "block";
+      el.emailDetectResult.style.color = "var(--text-muted, #aaa)";
+      el.emailDetectResult.textContent = "Analyzing…";
+    }
+
+    try {
+      var formData = new FormData();
+      if (file) {
+        formData.append("file", file);
+      } else {
+        formData.append("text", text);
+      }
+
+      var resp = await C.requestJson(apiBase, "/email/rules/detect-format", {
+        method: "POST",
+        token: token,
+        body: formData,
+      });
+
+      var parserType = resp && resp.parser_type;
+      var confidence = resp && resp.confidence;
+      var reason = resp && resp.reason;
+
+      if (!parserType) {
+        if (el.emailDetectResult) {
+          el.emailDetectResult.style.color = "var(--color-warn, #f90)";
+          el.emailDetectResult.textContent = "Couldn't determine a format. Try selecting one manually.";
+        }
+        return;
+      }
+
+      // Pre-select the detected parser in the dropdown
+      if (el.emailRuleParser) {
+        el.emailRuleParser.value = parserType;
+      }
+
+      var label = _parserLabel(parserType);
+      if (parserType === "email-ai") {
+        if (el.emailDetectResult) {
+          el.emailDetectResult.style.color = "var(--color-info, #4a9eff)";
+          el.emailDetectResult.textContent = "No exact format matched — \"Let AI read it\" selected as a fallback. " + (reason || "");
+        }
+      } else {
+        var confidenceText = confidence === "high" ? "High confidence" : confidence === "medium" ? "Medium confidence" : "Low confidence";
+        if (el.emailDetectResult) {
+          el.emailDetectResult.style.color = "var(--color-success, #4c4)";
+          el.emailDetectResult.textContent = "✓ " + confidenceText + " — " + label + ". " + (reason || "");
+        }
+      }
+    } catch (error) {
+      if (el.emailDetectResult) {
+        el.emailDetectResult.style.color = "var(--color-error, #e55)";
+        el.emailDetectResult.textContent = "Detection failed: " + error.message;
+      }
+    } finally {
+      if (el.emailDetectBtn) el.emailDetectBtn.disabled = false;
+    }
   }
 
   async function saveEmailRule(e) {
@@ -3786,6 +3866,9 @@
     }
     if (el.emailRuleForm) {
       el.emailRuleForm.addEventListener("submit", saveEmailRule);
+    }
+    if (el.emailDetectBtn) {
+      el.emailDetectBtn.addEventListener("click", detectEmailFormat);
     }
     // Event delegation for edit/delete buttons in rules table
     if (el.emailRulesList) {

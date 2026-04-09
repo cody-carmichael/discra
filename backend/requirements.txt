@@ -9,3 +9,5 @@ google-auth
 google-auth-oauthlib
 ortools
 beautifulsoup4
+anthropic
+python-multipart

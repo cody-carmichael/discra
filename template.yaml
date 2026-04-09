@@ -153,10 +153,7 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /discra/vapid-public-key
     Description: VAPID public key (URL-safe base64) for Web Push notifications
-  VapidPrivateKey:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /discra/vapid-private-key
-    Description: VAPID private key for signing Web Push messages
+  # VapidPrivateKey is SecureString — resolved inline via dynamic reference, not a Parameter
   VapidClaimEmail:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /discra/vapid-claim-email
@@ -626,7 +623,8 @@ Resources:
           AUDIT_LOGS_TABLE: !Ref AuditLogsTable
           PUSH_SUBSCRIPTIONS_TABLE: !Ref PushSubscriptionsTable
           VAPID_PUBLIC_KEY: !Ref VapidPublicKey
-          VAPID_PRIVATE_KEY: !Ref VapidPrivateKey
+          VAPID_PRIVATE_KEY: "{{resolve:ssm-secure:/discra/vapid-private-key}}"
+          ANTHROPIC_API_KEY: "{{resolve:ssm-secure:/discra/dev-auth-anthropic}}"
           VAPID_CLAIM_EMAIL: !Ref VapidClaimEmail
           COGNITO_HOSTED_UI_DOMAIN: !Ref CognitoHostedUiDomain
           FRONTEND_COGNITO_CLIENT_ID: !Ref CognitoAppClientId
@@ -714,6 +712,11 @@ Resources:
             Action:
               - execute-api:ManageConnections
             Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - kms:Decrypt
+            Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
       Events:
         BackendHealthGet:
           Type: HttpApi
@@ -847,6 +850,7 @@ Resources:
           GOOGLE_OAUTH_CLIENT_SECRET: !Ref GoogleOAuthClientSecret
           WS_CONNECTIONS_TABLE: !Ref WsConnectionsTable
           WS_API_ENDPOINT: !Sub "https://${DiscraWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/dev"
+          ANTHROPIC_API_KEY: "{{resolve:ssm-secure:/discra/dev-auth-anthropic}}"
       Policies:
         - Statement:
             Effect: Allow
@@ -868,6 +872,11 @@ Resources:
             Action:
               - execute-api:ManageConnections
             Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - kms:Decrypt
+            Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
       Events:
         ScheduledPoll:
           Type: Schedule

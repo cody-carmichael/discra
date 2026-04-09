@@ -340,33 +340,16 @@ async def delete_email_rule(
 
 # ── AI Format Detection ───────────────────────────────────────────
 
-_DETECT_PROMPT = """You are helping a logistics dispatcher configure an email integration.
+_DETECT_PROMPT = """You are an email format classifier for a logistics dispatch system. Classify the email into one of these formats based on its layout and content structure:
 
-The system supports three email formats. Your job is to read the provided email content
-and determine which format it matches.
-
-FORMAT OPTIONS:
-1. "email-marken"
-   - HTML table with columns: ORDER#, INFO, DELIVER TO, ROUTING
-   - Contains "PICKUP FROM:" section with name/address/phone
-   - Fields like "PCS/WT:", "DIMS:", "PICKUP START:", "PICKUP END:", "DELIVER BY:"
-   - Subject typically contains "PICKUP ALERT #"
-
-2. "email-airspace"
-   - Structured sections with clear labels on their own lines:
-     PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP BY / PICKUP TIME,
-     TENDER BY TIME / DELIVER BY, PICKUP CONTACT / DELIVERY CONTACT,
-     TOTAL PIECES, TOTAL WEIGHT, AIR WAYBILLS, FLIGHT INFO
-   - Subject typically contains "Tracking ID" and "Order #" and "Dispatch"
-
-3. "email-cap"
-   - The email body has minimal order detail
-   - The actual order is in a PDF attachment
-   - Subject typically contains "Agent Alert"
+- "email-marken": The email body contains an HTML table with columns showing order number, pickup address, delivery address, pieces, weight, and timing fields arranged side by side. Fields like PCS/WT, DIMS, PICKUP START, PICKUP END, DELIVER BY. Contains a "PICKUP FROM:" section.
+- "email-airspace": The email body uses labeled sections — each field is on its own line: PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP BY / PICKUP TIME, TENDER BY TIME / DELIVER BY, PICKUP CONTACT / DELIVERY CONTACT, TOTAL PIECES, TOTAL WEIGHT, AIR WAYBILLS, FLIGHT INFO.
+- "email-cap": The email body has minimal order detail and references a PDF attachment that contains the full order.
+- "email-ai": None of the above formats match, or the content is ambiguous — use this when the email layout doesn't clearly fit the three formats above.
 
 Respond with JSON only — no explanation, no markdown, just the object:
 {
-  "parser_type": "email-marken" | "email-airspace" | "email-cap" | "unknown",
+  "parser_type": "email-marken" | "email-airspace" | "email-cap" | "email-ai",
   "confidence": "high" | "medium" | "low",
   "reason": "one sentence explaining what you found that led to this choice"
 }"""
@@ -503,10 +486,10 @@ async def detect_email_format(
             detail=f"AI classification failed: {e}",
         )
 
-    parser_type = result.get("parser_type", "unknown")
-    # Validate — if AI returned something not in our list, mark as unknown
-    if parser_type not in list(PARSERS.keys()) + ["unknown"]:
-        parser_type = "unknown"
+    parser_type = result.get("parser_type", "email-ai")
+    # Validate — if AI returned something unexpected, fall back to email-ai
+    if parser_type not in PARSERS:
+        parser_type = "email-ai"
 
     return DetectFormatResponse(
         parser_type=parser_type,

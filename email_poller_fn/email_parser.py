@@ -593,11 +593,112 @@ class CapLogisticsEmailParser(EmailParser):
                 break
 
 
+class AiEmailParser(EmailParser):
+    """Universal parser that uses Claude Haiku to extract order fields from any email format."""
+
+    _PROMPT = (
+        "You are a logistics order extraction assistant. Extract order fields from the dispatch"
+        " email below and return ONLY valid JSON with these fields (use null for any field you"
+        " cannot find):\n\n"
+        "{\n"
+        '  "reference_id": "order or PO number",\n'
+        '  "customer_name": "customer or company name",\n'
+        '  "pick_up_street": "pickup street address",\n'
+        '  "pick_up_city": "pickup city",\n'
+        '  "pick_up_state": "pickup state abbreviation",\n'
+        '  "pick_up_zip": "pickup zip code",\n'
+        '  "pickup_phone": "pickup contact phone",\n'
+        '  "delivery_street": "delivery street address",\n'
+        '  "delivery_city": "delivery city",\n'
+        '  "delivery_state": "delivery state abbreviation",\n'
+        '  "delivery_zip": "delivery zip code",\n'
+        '  "delivery_phone": "delivery contact phone",\n'
+        '  "pickup_deadline": "pickup deadline as ISO 8601 datetime or null",\n'
+        '  "dropoff_deadline": "delivery deadline as ISO 8601 datetime or null",\n'
+        '  "weight": "weight as a number in lbs or null",\n'
+        '  "num_packages": "number of pieces/packages as integer or null",\n'
+        '  "dimensions": "dimensions string or null",\n'
+        '  "notes": "any additional notes or special instructions"\n'
+        "}\n\n"
+        "Return only the JSON object, no explanation."
+    )
+
+    def parse(self, message: GmailMessage) -> Optional[ParsedOrder]:
+        try:
+            return self._parse_inner(message)
+        except Exception as e:
+            logger.error("AiEmailParser failed for message %s: %s", message.message_id, e)
+            return None
+
+    def _parse_inner(self, message: GmailMessage) -> Optional[ParsedOrder]:
+        import anthropic
+        import json as _json
+
+        body = message.text_body or message.html_body or ""
+        content = f"Subject: {message.subject}\n\nFrom: {message.sender}\n\n{body}"
+
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": self._PROMPT + "\n\nEmail:\n" + content[:12000]}],
+        )
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        data = _json.loads(raw)
+
+        def _safe_float(val):
+            try:
+                return float(val) if val is not None else None
+            except (ValueError, TypeError):
+                return None
+
+        def _safe_int(val):
+            try:
+                return int(val) if val is not None else None
+            except (ValueError, TypeError):
+                return None
+
+        def _parse_dt(val):
+            if not val:
+                return None
+            try:
+                return datetime.fromisoformat(val).replace(tzinfo=timezone.utc)
+            except Exception:
+                return _parse_datetime_flexible(str(val))
+
+        return ParsedOrder(
+            reference_id=data.get("reference_id") or "",
+            customer_name=data.get("customer_name") or "",
+            pick_up_street=data.get("pick_up_street") or "",
+            pick_up_city=data.get("pick_up_city") or "",
+            pick_up_state=data.get("pick_up_state") or "",
+            pick_up_zip=data.get("pick_up_zip") or "",
+            pickup_phone=data.get("pickup_phone") or "",
+            delivery_street=data.get("delivery_street") or "",
+            delivery_city=data.get("delivery_city") or "",
+            delivery_state=data.get("delivery_state") or "",
+            delivery_zip=data.get("delivery_zip") or "",
+            delivery_phone=data.get("delivery_phone") or "",
+            pickup_deadline=_parse_dt(data.get("pickup_deadline")),
+            dropoff_deadline=_parse_dt(data.get("dropoff_deadline")),
+            weight=_safe_float(data.get("weight")),
+            num_packages=_safe_int(data.get("num_packages")) or 1,
+            dimensions=data.get("dimensions") or "",
+            notes=data.get("notes") or "",
+            source="email-ai",
+        )
+
+
 # Parser registry
 PARSERS = {
     "email-marken": MarkenEmailParser(),
     "email-airspace": AirspaceEmailParser(),
     "email-cap": CapLogisticsEmailParser(),
+    "email-ai": AiEmailParser(),
 }
 
 

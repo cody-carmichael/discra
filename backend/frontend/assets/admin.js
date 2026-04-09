@@ -3560,9 +3560,10 @@
   // Descriptions focus on the email format/layout, not the company name,
   // so any business can identify the right option regardless of carrier.
   var _PARSER_LABELS = {
-    "email-marken":   "HTML table layout — order #, pickup address, and delivery address in columns (e.g. Marken)",
-    "email-airspace": "Labeled sections — PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP/DELIVER BY blocks in the email body (e.g. Airspace)",
-    "email-cap":      "PDF attachment — order details are in an attached PDF, not the email body (e.g. CAP Logistics)",
+    "email-marken":   "Table layout — order details appear in an HTML table with columns for pickup, delivery, and timing",
+    "email-airspace": "Labeled sections — each field is on its own line: PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP BY / DELIVER BY",
+    "email-cap":      "PDF attachment — the email body has little detail; the full order is inside an attached PDF",
+    "email-ai":       "Let AI read it — works with any email format (we'll figure it out automatically)",
   };
 
   function _parserLabel(key) {
@@ -3668,10 +3669,10 @@
       var confidence = resp && resp.confidence;
       var reason = resp && resp.reason;
 
-      if (!parserType || parserType === "unknown") {
+      if (!parserType) {
         if (el.emailDetectResult) {
           el.emailDetectResult.style.color = "var(--color-warn, #f90)";
-          el.emailDetectResult.textContent = "Couldn't confidently match a format. " + (reason || "Try selecting one manually.");
+          el.emailDetectResult.textContent = "Couldn't determine a format. Try selecting one manually.";
         }
         return;
       }
@@ -3682,10 +3683,17 @@
       }
 
       var label = _parserLabel(parserType);
-      var confidenceText = confidence === "high" ? "High confidence" : confidence === "medium" ? "Medium confidence" : "Low confidence";
-      if (el.emailDetectResult) {
-        el.emailDetectResult.style.color = "var(--color-success, #4c4)";
-        el.emailDetectResult.textContent = "✓ " + confidenceText + " — " + label + ". " + (reason || "");
+      if (parserType === "email-ai") {
+        if (el.emailDetectResult) {
+          el.emailDetectResult.style.color = "var(--color-info, #4a9eff)";
+          el.emailDetectResult.textContent = "No exact format matched — \"Let AI read it\" selected as a fallback. " + (reason || "");
+        }
+      } else {
+        var confidenceText = confidence === "high" ? "High confidence" : confidence === "medium" ? "Medium confidence" : "Low confidence";
+        if (el.emailDetectResult) {
+          el.emailDetectResult.style.color = "var(--color-success, #4c4)";
+          el.emailDetectResult.textContent = "✓ " + confidenceText + " — " + label + ". " + (reason || "");
+        }
       }
     } catch (error) {
       if (el.emailDetectResult) {

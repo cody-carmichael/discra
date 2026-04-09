@@ -712,6 +712,11 @@ Resources:
             Action:
               - execute-api:ManageConnections
             Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - kms:Decrypt
+            Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
       Events:
         BackendHealthGet:
           Type: HttpApi
@@ -867,6 +872,11 @@ Resources:
             Action:
               - execute-api:ManageConnections
             Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - kms:Decrypt
+            Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
       Events:
         ScheduledPoll:
           Type: Schedule

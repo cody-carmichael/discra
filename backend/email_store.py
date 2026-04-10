@@ -162,6 +162,14 @@ class SkippedEmailStore(ABC):
     def list_skipped(self, org_id: str, limit: int = 50) -> List[SkippedEmail]:
         raise NotImplementedError
 
+    @abstractmethod
+    def get_skipped(self, org_id: str, email_message_id: str) -> Optional[SkippedEmail]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_skipped(self, org_id: str, email_message_id: str) -> bool:
+        raise NotImplementedError
+
 
 class InMemorySkippedEmailStore(SkippedEmailStore):
     def __init__(self):
@@ -175,6 +183,12 @@ class InMemorySkippedEmailStore(SkippedEmailStore):
         results = [r for r in self.items.values() if r.org_id == org_id]
         results.sort(key=lambda r: r.created_at, reverse=True)
         return results[:limit]
+
+    def get_skipped(self, org_id: str, email_message_id: str) -> Optional[SkippedEmail]:
+        return self.items.get((org_id, email_message_id))
+
+    def delete_skipped(self, org_id: str, email_message_id: str) -> bool:
+        return self.items.pop((org_id, email_message_id), None) is not None
 
 
 class DynamoSkippedEmailStore(SkippedEmailStore):
@@ -197,6 +211,18 @@ class DynamoSkippedEmailStore(SkippedEmailStore):
             Limit=limit,
         )
         return [SkippedEmail.model_validate(item) for item in resp.get("Items", [])]
+
+    def get_skipped(self, org_id: str, email_message_id: str) -> Optional[SkippedEmail]:
+        resp = self._table.get_item(Key={"org_id": org_id, "email_message_id": email_message_id})
+        item = resp.get("Item")
+        return SkippedEmail.model_validate(item) if item else None
+
+    def delete_skipped(self, org_id: str, email_message_id: str) -> bool:
+        resp = self._table.delete_item(
+            Key={"org_id": org_id, "email_message_id": email_message_id},
+            ReturnValues="ALL_OLD",
+        )
+        return bool(resp.get("Attributes"))
 
 
 _IN_MEMORY_SKIPPED_EMAIL_STORE = InMemorySkippedEmailStore()

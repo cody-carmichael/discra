@@ -260,3 +260,73 @@ def test_custom_rule_subject_checked_against_fwd_subject():
         custom_rules=[rule],
     )
     assert result.is_order is True
+
+
+def test_custom_rule_subject_miss_falls_through_to_next_custom_rule():
+    """A first rule whose sender matches but subject does not should not block later rules."""
+    # User has two rules for the same sender: the first has an unmatchable
+    # one-shot subject (e.g. a literal order ID), the second has no subject filter.
+    rule_first = {
+        "rule_id": "rule-1",
+        "name": "vel ai (one-shot ID)",
+        "sender_pattern": "vellogistix.com",
+        "subject_pattern": "PICKUP ALERT #12434221",
+        "parser_type": "email-ai",
+        "enabled": True,
+    }
+    rule_second = {
+        "rule_id": "rule-2",
+        "name": "vel airspace catch-all",
+        "sender_pattern": "vellogistix.com",
+        "subject_pattern": "",
+        "parser_type": "email-airspace",
+        "enabled": True,
+    }
+    result = classify_email(
+        subject="Tracking ID: ATZY4EAPRT, Order #: 3575751 - Pickup Dispatch",
+        sender="Vel Logistix <dispatch@vellogistix.com>",
+        custom_rules=[rule_first, rule_second],
+    )
+    assert result.is_order is True
+    assert result.source == "email-airspace"
+
+
+def test_custom_rule_subject_miss_falls_through_to_builtin():
+    """When no custom rule fully matches, classification should fall back to built-in rules."""
+    # Single custom rule with a one-shot subject ID. Should miss, then the
+    # built-in vellogistix airspace rule should catch it.
+    rule = {
+        "rule_id": "rule-1",
+        "name": "vel ai (one-shot ID)",
+        "sender_pattern": "vellogistix.com",
+        "subject_pattern": "PICKUP ALERT #12434221",
+        "parser_type": "email-ai",
+        "enabled": True,
+    }
+    result = classify_email(
+        subject="Tracking ID: ATZY4EAPRT, Order #: 3575751 - Pickup Dispatch",
+        sender="dispatch@vellogistix.com",
+        custom_rules=[rule],
+    )
+    assert result.is_order is True
+    assert result.source == EmailSource.AIRSPACE
+
+
+def test_custom_rule_subject_miss_with_no_builtin_match_returns_subject_skip():
+    """If a custom rule's sender matches but neither subject nor any other rule does, NO_SUBJECT_MATCH."""
+    # Use a non-built-in sender so the built-in fallback can't catch it.
+    rule = {
+        "rule_id": "rule-1",
+        "name": "acme one-shot",
+        "sender_pattern": "acme-carrier.example",
+        "subject_pattern": "ORDER #999999",
+        "parser_type": "email-ai",
+        "enabled": True,
+    }
+    result = classify_email(
+        subject="Random subject that won't match",
+        sender="ops@acme-carrier.example",
+        custom_rules=[rule],
+    )
+    assert result.is_order is False
+    assert result.skip_reason == SkipReason.NO_SUBJECT_MATCH

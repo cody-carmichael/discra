@@ -127,6 +127,13 @@
     emailDetectBtn: document.getElementById("email-detect-btn"),
     emailDetectResult: document.getElementById("email-detect-result"),
     emailRuleEnabled: document.getElementById("email-rule-enabled"),
+    elevateSkippedModal: document.getElementById("elevate-skipped-modal"),
+    elevateSkippedClose: document.getElementById("elevate-skipped-close"),
+    elevateSkippedCancel: document.getElementById("elevate-skipped-cancel"),
+    elevateSkippedForm: document.getElementById("elevate-skipped-form"),
+    elevateSkippedId: document.getElementById("elevate-skipped-id"),
+    elevateSkippedParser: document.getElementById("elevate-skipped-parser"),
+    elevateSkippedError: document.getElementById("elevate-skipped-error"),
     mapContainer: document.getElementById("driver-map"),
     cognitoDomain: document.getElementById("cognito-domain"),
     cognitoClientId: document.getElementById("cognito-client-id"),
@@ -3653,6 +3660,75 @@
     if (el.emailDetectResult) { el.emailDetectResult.style.display = "none"; el.emailDetectResult.textContent = ""; }
   }
 
+  function _populateElevateParserSelect() {
+    if (!el.elevateSkippedParser) return;
+    el.elevateSkippedParser.innerHTML = "";
+    _availableParsers.forEach(function (p) {
+      var opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = _parserLabel(p);
+      // Default to AI parser since it works on any layout.
+      if (p === "email-ai") opt.selected = true;
+      el.elevateSkippedParser.appendChild(opt);
+    });
+  }
+
+  function openElevateModal(emailMessageId) {
+    if (!emailMessageId) return;
+    var ensureParsers = _availableParsers.length
+      ? Promise.resolve()
+      : refreshEmailRules();
+    ensureParsers.then(function () {
+      _populateElevateParserSelect();
+      if (el.elevateSkippedId) el.elevateSkippedId.value = emailMessageId;
+      if (el.elevateSkippedError) {
+        el.elevateSkippedError.style.display = "none";
+        el.elevateSkippedError.textContent = "";
+      }
+      if (el.elevateSkippedModal) el.elevateSkippedModal.hidden = false;
+    });
+  }
+
+  function closeElevateModal() {
+    if (el.elevateSkippedModal) el.elevateSkippedModal.hidden = true;
+    if (el.elevateSkippedForm) el.elevateSkippedForm.reset();
+    if (el.elevateSkippedId) el.elevateSkippedId.value = "";
+    if (el.elevateSkippedError) {
+      el.elevateSkippedError.style.display = "none";
+      el.elevateSkippedError.textContent = "";
+    }
+  }
+
+  async function submitElevateSkipped(e) {
+    e.preventDefault();
+    var id = el.elevateSkippedId ? el.elevateSkippedId.value : "";
+    var parserType = el.elevateSkippedParser ? el.elevateSkippedParser.value : "";
+    if (!id) return;
+    var submitBtn = el.elevateSkippedForm ? el.elevateSkippedForm.querySelector('button[type="submit"]') : null;
+    if (submitBtn) submitBtn.disabled = true;
+    if (el.elevateSkippedError) {
+      el.elevateSkippedError.style.display = "none";
+      el.elevateSkippedError.textContent = "";
+    }
+    try {
+      var resp = await C.requestJson(apiBase, "/email/skipped/" + encodeURIComponent(id) + "/elevate", {
+        method: "POST",
+        token: token,
+        json: { parser_type: parserType || null },
+      });
+      closeElevateModal();
+      C.showMessage(el.emailMessage, "Order created from skipped email (" + (resp && resp.parser_type ? _parserLabel(resp.parser_type) : "ok") + ")", "success");
+      await refreshSkippedEmails();
+    } catch (error) {
+      if (el.elevateSkippedError) {
+        el.elevateSkippedError.style.display = "block";
+        el.elevateSkippedError.textContent = error.message || "Failed to create order";
+      }
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  }
+
   async function detectEmailFormat() {
     var file = el.emailDetectFile && el.emailDetectFile.files && el.emailDetectFile.files[0];
     var text = el.emailDetectText && el.emailDetectText.value.trim();
@@ -3775,7 +3851,10 @@
           "<td>" + C.escapeHtml(item.subject) + "</td>" +
           "<td>" + C.escapeHtml(item.skip_reason) + "</td>" +
           "<td>" + (item.created_at ? new Date(item.created_at).toLocaleString() : "-") + "</td>" +
-          '<td><button class="btn btn-ghost" data-create-rule-sender="' + C.escapeHtml(item.sender) + '" data-create-rule-subject="' + C.escapeHtml(item.subject) + '">Create Rule</button></td>' +
+          '<td>' +
+            '<button class="btn btn-ghost" data-create-rule-sender="' + C.escapeHtml(item.sender) + '" data-create-rule-subject="' + C.escapeHtml(item.subject) + '">Create Rule</button> ' +
+            '<button class="btn btn-primary" data-elevate-skipped="' + C.escapeHtml(item.email_message_id) + '">Elevate to Order</button>' +
+          '</td>' +
           "</tr>";
       });
       html += "</tbody></table>";
@@ -3892,6 +3971,20 @@
     if (el.emailDetectBtn) {
       el.emailDetectBtn.addEventListener("click", detectEmailFormat);
     }
+    if (el.elevateSkippedClose) {
+      el.elevateSkippedClose.addEventListener("click", closeElevateModal);
+    }
+    if (el.elevateSkippedCancel) {
+      el.elevateSkippedCancel.addEventListener("click", closeElevateModal);
+    }
+    if (el.elevateSkippedModal) {
+      el.elevateSkippedModal.addEventListener("click", function (e) {
+        if (e.target === el.elevateSkippedModal) closeElevateModal();
+      });
+    }
+    if (el.elevateSkippedForm) {
+      el.elevateSkippedForm.addEventListener("submit", submitElevateSkipped);
+    }
     // Event delegation for edit/delete buttons in rules table
     if (el.emailRulesList) {
       el.emailRulesList.addEventListener("click", function (e) {
@@ -3912,19 +4005,30 @@
         }
       });
     }
-    // Event delegation for "Create Rule" buttons in skipped emails table
+    // Event delegation for "Create Rule" and "Elevate to Order" buttons in skipped emails table
     if (el.skippedEmailsList) {
       el.skippedEmailsList.addEventListener("click", function (e) {
         var createBtn = e.target.closest("[data-create-rule-sender]");
         if (createBtn) {
           var sender = createBtn.dataset.createRuleSender || "";
-          // Extract domain from email address for a sensible default pattern
+          // Extract domain from email address for a sensible default pattern.
+          // Strip any trailing '>' or whitespace that may sneak in from a "Name <addr>" form.
           var domain = sender.includes("@") ? sender.split("@")[1] : sender;
+          domain = domain.replace(/[>\s]+$/, "");
+          // Intentionally do NOT pre-fill subject — the skipped email's subject
+          // usually contains one-time order IDs (e.g. "PICKUP ALERT #12434221")
+          // that would make the rule unmatchable for any future order.
+          var prefill = { sender: domain };
           if (!_availableParsers.length) {
-            refreshEmailRules().then(function () { openRuleModal({ sender: domain, subject: createBtn.dataset.createRuleSubject || "" }); });
+            refreshEmailRules().then(function () { openRuleModal(prefill); });
           } else {
-            openRuleModal({ sender: domain, subject: createBtn.dataset.createRuleSubject || "" });
+            openRuleModal(prefill);
           }
+          return;
+        }
+        var elevateBtn = e.target.closest("[data-elevate-skipped]");
+        if (elevateBtn) {
+          openElevateModal(elevateBtn.dataset.elevateSkipped);
         }
       });
     }

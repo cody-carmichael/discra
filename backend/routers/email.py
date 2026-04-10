@@ -14,14 +14,18 @@ try:
     from backend.auth import ROLE_ADMIN, ROLE_DISPATCHER, get_current_user, require_roles
     from backend.email_store import get_email_config_store, get_skipped_email_store
     from backend.email_parser import PARSERS
-    from backend.gmail_client import exchange_auth_code
-    from backend.schemas import EmailConfig, EmailRule
+    from backend.gmail_client import GmailClient, exchange_auth_code
+    from backend.order_store import get_order_store
+    from backend.schemas import EmailConfig, EmailRule, Order, OrderStatus
+    from backend.ws_notifier import broadcast as ws_broadcast
 except ModuleNotFoundError:  # local run from backend/ directory
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, get_current_user, require_roles
     from email_store import get_email_config_store, get_skipped_email_store
     from email_parser import PARSERS
-    from gmail_client import exchange_auth_code
-    from schemas import EmailConfig, EmailRule
+    from gmail_client import GmailClient, exchange_auth_code
+    from order_store import get_order_store
+    from schemas import EmailConfig, EmailRule, Order, OrderStatus
+    from ws_notifier import broadcast as ws_broadcast
 
 router = APIRouter(prefix="/email", tags=["email"])
 
@@ -53,6 +57,16 @@ class SkippedEmailItem(BaseModel):
 
 class SkippedEmailsResponse(BaseModel):
     items: list = []
+
+
+class ElevateSkippedRequest(BaseModel):
+    parser_type: Optional[str] = Field(default=None, max_length=40)
+
+
+class ElevateSkippedResponse(BaseModel):
+    ok: bool
+    order_id: str = ""
+    parser_type: str = ""
 
 
 @router.post("/connect", response_model=EmailConnectResponse)
@@ -142,6 +156,132 @@ async def list_skipped_emails(
         for r in records
     ]
     return SkippedEmailsResponse(items=items)
+
+
+PROCESSED_LABEL = "discra-processed"
+
+
+@router.post("/skipped/{email_message_id}/elevate", response_model=ElevateSkippedResponse)
+async def elevate_skipped_email(
+    email_message_id: str,
+    body: ElevateSkippedRequest,
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    config_store=Depends(get_email_config_store),
+    skipped_store=Depends(get_skipped_email_store),
+):
+    """Manually elevate a skipped email into an order.
+
+    Re-fetches the original Gmail message, runs the chosen parser
+    (defaults to the AI parser), creates an Order, and removes the
+    skipped record.
+    """
+    org_id = user["org_id"]
+
+    parser_type = (body.parser_type or "email-ai").strip()
+    if parser_type not in PARSERS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown parser_type '{parser_type}'. Choose from: {list(PARSERS.keys())}",
+        )
+
+    # Confirm the skipped record exists for this org (defense against IDOR).
+    skipped = skipped_store.get_skipped(org_id, email_message_id)
+    if not skipped:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Skipped email not found",
+        )
+
+    config = config_store.get_config(org_id)
+    if not config or not config.gmail_refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No connected email for this org",
+        )
+
+    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    gmail = GmailClient(
+        refresh_token=config.gmail_refresh_token,
+        client_id=client_id,
+        client_secret=client_secret,
+    )
+
+    try:
+        message = gmail.get_message(email_message_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Email no longer available in Gmail: {e}",
+        )
+
+    parser = PARSERS[parser_type]
+    parsed = parser.parse(message)
+    if not parsed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Parser could not extract order data from this email",
+        )
+
+    order_store = get_order_store()
+    external_id = parsed.external_order_id or email_message_id
+    source = parsed.source or parser_type
+
+    order = Order(
+        id=str(uuid.uuid4()),
+        org_id=org_id,
+        customer_name=parsed.customer_name or "Unknown",
+        reference_id=parsed.reference_id or external_id,
+        pick_up_street=parsed.pick_up_street or "N/A",
+        pick_up_city=parsed.pick_up_city or "N/A",
+        pick_up_state=parsed.pick_up_state or "N/A",
+        pick_up_zip=parsed.pick_up_zip or "N/A",
+        delivery_street=parsed.delivery_street or "N/A",
+        delivery_city=parsed.delivery_city or "N/A",
+        delivery_state=parsed.delivery_state or "N/A",
+        delivery_zip=parsed.delivery_zip or "N/A",
+        dimensions=parsed.dimensions or None,
+        weight=parsed.weight,
+        pickup_deadline=parsed.pickup_deadline,
+        dropoff_deadline=parsed.dropoff_deadline,
+        phone=parsed.pickup_phone or None,
+        notes=parsed.notes or None,
+        num_packages=parsed.num_packages,
+        external_order_id=external_id,
+        source=source,
+        status=OrderStatus.CREATED,
+        created_at=_utc_now(),
+    )
+    order_store.upsert_order(order)
+
+    # Remove the skipped record + label the Gmail message as processed.
+    skipped_store.delete_skipped(org_id, email_message_id)
+    try:
+        gmail.add_label(email_message_id, PROCESSED_LABEL)
+    except Exception:
+        pass  # non-fatal
+
+    # Broadcast new order to connected WebSocket clients (mirrors poller).
+    try:
+        ws_broadcast(org_id, {
+            "type": "new_order",
+            "order": {
+                "id": order.id,
+                "reference_id": order.reference_id,
+                "customer_name": order.customer_name,
+                "source": order.source or "",
+                "pick_up_city": order.pick_up_city,
+                "pick_up_state": order.pick_up_state,
+                "delivery_city": order.delivery_city,
+                "delivery_state": order.delivery_state,
+                "status": order.status.value,
+                "created_at": order.created_at.isoformat(),
+            },
+        })
+    except Exception:
+        pass
+
+    return ElevateSkippedResponse(ok=True, order_id=order.id, parser_type=parser_type)
 
 
 @router.post("/disconnect")

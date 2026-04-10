@@ -581,7 +581,7 @@
           </label>
           <label class="field field-span-2">
             <span>With a subject containing… <em style="font-weight:normal;font-style:normal">(optional)</em></span>
-            <small class="field-help">Leave blank to match any email from that sender.</small>
+            <small class="field-help">Leave blank to match any email from that sender. Use a generic word like "Dispatch" — don't paste a full subject with order numbers, or the rule won't match future emails.</small>
             <input id="email-rule-subject" type="text" maxlength="200" placeholder="e.g. Dispatch, Pickup Alert, Order">
           </label>
           <label class="field field-span-2">
@@ -626,6 +626,32 @@
           <div class="row field-span-2" style="justify-content:flex-end;gap:8px;margin-top:4px">
             <button type="button" id="email-rule-cancel" class="btn btn-ghost">Cancel</button>
             <button type="submit" class="btn btn-primary">Save Rule</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Elevate Skipped Email Modal -->
+  <div id="elevate-skipped-modal" class="modal-overlay" hidden>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Elevate to Order</h3>
+        <button id="elevate-skipped-close" class="btn btn-ghost modal-close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="panel-help" style="margin-bottom:16px">Re-process this skipped email and create an order from it. Pick the format that matches the email's layout, or let AI figure it out automatically.</p>
+        <form id="elevate-skipped-form" class="form-grid">
+          <input type="hidden" id="elevate-skipped-id" value="">
+          <label class="field field-span-2">
+            <span>Email format</span>
+            <small class="field-help">"Let AI read it" works with any format.</small>
+            <select id="elevate-skipped-parser" required></select>
+          </label>
+          <p id="elevate-skipped-error" style="margin:0;font-size:0.82rem;color:var(--danger,#e57373);display:none"></p>
+          <div class="row field-span-2" style="justify-content:flex-end;gap:8px;margin-top:4px">
+            <button type="button" id="elevate-skipped-cancel" class="btn btn-ghost">Cancel</button>
+            <button type="submit" class="btn btn-primary">Create Order</button>
           </div>
         </form>
       </div>

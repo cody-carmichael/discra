@@ -148,38 +148,38 @@ def classify_email(
     if fwd_subject.lower().startswith("fwd:"):
         fwd_subject = fwd_subject[4:].strip()
 
-    # Check org-level custom rules first (highest priority)
+    # Check org-level custom rules first (highest priority).
+    # If a rule's sender matches but its subject does not, continue to the next
+    # rule (and ultimately fall through to built-in rules) instead of returning.
+    # The user may have multiple rules per sender, and a built-in rule may still
+    # match even when no custom rule does.
+    custom_sender_matched = False
     if custom_rules:
         for rule in custom_rules:
             if not rule.get("enabled", True):
                 continue
             sp = rule.get("sender_pattern", "").lower()
-            if sp and sp in original_sender.lower():
-                subj_pat = rule.get("subject_pattern", "").lower()
-                if subj_pat:
-                    if subj_pat not in original_subject.lower() and subj_pat not in fwd_subject.lower():
-                        logger.info(
-                            "Custom rule '%s' sender matched but subject did not: %s",
-                            rule.get("name", ""),
-                            original_subject,
-                        )
-                        return ClassificationResult(
-                            is_order=False,
-                            skip_reason=SkipReason.NO_SUBJECT_MATCH,
-                            original_sender=original_sender,
-                            original_subject=original_subject,
-                        )
+            if not sp or sp not in original_sender.lower():
+                continue
+            custom_sender_matched = True
+            subj_pat = rule.get("subject_pattern", "").lower()
+            if subj_pat and subj_pat not in original_subject.lower() and subj_pat not in fwd_subject.lower():
                 logger.info(
-                    "Custom rule '%s' matched sender %s",
+                    "Custom rule '%s' sender matched but subject did not; trying next rule",
                     rule.get("name", ""),
-                    original_sender,
                 )
-                return ClassificationResult(
-                    is_order=True,
-                    source=rule.get("parser_type", ""),
-                    original_sender=original_sender,
-                    original_subject=original_subject,
-                )
+                continue
+            logger.info(
+                "Custom rule '%s' matched sender %s",
+                rule.get("name", ""),
+                original_sender,
+            )
+            return ClassificationResult(
+                is_order=True,
+                source=rule.get("parser_type", ""),
+                original_sender=original_sender,
+                original_subject=original_subject,
+            )
 
     # Fall back to built-in sender rules
     for rule in _SENDER_RULES:
@@ -208,6 +208,21 @@ def classify_email(
                     original_sender=original_sender,
                     original_subject=original_subject,
                 )
+
+    # Nothing matched. If a custom rule sender matched (but subject didn't) and
+    # no built-in rule caught it either, report NO_SUBJECT_MATCH so the user
+    # knows their rule's subject pattern is the problem.
+    if custom_sender_matched:
+        logger.info(
+            "Custom rule sender(s) matched but no rule fully matched: %s",
+            original_subject,
+        )
+        return ClassificationResult(
+            is_order=False,
+            skip_reason=SkipReason.NO_SUBJECT_MATCH,
+            original_sender=original_sender,
+            original_subject=original_subject,
+        )
 
     # Unknown sender
     logger.debug("Unknown sender: %s (subject: %s)", original_sender, original_subject)

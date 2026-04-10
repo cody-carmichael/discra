@@ -158,6 +158,7 @@
   let activeRouteLayerId = "route-line-layer";
   let driverRefreshTimer = null;
   let orderRefreshTimer = null;
+  let emailAutoRefreshTimer = null;
   let allOrders = [];
   let lastOrders = [];
   let lastDriverLocations = [];
@@ -1122,6 +1123,24 @@
     orderRefreshTimer = null;
   }
 
+  function startEmailAutoRefresh() {
+    if (emailAutoRefreshTimer || !isAuthorizedRole) {
+      return;
+    }
+    emailAutoRefreshTimer = window.setInterval(function () {
+      refreshEmailStatus().catch(function () {});
+      refreshSkippedEmails().catch(function () {});
+    }, 60000);
+  }
+
+  function stopEmailAutoRefresh() {
+    if (!emailAutoRefreshTimer) {
+      return;
+    }
+    window.clearInterval(emailAutoRefreshTimer);
+    emailAutoRefreshTimer = null;
+  }
+
   function showLoginScreen(show) {
     if (el.loginScreen) {
       el.loginScreen.classList.toggle("hidden", !show);
@@ -1185,6 +1204,7 @@
     }
     startDriverAutoRefresh();
     startOrderAutoRefresh();
+    startEmailAutoRefresh();
     if (!isAdminRole) {
       C.showMessage(el.billingMessage, "Billing controls require Admin role.", "error");
     }
@@ -3244,6 +3264,8 @@
     initAudioAlerts();
     if (isAuthorizedRole) {
       refreshEmailStatus().catch(function () {});
+      refreshSkippedEmails().catch(function () {});
+      refreshEmailRules().catch(function () {});
       if (wsEndpoint) connectWebSocket();
     }
   }

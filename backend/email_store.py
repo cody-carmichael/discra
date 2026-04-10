@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
 
 logger = logging.getLogger(__name__)
 
-SKIPPED_EMAIL_TTL_DAYS = 30
+SKIPPED_EMAIL_TTL_DAYS = 1
 
 
 def utc_now() -> datetime:

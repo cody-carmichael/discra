@@ -14,15 +14,49 @@ logger = logging.getLogger(__name__)
 
 try:
     from google.auth.transport.requests import Request as GoogleAuthRequest
+    from google.auth.exceptions import RefreshError as _GoogleRefreshError
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
 except ImportError:  # pragma: no cover
     GoogleAuthRequest = None
+    _GoogleRefreshError = Exception
     Credentials = None
     build = None
 
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 TOKEN_URI = "https://oauth2.googleapis.com/token"
+
+# Substrings Google returns inside RefreshError messages for hard auth failures
+# that mean "the refresh token is no longer usable". We translate any of these
+# into a structured GmailAuthError so callers can surface a friendly reauth
+# prompt instead of treating it as a transient error.
+_HARD_AUTH_ERROR_CODES = (
+    "invalid_grant",
+    "invalid_client",
+    "unauthorized_client",
+    "invalid_token",
+)
+
+
+class GmailAuthError(Exception):
+    """The user's Gmail OAuth credentials can no longer be refreshed.
+
+    Caller should mark the connection as needing reauth and stop polling
+    until the user re-consents via the OAuth flow.
+    """
+
+    def __init__(self, code: str, message: str = ""):
+        super().__init__(message or code)
+        self.code = code
+
+
+def _classify_refresh_error(err: Exception) -> Optional[str]:
+    """Return the matched hard-auth code if `err` is a hard refresh failure, else None."""
+    text = str(err).lower()
+    for code in _HARD_AUTH_ERROR_CODES:
+        if code in text:
+            return code
+    return None
 
 
 @dataclass
@@ -68,7 +102,11 @@ class GmailClient:
             client_secret=self._client_secret,
             scopes=GMAIL_SCOPES,
         )
-        creds.refresh(GoogleAuthRequest())
+        try:
+            creds.refresh(GoogleAuthRequest())
+        except _GoogleRefreshError as e:
+            code = _classify_refresh_error(e) or "refresh_failed"
+            raise GmailAuthError(code=code, message=str(e)) from e
         self._service = build("gmail", "v1", credentials=creds, cache_discovery=False)
         return self._service
 
@@ -272,7 +310,16 @@ def exchange_auth_code(code: str, redirect_uri: str, client_id: str = "", client
         scopes=GMAIL_SCOPES,
         redirect_uri=redirect_uri,
     )
-    flow.fetch_token(code=code)
+    try:
+        flow.fetch_token(code=code)
+    except Exception as e:
+        # Stale/already-used auth codes and revoked clients all surface as
+        # OAuth errors here. Translate hard-auth failures so callers can
+        # render a clear "please re-authorize" message.
+        hard_code = _classify_refresh_error(e)
+        if hard_code:
+            raise GmailAuthError(code=hard_code, message=str(e)) from e
+        raise
     creds = flow.credentials
 
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)

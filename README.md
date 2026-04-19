@@ -207,6 +207,36 @@ Hosted UI setup notes:
   - invitation creation/activation
   - Stripe subscription webhook seat sync
 
+## Gmail OAuth: avoid the 7-day refresh-token expiry
+
+Discra uses the Gmail `gmail.modify` scope, which Google classifies as a
+**sensitive scope**. Refresh tokens issued for sensitive scopes expire after
+**7 days** while the OAuth app is in **Testing** status in Google Cloud
+Console. The visible symptom is exactly what you'd expect: the integration
+works perfectly for ~7 days, then dies with `invalid_grant: Token has been
+expired or revoked.` and stops processing email until the user reconnects.
+
+**Fix (one-time, no code change required):**
+
+1. Open Google Cloud Console → APIs & Services → OAuth consent screen.
+2. Click **PUBLISH APP** to move the app from *Testing* to *In production*.
+3. You can publish without going through full Google verification — refresh
+   tokens issued after publishing will then last until the user (or Google)
+   explicitly revokes them.
+
+Full verification (a multi-week external Google review) is required only to
+remove the unverified-app warning shown to users during OAuth consent. It is
+**not** required to fix the 7-day token expiry.
+
+Reference: <https://developers.google.com/identity/protocols/oauth2#expiration>
+
+If a refresh token *does* expire (or the user revokes access from their
+Google account), the app self-heals: the poller detects `invalid_grant`,
+stops hammering Gmail with the dead token, broadcasts a WebSocket event so
+any connected admin sees a red banner, and one click on **Reconnect Gmail**
+runs the OAuth flow again. The reconnect preserves all `email_rules` and
+other org-level config.
+
 ## Migration roadmap (incremental PRs)
 1. Python backend skeleton + SAM wiring + health/version parity
 2. Cognito JWT auth + RBAC + Users/Organizations model

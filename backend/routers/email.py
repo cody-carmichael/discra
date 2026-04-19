@@ -14,14 +14,16 @@ try:
     from backend.auth import ROLE_ADMIN, ROLE_DISPATCHER, get_current_user, require_roles
     from backend.email_store import get_email_config_store, get_skipped_email_store
     from backend.email_parser import PARSERS
-    from backend.gmail_client import exchange_auth_code
+    from backend.gmail_client import GmailAuthError, exchange_auth_code
     from backend.schemas import EmailConfig, EmailRule
+    from backend.ws_notifier import broadcast as ws_broadcast
 except ModuleNotFoundError:  # local run from backend/ directory
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, get_current_user, require_roles
     from email_store import get_email_config_store, get_skipped_email_store
     from email_parser import PARSERS
-    from gmail_client import exchange_auth_code
+    from gmail_client import GmailAuthError, exchange_auth_code
     from schemas import EmailConfig, EmailRule
+    from ws_notifier import broadcast as ws_broadcast
 
 router = APIRouter(prefix="/email", tags=["email"])
 
@@ -41,6 +43,8 @@ class EmailStatusResponse(BaseModel):
     email: str = ""
     last_poll_at: str = ""
     last_error: str = ""
+    last_error_code: str = ""
+    needs_reauth: bool = False
 
 
 class SkippedEmailItem(BaseModel):
@@ -74,6 +78,13 @@ async def connect_email(
             client_id=client_id,
             client_secret=client_secret,
         )
+    except GmailAuthError as e:
+        # Stale auth code or revoked client — surface as a friendly 400 so
+        # the UI can prompt the user to start the OAuth flow again.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Gmail authorization failed ({e.code}). Please try connecting again.",
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -88,15 +99,43 @@ async def connect_email(
         )
 
     email_address = tokens.get("email", "")
+    now = datetime.now(timezone.utc)
 
-    config = EmailConfig(
-        org_id=org_id,
-        gmail_email=email_address,
-        gmail_refresh_token=refresh_token,
-        email_connected=True,
-        connected_at=datetime.now(timezone.utc),
-    )
-    config_store.put_config(config)
+    # Reconnect path: merge tokens into the existing config so we don't
+    # destroy email_rules or other org-level settings. After reauth we
+    # also reset gmail_history_id so the next poll re-initializes to
+    # "now" rather than trying to replay a possibly-expired history.
+    existing = config_store.get_config(org_id)
+    if existing:
+        existing.gmail_email = email_address
+        existing.gmail_refresh_token = refresh_token
+        existing.email_connected = True
+        existing.connected_at = now
+        existing.gmail_history_id = None
+        existing.last_error = None
+        existing.last_error_code = None
+        existing.last_error_at = None
+        existing.needs_reauth = False
+        config_store.put_config(existing)
+    else:
+        config = EmailConfig(
+            org_id=org_id,
+            gmail_email=email_address,
+            gmail_refresh_token=refresh_token,
+            email_connected=True,
+            connected_at=now,
+        )
+        config_store.put_config(config)
+
+    # Notify any open admin sessions that the connection is healthy again
+    # so banners/state can clear without a manual page refresh.
+    try:
+        ws_broadcast(org_id, {
+            "type": "gmail_auth_restored",
+            "email": email_address,
+        })
+    except Exception:
+        pass
 
     return EmailConnectResponse(ok=True, email=email_address)
 
@@ -113,11 +152,21 @@ async def email_status(
     if not config or not config.email_connected:
         return EmailStatusResponse(connected=False)
 
+    # When the connection needs reauth, surface a friendly message instead
+    # of the raw Google tuple. The full diagnostic stays in last_error_code.
+    needs_reauth = bool(getattr(config, "needs_reauth", False))
+    if needs_reauth:
+        friendly = "Gmail disconnected — please reconnect to resume order processing."
+    else:
+        friendly = config.last_error or ""
+
     return EmailStatusResponse(
         connected=True,
         email=config.gmail_email,
         last_poll_at=config.last_poll_at.isoformat() if config.last_poll_at else "",
-        last_error=config.last_error or "",
+        last_error=friendly,
+        last_error_code=getattr(config, "last_error_code", None) or "",
+        needs_reauth=needs_reauth,
     )
 
 

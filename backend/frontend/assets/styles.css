@@ -3273,6 +3273,24 @@ body.theme-admin .billing-seat-cards .stat-card small {
   font-size: 0.72rem;
 }
 
+/* ── Gmail reauth banner ── */
+.reauth-banner {
+  position: sticky;
+  top: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: #b91c1c;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+.reauth-banner-text { flex: 0 1 auto; }
+.reauth-banner-btn { flex: 0 0 auto; }
+
 /* ── Toast notifications ── */
 .toast-container {
   position: fixed;

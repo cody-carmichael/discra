@@ -46,7 +46,14 @@ class EmailConfigStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def update_poll_status(self, org_id: str, history_id: str, error: Optional[str] = None) -> None:
+    def update_poll_status(
+        self,
+        org_id: str,
+        history_id: str,
+        error: Optional[str] = None,
+        error_code: Optional[str] = None,
+        needs_reauth: bool = False,
+    ) -> None:
         raise NotImplementedError
 
 
@@ -67,12 +74,27 @@ class InMemoryEmailConfigStore(EmailConfigStore):
     def list_connected_orgs(self) -> List[EmailConfig]:
         return [c for c in self.items.values() if c.email_connected]
 
-    def update_poll_status(self, org_id: str, history_id: str, error: Optional[str] = None) -> None:
+    def update_poll_status(
+        self,
+        org_id: str,
+        history_id: str,
+        error: Optional[str] = None,
+        error_code: Optional[str] = None,
+        needs_reauth: bool = False,
+    ) -> None:
         config = self.items.get(org_id)
         if config:
             config.gmail_history_id = history_id
             config.last_poll_at = utc_now()
             config.last_error = error
+            if needs_reauth:
+                config.needs_reauth = True
+                config.last_error_code = error_code
+                config.last_error_at = utc_now()
+            elif error is None:
+                config.needs_reauth = False
+                config.last_error_code = None
+                config.last_error_at = None
 
 
 class DynamoEmailConfigStore(EmailConfigStore):
@@ -110,17 +132,41 @@ class DynamoEmailConfigStore(EmailConfigStore):
             items.extend(resp.get("Items", []))
         return [EmailConfig.model_validate(item) for item in items]
 
-    def update_poll_status(self, org_id: str, history_id: str, error: Optional[str] = None) -> None:
-        update_expr = "SET gmail_history_id = :hid, last_poll_at = :now"
+    def update_poll_status(
+        self,
+        org_id: str,
+        history_id: str,
+        error: Optional[str] = None,
+        error_code: Optional[str] = None,
+        needs_reauth: bool = False,
+    ) -> None:
+        set_parts = ["gmail_history_id = :hid", "last_poll_at = :now"]
+        remove_parts: list = []
         expr_values: dict = {
             ":hid": history_id,
             ":now": utc_now().isoformat(),
         }
         if error:
-            update_expr += ", last_error = :err"
+            set_parts.append("last_error = :err")
             expr_values[":err"] = error
         else:
-            update_expr += " REMOVE last_error"
+            remove_parts.append("last_error")
+
+        if needs_reauth:
+            set_parts.append("needs_reauth = :nr")
+            set_parts.append("last_error_code = :ec")
+            set_parts.append("last_error_at = :now")
+            expr_values[":nr"] = True
+            expr_values[":ec"] = error_code or "refresh_failed"
+        elif error is None:
+            set_parts.append("needs_reauth = :nr")
+            expr_values[":nr"] = False
+            remove_parts.append("last_error_code")
+            remove_parts.append("last_error_at")
+
+        update_expr = "SET " + ", ".join(set_parts)
+        if remove_parts:
+            update_expr += " REMOVE " + ", ".join(remove_parts)
 
         self._table.update_item(
             Key={"org_id": org_id},

@@ -15,7 +15,7 @@ try:
     from backend.email_classifier import classify_email, SkipReason
     from backend.email_parser import get_parser
     from backend.email_store import get_email_config_store, get_skipped_email_store
-    from backend.gmail_client import GmailClient
+    from backend.gmail_client import GmailClient, GmailAuthError
     from backend.order_store import get_order_store
     from backend.schemas import Order, OrderStatus, SkippedEmail
     from backend.ws_notifier import broadcast as ws_broadcast
@@ -23,7 +23,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
     from email_classifier import classify_email, SkipReason
     from email_parser import get_parser
     from email_store import get_email_config_store, get_skipped_email_store
-    from gmail_client import GmailClient
+    from gmail_client import GmailClient, GmailAuthError
     from order_store import get_order_store
     from schemas import Order, OrderStatus, SkippedEmail
     from ws_notifier import broadcast as ws_broadcast
@@ -36,6 +36,18 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _notify_reauth_required(org_id: str, code: str):
+    """Best-effort live notification that a Gmail reconnect is required."""
+    try:
+        ws_broadcast(org_id, {
+            "type": "gmail_auth_required",
+            "code": code,
+            "message": "Gmail authorization expired. Please reconnect to resume order processing.",
+        })
+    except Exception as ws_err:
+        logger.warning("Org %s: ws broadcast for gmail_auth_required failed: %s", org_id, ws_err)
+
+
 def _process_org(org_config):
     """Process a single org's email inbox. Returns (orders_created, errors)."""
     org_id = org_config.org_id
@@ -45,6 +57,11 @@ def _process_org(org_config):
     config_store = get_email_config_store()
     skipped_store = get_skipped_email_store()
     order_store = get_order_store()
+
+    # Short-circuit if the connection is already known to need reauth.
+    if getattr(org_config, "needs_reauth", False):
+        logger.info("Org %s: skipping poll — Gmail needs reauth", org_id)
+        return 0, []
 
     client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
     client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
@@ -202,6 +219,20 @@ def _process_org(org_config):
         error_summary = "; ".join(errors) if errors else None
         config_store.update_poll_status(org_id, new_history_id, error=error_summary)
 
+    except GmailAuthError as e:
+        logger.warning("Org %s: Gmail auth failed (%s) — marking needs_reauth", org_id, e.code)
+        try:
+            config_store.update_poll_status(
+                org_id,
+                org_config.gmail_history_id or "",
+                error=f"Gmail authorization expired ({e.code}). Please reconnect.",
+                error_code=e.code,
+                needs_reauth=True,
+            )
+        except Exception:
+            pass
+        _notify_reauth_required(org_id, e.code)
+        errors.append(f"auth:{e.code}")
     except Exception as e:
         logger.exception("Org %s: poll failed: %s", org_id, e)
         try:

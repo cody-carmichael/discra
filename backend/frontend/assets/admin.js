@@ -1883,7 +1883,7 @@
       source: activeRouteSourceId,
       layout: { "line-join": "round", "line-cap": "round" },
       paint: {
-        "line-color": "#e63946",
+        "line-color": "#C8973A",
         "line-width": 4,
         "line-opacity": 0.85,
       },
@@ -1943,9 +1943,9 @@
       '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
       '</filter>' +
       '</defs>' +
-      '<circle cx="16" cy="16" r="14" fill="#1a1a2e" stroke="' + borderColor + '" stroke-width="2.5"/>' +
+      '<circle cx="16" cy="16" r="14" fill="#130F1A" stroke="' + borderColor + '" stroke-width="2.5"/>' +
       '<circle cx="16" cy="16" r="14" fill="none" stroke="' + glowColor + '" stroke-width="1" opacity="0.3"/>' +
-      '<text x="16" y="22" text-anchor="middle" font-family="Georgia,\'Times New Roman\',serif" font-size="20" font-weight="900" fill="' + symbolColor + '" filter="url(#glow-' + symbolColor.replace('#','') + ')">' + symbol + '</text>' +
+      '<text x="16" y="22" text-anchor="middle" font-family="Cinzel,Georgia,serif" font-size="20" font-weight="900" fill="' + symbolColor + '" filter="url(#glow-' + symbolColor.replace('#','') + ')">' + symbol + '</text>' +
       '</svg>'
     );
   }
@@ -1960,7 +1960,7 @@
       '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
       '</filter>' +
       '</defs>' +
-      '<circle cx="16" cy="16" r="14" fill="#1a1a2e" stroke="' + fillColor + '" stroke-width="2.5"/>' +
+      '<circle cx="16" cy="16" r="14" fill="#130F1A" stroke="' + fillColor + '" stroke-width="2.5"/>' +
       '<circle cx="16" cy="16" r="14" fill="none" stroke="' + glowColor + '" stroke-width="1" opacity="0.25"/>' +
       '<g transform="translate(16,16)" filter="url(#glow-arrow)">' + arrowPath + '</g>' +
       '</svg>'
@@ -1969,38 +1969,33 @@
 
   var _pinConfigs = {
     unassigned: {
-      // Gold ! on dark circle — "quest available, needs pickup"
       svg: function () {
-        return _wowPinSvg("!", "#FFD100", "#FFD100", "#c8a400");
+        return _wowPinSvg("!", "#F0C060", "#F0C060", "#C8973A");
       }
     },
     assigned_online: {
-      // Gold ? on dark circle — "quest in progress, driver active"
       svg: function () {
-        return _wowPinSvg("?", "#FFD100", "#FFD100", "#c8a400");
+        return _wowPinSvg("?", "#F0C060", "#F0C060", "#C8973A");
       }
     },
     assigned_offline: {
-      // Silver/grey ! on dark circle — "quest unavailable, driver offline"
       svg: function () {
-        return _wowPinSvg("!", "#8a8a8a", "#6a6a6a", "#555555");
+        return _wowPinSvg("!", "#7A6E88", "#7A6E88", "#3A2F50");
       }
     },
     picked_up: {
-      // Blue up-arrow on dark circle — "active objective, package in hand"
       svg: function () {
         return _wowArrowPinSvg(
-          '<path d="M0,-9 L5,2 L2,2 L2,9 L-2,9 L-2,2 L-5,2 Z" fill="#4FC3F7"/>',
-          "#4FC3F7", "#4FC3F7"
+          '<path d="M0,-9 L5,2 L2,2 L2,9 L-2,9 L-2,2 L-5,2 Z" fill="#9D6FC8"/>',
+          "#9D6FC8", "#7B4FA6"
         );
       }
     },
     en_route: {
-      // Green arrow on dark circle — "moving toward objective"
       svg: function () {
         return _wowArrowPinSvg(
-          '<path d="M-9,0 L2,-5 L2,-2 L9,0 L2,2 L2,5 Z" fill="#66BB6A"/>',
-          "#66BB6A", "#66BB6A"
+          '<path d="M-9,0 L2,-5 L2,-2 L9,0 L2,2 L2,5 Z" fill="#6FBD80"/>',
+          "#6FBD80", "#4A9E5C"
         );
       }
     },
@@ -2060,18 +2055,18 @@
   }
 
   var _statusColors = {
-    unassigned: "#FFD100",
-    assigned_online: "#FFD100",
-    assigned_offline: "#8a8a8a",
-    picked_up: "#4FC3F7",
-    en_route: "#66BB6A",
+    unassigned: "#F0C060",
+    assigned_online: "#F0C060",
+    assigned_offline: "#7A6E88",
+    picked_up: "#9D6FC8",
+    en_route: "#6FBD80",
   };
 
   function _placeOrderPin(order, coords, currentMap) {
     var pinType = _orderPinType(order);
     var pinEl = _createPinElement(pinType);
     var statusText = _statusLabel(order);
-    var statusColor = _statusColors[pinType] || "#f5c542";
+    var statusColor = _statusColors[pinType] || "#F0C060";
     var driverLine = order.assigned_to
       ? "<span class='order-popup-driver'>" + C.escapeHtml(order.assigned_to) + "</span>"
       : "";
@@ -2158,22 +2153,22 @@
   function _createDriverMarkerElement(item, rosterEntry, isSelectedDriver) {
     var photoUrl = rosterEntry && rosterEntry.photo_url;
     var isTsa = rosterEntry && rosterEntry.tsa_certified;
-    var borderColor = isSelectedDriver ? "#e63946" : (isTsa ? "#1565c0" : "#3498db");
+    var borderColor = isSelectedDriver ? "#C8973A" : (isTsa ? "#7B4FA6" : "#7A5C22");
     if (isTsa) {
       var tsaEl = document.createElement("div");
       tsaEl.className = "dispatch-map-marker-tsa";
       tsaEl.style.cssText = "width:42px;height:42px;cursor:pointer;position:relative;";
       tsaEl.innerHTML = '<svg width="42" height="42" viewBox="0 0 42 42">' +
-        '<circle cx="21" cy="21" r="19" fill="#1565c0" stroke="#fff" stroke-width="2.5"/>' +
-        '<circle cx="21" cy="21" r="16" fill="none" stroke="#fff" stroke-width="1" opacity=".5"/>' +
+        '<circle cx="21" cy="21" r="19" fill="#7B4FA6" stroke="#F0C060" stroke-width="2.5"/>' +
+        '<circle cx="21" cy="21" r="16" fill="none" stroke="#F0C060" stroke-width="1" opacity=".5"/>' +
         '<g transform="translate(21,22) rotate(-45) scale(.55)">' +
-          '<path d="M-2,-14 L2,-14 L2,-4 L12,2 L12,5 L2,1 L2,8 L5,10 L5,12.5 L0,11 L-5,12.5 L-5,10 L-2,8 L-2,1 L-12,5 L-12,2 L-2,-4 Z" fill="#fff"/>' +
+          '<path d="M-2,-14 L2,-14 L2,-4 L12,2 L12,5 L2,1 L2,8 L5,10 L5,12.5 L0,11 L-5,12.5 L-5,10 L-2,8 L-2,1 L-12,5 L-12,2 L-2,-4 Z" fill="#F5D98B"/>' +
         '</g>' +
-        (photoUrl ? '' : '<text x="21" y="37" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="Inter,sans-serif">TSA</text>') +
+        (photoUrl ? '' : '<text x="21" y="37" text-anchor="middle" font-size="7" font-weight="700" fill="#F0C060" font-family="Cinzel,Georgia,serif">TSA</text>') +
       '</svg>';
       if (photoUrl) {
         var photoOverlay = document.createElement("div");
-        photoOverlay.style.cssText = "position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;border-radius:50%;border:2px solid #1565c0;overflow:hidden;background:#fff;";
+        photoOverlay.style.cssText = "position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;border-radius:50%;border:2px solid #7B4FA6;overflow:hidden;background:#130F1A;";
         var pImg = document.createElement("img");
         pImg.src = photoUrl; pImg.alt = "";
         pImg.style.cssText = "width:100%;height:100%;object-fit:cover;";
@@ -2184,7 +2179,7 @@
     } else if (photoUrl) {
       var elDiv = document.createElement("div");
       elDiv.className = "dispatch-map-marker-photo";
-      elDiv.style.cssText = "width:36px;height:36px;border-radius:50%;border:3px solid " + borderColor + ";overflow:hidden;cursor:pointer;background:#fff;";
+      elDiv.style.cssText = "width:36px;height:36px;border-radius:50%;border:3px solid " + borderColor + ";overflow:hidden;cursor:pointer;background:#130F1A;box-shadow:0 0 8px rgba(200,151,58,0.35);";
       var img = document.createElement("img");
       img.src = photoUrl; img.alt = "";
       img.style.cssText = "width:100%;height:100%;object-fit:cover;";
@@ -2218,7 +2213,7 @@
       var driverName = (rosterEntry && rosterEntry.username) || item.driver_id;
       var isTsa = rosterEntry && rosterEntry.tsa_certified;
       var popupHtml = "<strong>" + C.escapeHtml(driverName) + "</strong>" +
-        (isTsa ? "<br><span style=\"color:#1565c0;font-weight:700;font-size:.75rem;\">TSA CERTIFIED</span>" : "") +
+        (isTsa ? "<br><span style=\"color:#9D6FC8;font-weight:700;font-size:.75rem;letter-spacing:0.08em;\">TSA CERTIFIED</span>" : "") +
         "<br>Updated: " + C.escapeHtml(C.formatTimestamp(item.timestamp));
 
       var existing = mapMarkers.get(item.driver_id);
@@ -3570,7 +3565,7 @@
         }
         if (el.emailPollStatus) {
           el.emailPollStatus.textContent = status.last_error || "OK";
-          el.emailPollStatus.style.color = (status.last_error || needsReauth) ? "#ef4444" : "#22c55e";
+          el.emailPollStatus.style.color = (status.last_error || needsReauth) ? "#D94D4D" : "#4A9E5C";
         }
       } else {
         if (el.emailNotConnected) el.emailNotConnected.hidden = false;
@@ -3665,7 +3660,7 @@
     if (!file && !text) {
       if (el.emailDetectResult) {
         el.emailDetectResult.style.display = "block";
-        el.emailDetectResult.style.color = "var(--color-error, #e55)";
+        el.emailDetectResult.style.color = "var(--text-danger, #D94D4D)";
         el.emailDetectResult.textContent = "Please upload a file or paste the email text first.";
       }
       return;
@@ -3674,7 +3669,7 @@
     if (el.emailDetectBtn) el.emailDetectBtn.disabled = true;
     if (el.emailDetectResult) {
       el.emailDetectResult.style.display = "block";
-      el.emailDetectResult.style.color = "var(--text-muted, #aaa)";
+      el.emailDetectResult.style.color = "var(--text-muted, #968AA8)";
       el.emailDetectResult.textContent = "Analyzing…";
     }
 
@@ -3698,7 +3693,7 @@
 
       if (!parserType) {
         if (el.emailDetectResult) {
-          el.emailDetectResult.style.color = "var(--color-warn, #f90)";
+          el.emailDetectResult.style.color = "var(--gold-primary, #C8973A)";
           el.emailDetectResult.textContent = "Couldn't determine a format. Try selecting one manually.";
         }
         return;
@@ -3712,19 +3707,19 @@
       var label = _parserLabel(parserType);
       if (parserType === "email-ai") {
         if (el.emailDetectResult) {
-          el.emailDetectResult.style.color = "var(--color-info, #4a9eff)";
+          el.emailDetectResult.style.color = "var(--purple-accent, #7B4FA6)";
           el.emailDetectResult.textContent = "No exact format matched — \"Let AI read it\" selected as a fallback. " + (reason || "");
         }
       } else {
         var confidenceText = confidence === "high" ? "High confidence" : confidence === "medium" ? "Medium confidence" : "Low confidence";
         if (el.emailDetectResult) {
-          el.emailDetectResult.style.color = "var(--color-success, #4c4)";
+          el.emailDetectResult.style.color = "var(--text-success, #4A9E5C)";
           el.emailDetectResult.textContent = "✓ " + confidenceText + " — " + label + ". " + (reason || "");
         }
       }
     } catch (error) {
       if (el.emailDetectResult) {
-        el.emailDetectResult.style.color = "var(--color-error, #e55)";
+        el.emailDetectResult.style.color = "var(--text-danger, #D94D4D)";
         el.emailDetectResult.textContent = "Detection failed: " + error.message;
       }
     } finally {

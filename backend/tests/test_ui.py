@@ -25,9 +25,9 @@ def test_ui_pages_are_available():
     assert driver.status_code == 200
     assert register.status_code == 200
     assert review.status_code == 200
-    assert "Transform Last-Mile Delivery Into A Growth Engine." in home.text
+    assert "The calm control tower for last-mile delivery teams." in home.text
     assert "Request Access" in home.text
-    assert "Log In" in home.text
+    assert "Enter" in home.text
     assert "ui/login" in home.text
     assert "Welcome Back" in login.text
     assert "login-gateway-button" in login.text
@@ -65,7 +65,7 @@ def test_ui_assets_and_service_worker_are_served():
     assert "startHostedLogin" in common_js.text
     assert "consumeHostedLoginCallback" in common_js.text
     assert "resolveAdminPath" in login_js.text
-    assert "requestAnimationFrame" in landing_js.text
+    assert "IntersectionObserver" in landing_js.text
     assert "DiscraAdmin" in admin_manifest.text
     assert "DiscraDriver" in driver_manifest.text
     cache_name_match = re.search(r'const CACHE_NAME = "([^"]+)"', admin_service_worker.text)

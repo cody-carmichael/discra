@@ -6,123 +6,136 @@
   <title>Discra | The Calm Control Tower For Delivery Teams</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="ui/assets/styles.css?v=20260321a">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700;900&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="ui/assets/styles.css?v=20260419a">
 </head>
 <body class="landing-theme">
-  <div class="landing-scene" aria-hidden="true">
-    <div class="landing-orb landing-orb-a" data-parallax-speed="0.14"></div>
-    <div class="landing-orb landing-orb-b" data-parallax-speed="-0.08"></div>
-    <div class="landing-grid-lines" data-parallax-speed="0.05"></div>
+  <div class="landing-atmosphere" aria-hidden="true">
+    <div class="landing-vignette"></div>
+    <div class="landing-fog landing-fog-a"></div>
+    <div class="landing-fog landing-fog-b"></div>
+    <div class="landing-embers">
+      <span class="landing-ember" style="--ember-x: 12%;  --ember-delay: 0s;    --ember-dur: 14s;"></span>
+      <span class="landing-ember" style="--ember-x: 28%;  --ember-delay: 3s;    --ember-dur: 18s;"></span>
+      <span class="landing-ember" style="--ember-x: 45%;  --ember-delay: 6s;    --ember-dur: 12s;"></span>
+      <span class="landing-ember" style="--ember-x: 62%;  --ember-delay: 1.5s;  --ember-dur: 16s;"></span>
+      <span class="landing-ember" style="--ember-x: 74%;  --ember-delay: 4.5s;  --ember-dur: 20s;"></span>
+      <span class="landing-ember" style="--ember-x: 88%;  --ember-delay: 8s;    --ember-dur: 13s;"></span>
+      <span class="landing-ember" style="--ember-x: 18%;  --ember-delay: 10s;   --ember-dur: 15s;"></span>
+      <span class="landing-ember" style="--ember-x: 55%;  --ember-delay: 12s;   --ember-dur: 17s;"></span>
+    </div>
   </div>
 
   <main class="landing-shell">
     <header class="landing-topbar">
-      <div class="landing-brand-lockup">
-        <span class="landing-brand-dot"></span>
+      <a class="landing-brand-lockup" href="#top">
+        <span class="landing-brand-mark">D</span>
         <span class="landing-brand-text">Discra</span>
-      </div>
+      </a>
       <div class="landing-top-actions">
-        <a class="btn btn-ghost" href="ui/register">Request Access</a>
-        <a class="btn btn-primary" href="ui/login">Log In</a>
+        <a class="btn btn-accent" href="ui/register">Request Access</a>
+        <a class="btn btn-primary" href="ui/login">Enter</a>
       </div>
     </header>
 
-    <section class="landing-hero" data-reveal>
-      <div class="landing-hero-copy">
-        <p class="landing-kicker">Delivery Operations Platform</p>
-        <h1>Transform Last-Mile Delivery Into A Growth Engine.</h1>
+    <section class="landing-hero" id="top">
+      <div class="landing-sigil" aria-hidden="true">
+        <span class="landing-sigil-line"></span>
+        <span class="landing-sigil-diamond"></span>
+        <span class="landing-sigil-line"></span>
+      </div>
+      <h1 class="landing-wordmark">Discra</h1>
+      <p class="landing-hero-tagline">The calm control tower for last-mile delivery teams.</p>
+      <div class="landing-hero-actions">
+        <a class="btn btn-primary landing-btn-strong" href="ui/login">Enter</a>
+        <a class="btn btn-accent landing-btn-strong" href="ui/register">Request Access</a>
+      </div>
+      <div class="landing-hero-seal">
+        <span>Live route intelligence</span>
+        <span class="landing-seal-sep"></span>
+        <span>Real-time field visibility</span>
+        <span class="landing-seal-sep"></span>
+        <span>Secure proof of delivery</span>
+      </div>
+    </section>
+
+    <section class="landing-section" data-reveal>
+      <div class="landing-section-heading">
+        <span class="landing-kicker">The Platform</span>
+        <h2>Dispatch, Drive, Deliver — As One Order.</h2>
         <p class="landing-lead">Discra combines dispatch clarity, live driver intelligence, and proof-of-delivery confidence into one elegant command center for modern logistics teams.</p>
-        <div class="landing-cta-row">
-          <a class="btn btn-primary landing-btn-strong" href="ui/register">Request Access</a>
-          <a class="btn btn-accent landing-btn-strong" href="ui/login">Log In</a>
-        </div>
-        <div class="landing-proof-row">
-          <span>Live route intelligence</span>
-          <span>Real-time field visibility</span>
-          <span>Secure proof of delivery</span>
-        </div>
       </div>
-
-      <div class="landing-hero-visual" data-parallax-speed="0.1">
-        <img class="landing-hero-image" src="https://images.pexels.com/photos/1267338/pexels-photo-1267338.jpeg?auto=compress&cs=tinysrgb&w=1600" alt="City logistics network at night">
-        <article class="landing-floating-card landing-floating-card-a">
-          <strong>+31%</strong>
-          <span>Faster Dispatch Decisions</span>
+      <div class="landing-card-row">
+        <article class="panel-ornate landing-card">
+          <div class="landing-card-emblem">I</div>
+          <h3>Built For High-Tempo Dispatch Teams</h3>
+          <ul class="landing-list">
+            <li>Clean operational cockpit with clear action hierarchy.</li>
+            <li>Live assignment state across orders, drivers, and routes.</li>
+            <li>Low-friction status changes that keep teams in flow.</li>
+          </ul>
         </article>
-        <article class="landing-floating-card landing-floating-card-b">
-          <strong>2.4x</strong>
-          <span>More Stops Completed</span>
-        </article>
-        <article class="landing-floating-card landing-floating-card-c">
-          <strong>99.2%</strong>
-          <span>POD Capture Consistency</span>
+        <article class="panel-ornate landing-card">
+          <div class="landing-card-emblem">II</div>
+          <h3>From Dispatch To Driver In One System</h3>
+          <ul class="landing-list">
+            <li>Mobile-first driver experience for field execution.</li>
+            <li>Photo and signature POD capture baked in.</li>
+            <li>Fast handoff between planning, execution, and proof.</li>
+          </ul>
         </article>
       </div>
     </section>
 
-    <section class="landing-grid" data-reveal>
-      <article class="landing-card">
-        <img src="https://images.pexels.com/photos/1117210/pexels-photo-1117210.jpeg?auto=compress&cs=tinysrgb&w=1400" alt="Dispatch planning view on laptop">
-        <h2>Built For High-Tempo Dispatch Teams</h2>
-        <ul class="landing-list">
-          <li>Clean operational cockpit with clear action hierarchy.</li>
-          <li>Live assignment state across orders, drivers, and routes.</li>
-          <li>Low-friction status changes that keep teams in flow.</li>
-        </ul>
-      </article>
-
-      <article class="landing-card">
-        <img src="https://images.pexels.com/photos/6169056/pexels-photo-6169056.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="Driver holding mobile device for delivery updates">
-        <h2>From Dispatch To Driver In One System</h2>
-        <ul class="landing-list">
-          <li>Mobile-first driver experience for field execution.</li>
-          <li>Photo and signature POD capture baked in.</li>
-          <li>Fast handoff between planning, execution, and proof.</li>
-        </ul>
-      </article>
-    </section>
-
-    <section class="landing-parallax-band" data-reveal>
-      <div class="landing-parallax-bg" data-parallax-speed="0.16"></div>
-      <div class="landing-parallax-overlay">
-        <p>Operate with confidence</p>
+    <section class="landing-section landing-section-band" data-reveal>
+      <div class="landing-section-heading">
+        <span class="landing-kicker">Operate With Confidence</span>
         <h2>See What Is Happening Right Now, Not 30 Minutes Ago.</h2>
+        <p class="landing-lead">The field moves fast. Your control tower should move faster.</p>
       </div>
     </section>
 
-    <section class="landing-process" data-reveal>
-      <h2>How Access Works</h2>
+    <section class="landing-section" data-reveal>
+      <div class="landing-section-heading">
+        <span class="landing-kicker">The Path In</span>
+        <h2>How Access Works</h2>
+      </div>
       <div class="landing-process-grid">
-        <article class="landing-process-card">
-          <span>01</span>
-          <h3>Sign Up</h3>
-          <p>Request tenant access using hosted registration with your organization details.</p>
+        <article class="panel-ornate landing-process-card">
+          <span class="landing-process-roman">I</span>
+          <h3>Request</h3>
+          <p>Submit your organization details through hosted registration.</p>
         </article>
-        <article class="landing-process-card">
-          <span>02</span>
+        <article class="panel-ornate landing-process-card">
+          <span class="landing-process-roman">II</span>
           <h3>Approval</h3>
           <p>App Dev reviews your request and approves your tenant through secure signed links.</p>
         </article>
-        <article class="landing-process-card">
-          <span>03</span>
+        <article class="panel-ornate landing-process-card">
+          <span class="landing-process-roman">III</span>
           <h3>Launch</h3>
           <p>Log in and immediately start dispatching with role-aware access and live operations.</p>
         </article>
       </div>
     </section>
 
-    <section class="landing-login-panel" data-reveal>
-      <div>
+    <section class="landing-section landing-section-final" data-reveal>
+      <div class="panel-ornate landing-final-panel">
         <h2>Ready To Run Smarter Delivery Operations?</h2>
-        <p>New here? request access. Already approved? log in and continue from any device.</p>
-      </div>
-      <div class="landing-login-actions">
-        <a class="btn btn-primary" href="ui/register">Request Access</a>
-        <a class="btn btn-accent" href="ui/login">Log In</a>
+        <p>New here? Request access. Already approved? Log in and continue from any device.</p>
+        <div class="landing-hero-actions">
+          <a class="btn btn-primary landing-btn-strong" href="ui/login">Enter</a>
+          <a class="btn btn-accent landing-btn-strong" href="ui/register">Request Access</a>
+        </div>
       </div>
     </section>
+
+    <footer class="landing-footer">
+      <span>Discra</span>
+      <span class="landing-footer-sep"></span>
+      <span>Delivery Operations Platform</span>
+    </footer>
   </main>
-  <script src="ui/assets/landing.js?v=20260321a"></script>
+  <script src="ui/assets/landing.js?v=20260419a"></script>
 </body>
 </html>

@@ -125,11 +125,11 @@
     if (status === "Approved") {
       if (heading) heading.textContent = "Registration Approved";
       if (messageParagraph) messageParagraph.textContent = "Your tenant has been approved! Sign in to the Admin console to get started.";
-      if (icon) { icon.textContent = "\u2713"; icon.style.background = "var(--accent, #12b886)"; }
+      if (icon) { icon.textContent = "\u2713"; icon.style.background = "var(--text-success, #4A9E5C)"; }
     } else if (status === "Rejected") {
       if (heading) heading.textContent = "Registration Update Needed";
       if (messageParagraph) messageParagraph.textContent = "Your registration needs updates. Please revise your details and resubmit.";
-      if (icon) { icon.textContent = "!"; icon.style.background = "#e03131"; }
+      if (icon) { icon.textContent = "!"; icon.style.background = "var(--text-danger, #D94D4D)"; }
       // Show the form again for resubmission
       el.confirmationPanel.hidden = true;
       if (el.tenantPanel) {
@@ -138,7 +138,7 @@
     } else {
       if (heading) heading.textContent = "Request Received";
       if (messageParagraph) messageParagraph.textContent = "We've received your request to try Discra. Our team will review your registration and respond soon.";
-      if (icon) { icon.textContent = "\u2713"; icon.style.background = "var(--accent, #12b886)"; }
+      if (icon) { icon.textContent = "\u2713"; icon.style.background = "var(--gold-primary, #C8973A)"; }
     }
   }
 

@@ -343,7 +343,7 @@
       type: "line",
       source: activeRouteSourceId,
       layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": "#1ca2d4", "line-width": 5, "line-opacity": 0.9 },
+      paint: { "line-color": "#C8973A", "line-width": 5, "line-opacity": 0.9 },
     });
   }
 
@@ -355,7 +355,7 @@
       return;
     }
     var markerEl = document.createElement("div");
-    markerEl.style.cssText = "width:16px;height:16px;background:#1ca2d4;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.4);";
+    markerEl.style.cssText = "width:16px;height:16px;background:#F0C060;border:3px solid #0B0910;border-radius:50%;box-shadow:0 0 8px rgba(200,151,58,0.55),0 2px 6px rgba(0,0,0,0.4);";
     driverMarker = new maplibregl.Marker({ element: markerEl }).setLngLat([lng, lat]).addTo(map);
   }
 
@@ -369,8 +369,8 @@
     orderCoords[order.id] = { lat: lat, lng: lng };
     var pinEl = document.createElement("div");
     var isDelivery = String(order.status || "").match(/PickedUp|EnRoute/i);
-    var color = isDelivery ? "#34d399" : "#f59e0b";
-    pinEl.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="' + color + '" stroke="#0a1019" stroke-width="2"/><text x="14" y="18" text-anchor="middle" font-size="13" font-weight="700" fill="#0a1019">&#x25BC;</text></svg>';
+    var color = isDelivery ? "#4A9E5C" : "#C8973A";
+    pinEl.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="' + color + '" stroke="#0B0910" stroke-width="2"/><text x="14" y="18" text-anchor="middle" font-size="13" font-weight="700" fill="#0B0910">&#x25BC;</text></svg>';
     pinEl.style.cursor = "pointer";
     pinEl.addEventListener("click", function () { selectOrder(order.id); });
     var marker = new maplibregl.Marker({ element: pinEl, anchor: "center" })
@@ -686,7 +686,7 @@
     var ctx = canvas.getContext("2d");
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
-    ctx.strokeStyle = "#8ec8e8";
+    ctx.strokeStyle = "#F0C060";
     var drawing = false;
     function pt(e) {
       var r = canvas.getBoundingClientRect();

@@ -449,6 +449,11 @@ async def get_optional_authenticated_identity(request: Request) -> Optional[Dict
     return _claims_to_identity(claims)
 
 
+def validate_id_token(token: str) -> Dict[str, Any]:
+    """Validate a Cognito ID token and return its claims. Raises HTTPException on failure."""
+    return _decode_jwt(token)
+
+
 def _normalized_role_set(roles: List[str]) -> set[str]:
     return {role.strip().lower() for role in roles if isinstance(role, str) and role.strip()}
 

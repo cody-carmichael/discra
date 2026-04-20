@@ -611,6 +611,9 @@ class EmailConfig(BaseModel):
     connected_at: Optional[datetime] = None
     last_poll_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    last_error_code: Optional[str] = None
+    last_error_at: Optional[datetime] = None
+    needs_reauth: bool = False
     email_rules: List[EmailRule] = Field(default_factory=list)
 
 

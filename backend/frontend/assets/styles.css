@@ -3664,6 +3664,26 @@ body.theme-admin .billing-seat-cards .stat-card small {
   font-size: 0.72rem;
 }
 
+/* ── Gmail reauth banner ── */
+.reauth-banner {
+  position: sticky;
+  top: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, #5A1515, #8B2626);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-accent);
+  font-family: var(--font-body);
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(11, 9, 16, 0.5);
+}
+.reauth-banner-text { flex: 0 1 auto; }
+.reauth-banner-btn { flex: 0 0 auto; }
+
 /* ── Toast notifications ── */
 .toast-container {
   position: fixed;

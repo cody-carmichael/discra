@@ -105,6 +105,8 @@
     emailLastPoll: document.getElementById("email-last-poll"),
     emailPollStatus: document.getElementById("email-poll-status"),
     connectGmailBtn: document.getElementById("connect-gmail-btn"),
+    gmailReauthBanner: document.getElementById("gmail-reauth-banner"),
+    gmailReauthReconnect: document.getElementById("gmail-reauth-reconnect"),
     disconnectEmailBtn: document.getElementById("disconnect-email-btn"),
     refreshEmailStatus: document.getElementById("refresh-email-status"),
     refreshSkippedEmails: document.getElementById("refresh-skipped-emails"),
@@ -3549,6 +3551,9 @@
   async function refreshEmailStatus() {
     try {
       var status = await C.requestJson(apiBase, "/email/status", { token: token });
+      var needsReauth = !!(status && status.needs_reauth);
+      if (el.gmailReauthBanner) el.gmailReauthBanner.hidden = !needsReauth;
+
       if (status && status.connected) {
         if (el.emailNotConnected) el.emailNotConnected.hidden = true;
         if (el.emailConnected) el.emailConnected.hidden = false;
@@ -3560,7 +3565,7 @@
         }
         if (el.emailPollStatus) {
           el.emailPollStatus.textContent = status.last_error || "OK";
-          el.emailPollStatus.style.color = status.last_error ? "#D94D4D" : "#4A9E5C";
+          el.emailPollStatus.style.color = (status.last_error || needsReauth) ? "#D94D4D" : "#4A9E5C";
         }
       } else {
         if (el.emailNotConnected) el.emailNotConnected.hidden = false;
@@ -3780,37 +3785,42 @@
     }
   }
 
+  function startGmailOAuth() {
+    if (!googleOAuthClientId) return;
+    var redirectUri = window.location.origin + window.location.pathname;
+    var scope = "https://www.googleapis.com/auth/gmail.modify";
+    var authUrl = "https://accounts.google.com/o/oauth2/v2/auth" +
+      "?client_id=" + encodeURIComponent(googleOAuthClientId) +
+      "&redirect_uri=" + encodeURIComponent(redirectUri) +
+      "&response_type=code" +
+      "&scope=" + encodeURIComponent(scope) +
+      "&access_type=offline" +
+      "&prompt=consent" +
+      "&state=gmail_connect";
+    var popup = window.open(authUrl, "gmail_connect", "width=500,height=600");
+    function onGmailMessage(event) {
+      if (event.origin !== window.location.origin) return;
+      if (!event.data || event.data.type !== "gmail_oauth_callback") return;
+      window.removeEventListener("message", onGmailMessage);
+      if (popup && !popup.closed) popup.close();
+      if (event.data.code) {
+        connectGmailWithCode(event.data.code, redirectUri);
+      }
+    }
+    window.addEventListener("message", onGmailMessage);
+  }
+
   function initConnectGmail() {
     if (!googleOAuthClientId) {
       if (el.connectGmailBtn) el.connectGmailBtn.disabled = true;
+      if (el.gmailReauthReconnect) el.gmailReauthReconnect.disabled = true;
       return;
     }
     if (el.connectGmailBtn) {
-      el.connectGmailBtn.addEventListener("click", function () {
-        // Open Google OAuth consent in a popup
-        var redirectUri = window.location.origin + window.location.pathname;
-        var scope = "https://www.googleapis.com/auth/gmail.modify";
-        var authUrl = "https://accounts.google.com/o/oauth2/v2/auth" +
-          "?client_id=" + encodeURIComponent(googleOAuthClientId) +
-          "&redirect_uri=" + encodeURIComponent(redirectUri) +
-          "&response_type=code" +
-          "&scope=" + encodeURIComponent(scope) +
-          "&access_type=offline" +
-          "&prompt=consent" +
-          "&state=gmail_connect";
-        var popup = window.open(authUrl, "gmail_connect", "width=500,height=600");
-        // Listen for the OAuth code posted back by the popup callback
-        function onGmailMessage(event) {
-          if (event.origin !== window.location.origin) return;
-          if (!event.data || event.data.type !== "gmail_oauth_callback") return;
-          window.removeEventListener("message", onGmailMessage);
-          if (popup && !popup.closed) popup.close();
-          if (event.data.code) {
-            connectGmailWithCode(event.data.code, redirectUri);
-          }
-        }
-        window.addEventListener("message", onGmailMessage);
-      });
+      el.connectGmailBtn.addEventListener("click", startGmailOAuth);
+    }
+    if (el.gmailReauthReconnect) {
+      el.gmailReauthReconnect.addEventListener("click", startGmailOAuth);
     }
   }
 
@@ -4022,6 +4032,13 @@
         var msg = JSON.parse(event.data);
         if (msg.type === "new_order") {
           handleNewOrderNotification(msg.order || {});
+        } else if (msg.type === "gmail_auth_required") {
+          // Show the banner immediately, then refresh the status card.
+          if (el.gmailReauthBanner) el.gmailReauthBanner.hidden = false;
+          refreshEmailStatus().catch(function () {});
+        } else if (msg.type === "gmail_auth_restored") {
+          if (el.gmailReauthBanner) el.gmailReauthBanner.hidden = true;
+          refreshEmailStatus().catch(function () {});
         }
       } catch (e) { /* ignore malformed messages */ }
     };

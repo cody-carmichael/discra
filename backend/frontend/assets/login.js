@@ -56,7 +56,7 @@
     var code = (err && (err.code || err.name)) || "";
     var map = {
       NotAuthorizedException: "Incorrect email or password.",
-      UserNotFoundException: "No account found with that email.",
+      UserNotFoundException: "No account found with that username.",
       UserNotConfirmedException: "Please confirm your email before signing in.",
       PasswordResetRequiredException: "A password reset is required. Use Forgot Password.",
       LimitExceededException: "Too many attempts. Please wait a moment and try again.",

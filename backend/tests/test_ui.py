@@ -30,7 +30,7 @@ def test_ui_pages_are_available():
     assert "Enter" in home.text
     assert "ui/login" in home.text
     assert "Welcome Back" in login.text
-    assert "login-gateway-button" in login.text
+    assert "login-submit" in login.text
     assert "Discra" in admin.text
     assert "Dispatch" in admin.text
     assert "My Stops" in driver.text

@@ -3,37 +3,97 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Discra Login</title>
+  <title>Discra | Sign In</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=20260321a">
+  <link rel="stylesheet" href="assets/styles.css?v=20260420a">
 </head>
 <body class="theme-admin">
   <main class="center-stage">
-    <section class="hero-card login-gateway-card">
-      <p class="eyebrow">Discra Access</p>
-      <h1>Welcome Back</h1>
-      <p class="lead">Sign in with your approved account to continue to the Admin and Dispatcher workspace.</p>
-      <div class="login-gateway-actions">
-        <button id="login-gateway-button" class="btn btn-primary" type="button">Log In</button>
+    <section class="hero-card login-form-card">
+
+      <div class="login-brand">
+        <span class="login-brand-mark">D</span>
+        <span class="login-brand-text">Discra</span>
       </div>
-      <p id="login-gateway-message" class="message"></p>
-      <details id="login-gateway-debug" class="auth-config" hidden>
-        <summary>Advanced Connection Settings</summary>
-        <label class="field">
-          <span>Cognito Hosted UI Domain</span>
-          <input id="login-cognito-domain" placeholder="your-domain.auth.us-east-1.amazoncognito.com">
-        </label>
-        <label class="field">
-          <span>Client ID</span>
-          <input id="login-cognito-client-id" placeholder="app client id">
-        </label>
-      </details>
+
+      <!-- Sign in form -->
+      <div id="login-form-panel">
+        <h1>Welcome Back</h1>
+        <p class="login-lead">Sign in to your workspace.</p>
+        <div class="login-fields">
+          <label class="field">
+            <span>Email</span>
+            <input id="login-email" type="email" autocomplete="email" placeholder="you@example.com">
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••">
+          </label>
+        </div>
+        <p id="login-message" class="message"></p>
+        <button id="login-submit" class="btn btn-primary login-btn-full" type="button">Sign In</button>
+        <div class="login-footer-links">
+          <button id="login-forgot-link" class="btn-link" type="button">Forgot password?</button>
+          <a href="register" class="btn-link">Request access</a>
+        </div>
+      </div>
+
+      <!-- New password required challenge -->
+      <div id="login-new-password-panel" hidden>
+        <h1>Set New Password</h1>
+        <p class="login-lead">A new password is required before you can continue.</p>
+        <div class="login-fields">
+          <label class="field">
+            <span>New Password</span>
+            <input id="login-new-password" type="password" autocomplete="new-password" placeholder="••••••••">
+          </label>
+        </div>
+        <p id="login-new-password-message" class="message"></p>
+        <button id="login-new-password-submit" class="btn btn-primary login-btn-full" type="button">Set Password</button>
+      </div>
+
+      <!-- Forgot password — request code -->
+      <div id="login-forgot-panel" hidden>
+        <h1>Forgot Password</h1>
+        <p class="login-lead">Enter your email to receive a reset code.</p>
+        <div class="login-fields">
+          <label class="field">
+            <span>Email</span>
+            <input id="login-forgot-email" type="email" autocomplete="email" placeholder="you@example.com">
+          </label>
+        </div>
+        <p id="login-forgot-message" class="message"></p>
+        <button id="login-forgot-submit" class="btn btn-primary login-btn-full" type="button">Send Reset Code</button>
+        <button id="login-forgot-back" class="btn btn-ghost login-btn-full" type="button">Back to Sign In</button>
+      </div>
+
+      <!-- Forgot password — enter code + new password -->
+      <div id="login-reset-panel" hidden>
+        <h1>Reset Password</h1>
+        <p class="login-lead">Enter the code you received and your new password.</p>
+        <div class="login-fields">
+          <label class="field">
+            <span>Reset Code</span>
+            <input id="login-reset-code" type="text" autocomplete="one-time-code" placeholder="123456">
+          </label>
+          <label class="field">
+            <span>New Password</span>
+            <input id="login-reset-password" type="password" autocomplete="new-password" placeholder="••••••••">
+          </label>
+        </div>
+        <p id="login-reset-message" class="message"></p>
+        <button id="login-reset-submit" class="btn btn-primary login-btn-full" type="button">Reset Password</button>
+        <button id="login-reset-back" class="btn btn-ghost login-btn-full" type="button">Back to Sign In</button>
+      </div>
+
     </section>
   </main>
 
-  <script src="assets/common.js?v=20260321a"></script>
-  <script src="assets/login.js?v=20260321a"></script>
+  <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.7/dist/amazon-cognito-identity.min.js"></script>
+  <script src="assets/common.js?v=20260420a"></script>
+  <script src="assets/auth.js?v=20260420a"></script>
+  <script src="assets/login.js?v=20260420a"></script>
 </body>
 </html>

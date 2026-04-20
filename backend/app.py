@@ -27,6 +27,7 @@ try:
         get_optional_authenticated_identity,
         is_dev_auth_enabled,
         normalize_dev_auth_role,
+        validate_id_token,
         web_auth_cookie_name,
         web_auth_ttl_seconds,
     )
@@ -55,6 +56,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
         get_optional_authenticated_identity,
         is_dev_auth_enabled,
         normalize_dev_auth_role,
+        validate_id_token,
         web_auth_cookie_name,
         web_auth_ttl_seconds,
     )
@@ -134,6 +136,7 @@ def _ui_config_payload(*, admin_redirect_path: str, driver_redirect_path: str, r
         "cognito_domain": os.environ.get("COGNITO_HOSTED_UI_DOMAIN", ""),
         "cognito_client_id": os.environ.get("FRONTEND_COGNITO_CLIENT_ID")
         or os.environ.get("COGNITO_AUDIENCE", ""),
+        "cognito_user_pool_id": os.environ.get("COGNITO_USER_POOL_ID", ""),
         "admin_redirect_path": admin_redirect_path,
         "driver_redirect_path": driver_redirect_path,
         "onboarding_enabled": (os.environ.get("ENABLE_ONBOARDING_FLOW", "true").strip().lower() in {"1", "true", "yes", "on"}),
@@ -495,6 +498,31 @@ def create_app() -> FastAPI:
         response.set_cookie(
             key=web_auth_cookie_name(),
             value=token,
+            max_age=web_auth_ttl_seconds(),
+            httponly=True,
+            secure=_cookie_secure(request),
+            samesite="lax",
+            path="/",
+        )
+        return {"ok": True}
+
+    @app.post("/ui/auth/token", include_in_schema=False)
+    @app.post("/backend/ui/auth/token", include_in_schema=False)
+    @app.post("/dev/backend/ui/auth/token", include_in_schema=False)
+    async def ui_auth_set_token(request: Request, response: Response):
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+        id_token = str(payload.get("id_token") or "").strip()
+        if not id_token:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing id_token")
+        validate_id_token(id_token)
+        response.set_cookie(
+            key=web_auth_cookie_name(),
+            value=id_token,
             max_age=web_auth_ttl_seconds(),
             httponly=True,
             secure=_cookie_secure(request),

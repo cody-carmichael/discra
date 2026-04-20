@@ -1365,6 +1365,90 @@ canvas.signature-pad {
   text-align: left;
 }
 
+/* ── Custom in-app login form ── */
+.login-form-card {
+  max-width: 420px;
+  width: 100%;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.login-brand-mark {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, var(--gold-dim), var(--gold-primary));
+  border: 1px solid var(--border-glow);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ornate);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--bg-base);
+  box-shadow: 0 0 8px rgba(200, 151, 58, 0.3);
+}
+
+.login-brand-text {
+  font-family: var(--font-ornate);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-heading);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 12px rgba(240, 192, 96, 0.3);
+}
+
+.login-lead {
+  margin: 0.2rem 0 0;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 1rem;
+}
+
+.login-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.login-btn-full {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.login-footer-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+  gap: 1rem;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(150, 138, 168, 0.35);
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+
+.btn-link:hover {
+  color: var(--gold-primary);
+  text-decoration-color: var(--gold-dim);
+}
+
 .lead {
   color: var(--text-muted);
 }

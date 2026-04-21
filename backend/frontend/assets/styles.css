@@ -2833,6 +2833,58 @@ body.theme-admin .billing-seat-cards .stat-card small {
 
 .login-message { margin-top: 1rem; }
 
+/* ===== ORDERS SUB-NAV ===== */
+.orders-subnav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.orders-subnav {
+  display: flex;
+  gap: 2px;
+}
+.orders-subnav-tab {
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: .82rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease;
+  margin-bottom: -1px;
+}
+.orders-subnav-tab:hover { color: var(--text-heading); }
+.orders-subnav-tab.is-active {
+  color: var(--gold-bright);
+  border-bottom-color: var(--gold-primary);
+}
+.orders-add-btn {
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 4px 14px;
+}
+.orders-subpanel { display: none; flex: 1; overflow-y: auto; }
+.orders-subpanel.is-active { display: block; }
+.workspace-panel[data-workspace-panel="orders"] { display: none; flex-direction: column; }
+.workspace-panel[data-workspace-panel="orders"].is-active { display: flex; }
+
+/* ===== POD VIEW ===== */
+.pod-record { padding: 8px 0; }
+.pod-meta { font-size: .82rem; color: var(--text-muted); margin-bottom: 10px; }
+.pod-meta strong { color: var(--text); }
+.pod-photos, .pod-signatures { display: flex; flex-wrap: wrap; gap: 10px; }
+.pod-photo { max-width: 240px; max-height: 200px; border-radius: var(--radius-sm); border: 1px solid var(--border); object-fit: cover; }
+.pod-signature { max-width: 300px; max-height: 120px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: #fff; object-fit: contain; }
+
 /* ===== IN FLIGHT ===== */
 .inflight-list { display: flex; flex-direction: column; gap: 2px; }
 .inflight-empty { color: var(--text-muted); font-size: .85rem; padding: 24px 0; text-align: center; }

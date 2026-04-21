@@ -149,6 +149,18 @@
     dispatchOrderList: document.getElementById("dispatch-order-list"),
     dispatchOrderSearch: document.getElementById("dispatch-order-search"),
     dispatchFilterBtns: Array.from(document.querySelectorAll("[data-dispatch-filter]")),
+    adminNavTab: document.getElementById("admin-nav-tab"),
+    addOrderBtn: document.getElementById("add-order-btn"),
+    createOrderModal: document.getElementById("create-order-modal"),
+    createOrderModalClose: document.getElementById("create-order-modal-close"),
+    ordersSubnavTabs: Array.from(document.querySelectorAll("[data-orders-tab]")),
+    ordersSubpanels: Array.from(document.querySelectorAll("[data-orders-panel]")),
+    refreshOrderHistory: document.getElementById("refresh-order-history"),
+    orderHistoryBody: document.getElementById("order-history-tbody"),
+    orderHistoryMessage: document.getElementById("order-history-message"),
+    podViewModal: document.getElementById("pod-view-modal"),
+    podViewModalClose: document.getElementById("pod-view-modal-close"),
+    podViewContent: document.getElementById("pod-view-content"),
   };
 
   let token = "";
@@ -528,7 +540,7 @@
       return;
     }
     const hashPanel = (window.location.hash || "").replace("#", "").trim();
-    const knownPanels = new Set(["operations", "orders", "planning", "insights", "admin"]);
+    const knownPanels = new Set(["operations", "orders", "admin"]);
     renderWorkspace(knownPanels.has(hashPanel) ? hashPanel : "operations");
     el.workspaceTabs.forEach(function (tab) {
       tab.addEventListener("click", function () {
@@ -537,6 +549,122 @@
         history.replaceState(null, "", "#" + target);
       });
     });
+  }
+
+  function renderOrdersSubnav(target) {
+    el.ordersSubnavTabs.forEach(function (tab) {
+      tab.classList.toggle("is-active", tab.getAttribute("data-orders-tab") === target);
+    });
+    el.ordersSubpanels.forEach(function (panel) {
+      panel.classList.toggle("is-active", panel.getAttribute("data-orders-panel") === target);
+    });
+  }
+
+  function initOrdersSubnav() {
+    el.ordersSubnavTabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        var target = tab.getAttribute("data-orders-tab");
+        renderOrdersSubnav(target);
+        if (target === "history") {
+          refreshOrderHistory().catch(function (error) {
+            if (el.orderHistoryMessage) C.showMessage(el.orderHistoryMessage, error.message, "error");
+          });
+        }
+        if (target === "inflight") {
+          refreshInflight().catch(function (error) {
+            if (el.inflightMessage) C.showMessage(el.inflightMessage, error.message, "error");
+          });
+        }
+      });
+    });
+  }
+
+  function openCreateOrderModal() {
+    if (el.createOrderModal) el.createOrderModal.style.display = "flex";
+  }
+
+  function closeCreateOrderModal() {
+    if (el.createOrderModal) el.createOrderModal.style.display = "none";
+  }
+
+  function openPodViewModal() {
+    if (el.podViewModal) el.podViewModal.style.display = "flex";
+  }
+
+  function closePodViewModal() {
+    if (el.podViewModal) el.podViewModal.style.display = "none";
+  }
+
+  async function refreshOrderHistory() {
+    if (!requireAuthorized(el.orderHistoryMessage)) return;
+    if (el.orderHistoryBody) {
+      el.orderHistoryBody.innerHTML = "<tr><td colspan=\"5\" style=\"text-align:center;color:var(--text-muted)\">Loading…</td></tr>";
+    }
+    try {
+      var orders = await C.requestJson(apiBase, "/orders?status=Delivered&sort_field=created_at&sort_direction=desc", { token });
+      renderOrderHistory(Array.isArray(orders) ? orders : []);
+    } catch (error) {
+      if (el.orderHistoryMessage) C.showMessage(el.orderHistoryMessage, error.message, "error");
+    }
+  }
+
+  function renderOrderHistory(orders) {
+    if (!el.orderHistoryBody) return;
+    if (!orders.length) {
+      el.orderHistoryBody.innerHTML = "<tr><td colspan=\"5\" style=\"text-align:center;color:var(--text-muted);padding:24px\">No delivered orders yet.</td></tr>";
+      return;
+    }
+    el.orderHistoryBody.innerHTML = orders.map(function (order) {
+      var driver = order.assigned_to
+        ? "<span class=\"driver-pill\">" + C.escapeHtml(order.assigned_to) + "</span>"
+        : "<span style=\"color:var(--text-muted)\">—</span>";
+      var pickup = C.escapeHtml((order.pick_up_street || "") + ", " + (order.pick_up_city || ""));
+      var delivery = C.escapeHtml((order.delivery_street || "") + ", " + (order.delivery_city || ""));
+      return "<tr>" +
+        "<td><strong>" + C.escapeHtml(order.customer_name || "") + "</strong><br><small style=\"color:var(--text-muted)\">Ref " + C.escapeHtml(order.reference_id || "") + "</small></td>" +
+        "<td><small>" + pickup + "</small><br><small style=\"color:var(--text-muted)\">→ " + delivery + "</small></td>" +
+        "<td>" + driver + "</td>" +
+        "<td><small>" + C.escapeHtml(C.formatTimestamp(order.created_at)) + "</small></td>" +
+        "<td><button class=\"btn btn-ghost\" style=\"font-size:.75rem;padding:3px 8px\" type=\"button\" data-pod-order-id=\"" + C.escapeHtml(order.id) + "\">View POD</button></td>" +
+        "</tr>";
+    }).join("");
+  }
+
+  async function fetchAndShowPod(orderId) {
+    if (!requireAuthorized(el.orderHistoryMessage)) return;
+    if (el.podViewContent) el.podViewContent.innerHTML = "<p style=\"color:var(--text-muted);text-align:center;padding:32px\">Loading…</p>";
+    openPodViewModal();
+    try {
+      var records = await C.requestJson(apiBase, "/pod/order/" + orderId, { token });
+      renderPodModal(Array.isArray(records) ? records : []);
+    } catch (error) {
+      if (el.podViewContent) el.podViewContent.innerHTML = "<p class=\"message message-error\" style=\"margin:24px\">" + C.escapeHtml(error.message) + "</p>";
+    }
+  }
+
+  function renderPodModal(records) {
+    if (!el.podViewContent) return;
+    if (!records.length) {
+      el.podViewContent.innerHTML = "<p style=\"color:var(--text-muted);text-align:center;padding:32px\">No proof of delivery recorded for this order.</p>";
+      return;
+    }
+    el.podViewContent.innerHTML = records.map(function (record, i) {
+      var photos = (record.photo_urls || []).map(function (url) {
+        return "<a href=\"" + C.escapeHtml(url) + "\" target=\"_blank\" rel=\"noopener\"><img src=\"" + C.escapeHtml(url) + "\" class=\"pod-photo\" alt=\"Delivery photo\"></a>";
+      }).join("");
+      var sigs = (record.signature_urls || []).map(function (url) {
+        return "<a href=\"" + C.escapeHtml(url) + "\" target=\"_blank\" rel=\"noopener\"><img src=\"" + C.escapeHtml(url) + "\" class=\"pod-signature\" alt=\"Signature\"></a>";
+      }).join("");
+      return (i > 0 ? "<hr style=\"border-color:var(--border);margin:16px 0\">" : "") +
+        "<div class=\"pod-record\">" +
+        "<div class=\"pod-meta\">Driver: <strong>" + C.escapeHtml(record.driver_id || "—") + "</strong>" +
+        " &bull; Captured: <strong>" + C.escapeHtml(C.formatTimestamp(record.captured_at)) + "</strong>" +
+        (record.notes ? " &bull; Notes: <em>" + C.escapeHtml(record.notes) + "</em>" : "") +
+        "</div>" +
+        (photos ? "<div class=\"pod-photos\"><h4 style=\"margin:12px 0 6px\">Photos</h4>" + photos + "</div>" : "") +
+        (sigs ? "<div class=\"pod-signatures\"><h4 style=\"margin:12px 0 6px\">Signature</h4>" + sigs + "</div>" : "") +
+        "</div>";
+    }).join("");
   }
 
   function updateOrderStats(orders) {
@@ -1193,6 +1321,9 @@
     } else {
       showLoginScreen(false);
     }
+    if (el.adminNavTab) {
+      el.adminNavTab.hidden = !isAdminRole;
+    }
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
@@ -1578,6 +1709,7 @@
       });
       C.showMessage(el.createMessage, "Created order " + created.id, "success");
       el.createForm.reset();
+      closeCreateOrderModal();
       await refreshOrders();
     } catch (error) {
       C.showMessage(el.createMessage, error.message, "error");
@@ -3197,6 +3329,7 @@
     setInteractiveState(false);
     setBillingInteractiveState(false);
     initWorkspaceTabs();
+    initOrdersSubnav();
     if (el.authDebug) {
       el.authDebug.hidden = !debugAuth;
     }
@@ -3438,6 +3571,41 @@
       el.purchaseModal.hidden = true;
     }
   });
+  if (el.addOrderBtn) {
+    el.addOrderBtn.addEventListener("click", openCreateOrderModal);
+  }
+  if (el.createOrderModalClose) {
+    el.createOrderModalClose.addEventListener("click", closeCreateOrderModal);
+  }
+  if (el.createOrderModal) {
+    el.createOrderModal.addEventListener("click", function (event) {
+      if (event.target === el.createOrderModal) closeCreateOrderModal();
+    });
+  }
+  if (el.podViewModalClose) {
+    el.podViewModalClose.addEventListener("click", closePodViewModal);
+  }
+  if (el.podViewModal) {
+    el.podViewModal.addEventListener("click", function (event) {
+      if (event.target === el.podViewModal) closePodViewModal();
+    });
+  }
+  if (el.orderHistoryBody) {
+    el.orderHistoryBody.addEventListener("click", function (event) {
+      var btn = event.target.closest("[data-pod-order-id]");
+      if (!btn) return;
+      fetchAndShowPod(btn.getAttribute("data-pod-order-id")).catch(function (error) {
+        if (el.orderHistoryMessage) C.showMessage(el.orderHistoryMessage, error.message, "error");
+      });
+    });
+  }
+  if (el.refreshOrderHistory) {
+    el.refreshOrderHistory.addEventListener("click", function () {
+      refreshOrderHistory().catch(function (error) {
+        if (el.orderHistoryMessage) C.showMessage(el.orderHistoryMessage, error.message, "error");
+      });
+    });
+  }
   if (el.devAuthActions) {
     el.devAuthActions.addEventListener("click", function (event) {
       onDevAuthActionClick(event).catch(function (error) {

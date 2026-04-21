@@ -102,6 +102,14 @@ class PodDataStore(ABC):
     def put_metadata(self, metadata: PodMetadataRecord) -> PodMetadataRecord:
         raise NotImplementedError
 
+    @abstractmethod
+    def list_by_order_id(self, org_id: str, order_id: str) -> List[PodMetadataRecord]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def generate_presigned_get_url(self, key: str, expires_in: int) -> str:
+        raise NotImplementedError
+
 
 class InMemoryPodDataStore(PodDataStore):
     def __init__(self):
@@ -126,6 +134,12 @@ class InMemoryPodDataStore(PodDataStore):
     def put_metadata(self, metadata: PodMetadataRecord) -> PodMetadataRecord:
         self.items[metadata.pod_id] = metadata
         return metadata
+
+    def list_by_order_id(self, org_id: str, order_id: str) -> List[PodMetadataRecord]:
+        return [r for r in self.items.values() if r.org_id == org_id and r.order_id == order_id]
+
+    def generate_presigned_get_url(self, key: str, expires_in: int) -> str:
+        return f"https://example.invalid/pod-view?key={key}"
 
 
 class DynamoS3PodDataStore(PodDataStore):
@@ -158,6 +172,26 @@ class DynamoS3PodDataStore(PodDataStore):
     def put_metadata(self, metadata: PodMetadataRecord) -> PodMetadataRecord:
         self.table.put_item(Item=metadata.model_dump(mode="json"))
         return metadata
+
+    def list_by_order_id(self, org_id: str, order_id: str) -> List[PodMetadataRecord]:
+        from boto3.dynamodb.conditions import Attr
+        response = self.table.scan(
+            FilterExpression=Attr("org_id").eq(org_id) & Attr("order_id").eq(order_id)
+        )
+        result = []
+        for item in response.get("Items", []):
+            try:
+                result.append(PodMetadataRecord(**item))
+            except Exception:
+                pass
+        return result
+
+    def generate_presigned_get_url(self, key: str, expires_in: int) -> str:
+        return self.s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket_name, "Key": key},
+            ExpiresIn=expires_in,
+        )
 
 
 _IN_MEMORY_POD_STORE = InMemoryPodDataStore()

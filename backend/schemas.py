@@ -417,12 +417,7 @@ class PodMetadataRecord(BaseModel):
     location: Optional[PodLocation] = None
 
 
-class PodViewRecord(BaseModel):
-    pod_id: str
-    order_id: str
-    driver_id: str
-    captured_at: datetime
-    notes: Optional[str] = None
+class PodMetadataRecordWithUrls(PodMetadataRecord):
     photo_urls: List[str] = Field(default_factory=list)
     signature_urls: List[str] = Field(default_factory=list)
 
@@ -621,9 +616,6 @@ class EmailConfig(BaseModel):
     connected_at: Optional[datetime] = None
     last_poll_at: Optional[datetime] = None
     last_error: Optional[str] = None
-    last_error_code: Optional[str] = None
-    last_error_at: Optional[datetime] = None
-    needs_reauth: bool = False
     email_rules: List[EmailRule] = Field(default_factory=list)
 
 

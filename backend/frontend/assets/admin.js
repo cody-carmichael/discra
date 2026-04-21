@@ -105,8 +105,6 @@
     emailLastPoll: document.getElementById("email-last-poll"),
     emailPollStatus: document.getElementById("email-poll-status"),
     connectGmailBtn: document.getElementById("connect-gmail-btn"),
-    gmailReauthBanner: document.getElementById("gmail-reauth-banner"),
-    gmailReauthReconnect: document.getElementById("gmail-reauth-reconnect"),
     disconnectEmailBtn: document.getElementById("disconnect-email-btn"),
     refreshEmailStatus: document.getElementById("refresh-email-status"),
     refreshSkippedEmails: document.getElementById("refresh-skipped-emails"),
@@ -140,6 +138,24 @@
     devAuthActions: document.getElementById("dev-auth-actions"),
     workspaceTabs: Array.from(document.querySelectorAll("[data-workspace-target]")),
     workspacePanels: Array.from(document.querySelectorAll("[data-workspace-panel]")),
+    ordersSubTabs: Array.from(document.querySelectorAll("[data-orders-subview-target]")),
+    ordersSubPanels: Array.from(document.querySelectorAll("[data-orders-subview-panel]")),
+    historyTbody: document.getElementById("history-tbody"),
+    historyCount: document.getElementById("history-count"),
+    historyMessage: document.getElementById("history-message"),
+    refreshHistory: document.getElementById("refresh-history"),
+    historyFilterForm: document.getElementById("history-filter-form"),
+    historyStatusFilter: document.getElementById("history-status-filter"),
+    historyFromFilter: document.getElementById("history-from-filter"),
+    historyToFilter: document.getElementById("history-to-filter"),
+    historySearchFilter: document.getElementById("history-search-filter"),
+    historyClearFilters: document.getElementById("history-clear-filters"),
+    podViewerOverlay: document.getElementById("pod-viewer-overlay"),
+    podViewerClose: document.getElementById("pod-viewer-close"),
+    podViewerTitle: document.getElementById("pod-viewer-title"),
+    podViewerSummary: document.getElementById("pod-viewer-summary"),
+    podViewerBody: document.getElementById("pod-viewer-body"),
+    podViewerMessage: document.getElementById("pod-viewer-message"),
     statsLastSync: document.getElementById("stats-last-sync"),
     statsSelection: document.getElementById("stats-selection"),
     statsTotalOrders: document.getElementById("stats-total-orders"),
@@ -149,18 +165,6 @@
     dispatchOrderList: document.getElementById("dispatch-order-list"),
     dispatchOrderSearch: document.getElementById("dispatch-order-search"),
     dispatchFilterBtns: Array.from(document.querySelectorAll("[data-dispatch-filter]")),
-    adminNavTab: document.getElementById("admin-nav-tab"),
-    addOrderBtn: document.getElementById("add-order-btn"),
-    createOrderModal: document.getElementById("create-order-modal"),
-    createOrderModalClose: document.getElementById("create-order-modal-close"),
-    ordersSubnavTabs: Array.from(document.querySelectorAll("[data-orders-tab]")),
-    ordersSubpanels: Array.from(document.querySelectorAll("[data-orders-panel]")),
-    refreshOrderHistory: document.getElementById("refresh-order-history"),
-    orderHistoryBody: document.getElementById("order-history-tbody"),
-    orderHistoryMessage: document.getElementById("order-history-message"),
-    podViewModal: document.getElementById("pod-view-modal"),
-    podViewModalClose: document.getElementById("pod-view-modal-close"),
-    podViewContent: document.getElementById("pod-view-content"),
   };
 
   let token = "";
@@ -540,7 +544,7 @@
       return;
     }
     const hashPanel = (window.location.hash || "").replace("#", "").trim();
-    const knownPanels = new Set(["operations", "orders", "admin"]);
+    const knownPanels = new Set(["operations", "orders", "planning", "admin"]);
     renderWorkspace(knownPanels.has(hashPanel) ? hashPanel : "operations");
     el.workspaceTabs.forEach(function (tab) {
       tab.addEventListener("click", function () {
@@ -551,120 +555,44 @@
     });
   }
 
-  function renderOrdersSubnav(target) {
-    el.ordersSubnavTabs.forEach(function (tab) {
-      tab.classList.toggle("is-active", tab.getAttribute("data-orders-tab") === target);
+  let activeOrdersSubview = "active";
+  function activateOrdersSubview(name) {
+    activeOrdersSubview = name || "active";
+    el.ordersSubTabs.forEach(function (tab) {
+      const isActive = tab.getAttribute("data-orders-subview-target") === activeOrdersSubview;
+      tab.classList.toggle("is-active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
     });
-    el.ordersSubpanels.forEach(function (panel) {
-      panel.classList.toggle("is-active", panel.getAttribute("data-orders-panel") === target);
+    el.ordersSubPanels.forEach(function (panel) {
+      const isActive = panel.getAttribute("data-orders-subview-panel") === activeOrdersSubview;
+      panel.classList.toggle("is-active", isActive);
     });
+    try { sessionStorage.setItem("orders-subview", activeOrdersSubview); } catch (e) { /* ignore */ }
+    if (activeOrdersSubview === "inflight") {
+      renderInflight(allOrders);
+    } else if (activeOrdersSubview === "history") {
+      renderHistory(allOrders);
+    }
   }
 
-  function initOrdersSubnav() {
-    el.ordersSubnavTabs.forEach(function (tab) {
+  function initOrdersSubviewTabs() {
+    if (!el.ordersSubTabs.length || !el.ordersSubPanels.length) {
+      return;
+    }
+    let initial = "active";
+    try {
+      const stored = sessionStorage.getItem("orders-subview");
+      if (stored === "active" || stored === "inflight" || stored === "history") {
+        initial = stored;
+      }
+    } catch (e) { /* ignore */ }
+    activateOrdersSubview(initial);
+    el.ordersSubTabs.forEach(function (tab) {
       tab.addEventListener("click", function () {
-        var target = tab.getAttribute("data-orders-tab");
-        renderOrdersSubnav(target);
-        if (target === "history") {
-          refreshOrderHistory().catch(function (error) {
-            if (el.orderHistoryMessage) C.showMessage(el.orderHistoryMessage, error.message, "error");
-          });
-        }
-        if (target === "inflight") {
-          refreshInflight().catch(function (error) {
-            if (el.inflightMessage) C.showMessage(el.inflightMessage, error.message, "error");
-          });
-        }
+        const target = tab.getAttribute("data-orders-subview-target") || "active";
+        activateOrdersSubview(target);
       });
     });
-  }
-
-  function openCreateOrderModal() {
-    if (el.createOrderModal) el.createOrderModal.style.display = "flex";
-  }
-
-  function closeCreateOrderModal() {
-    if (el.createOrderModal) el.createOrderModal.style.display = "none";
-  }
-
-  function openPodViewModal() {
-    if (el.podViewModal) el.podViewModal.style.display = "flex";
-  }
-
-  function closePodViewModal() {
-    if (el.podViewModal) el.podViewModal.style.display = "none";
-  }
-
-  async function refreshOrderHistory() {
-    if (!requireAuthorized(el.orderHistoryMessage)) return;
-    if (el.orderHistoryBody) {
-      el.orderHistoryBody.innerHTML = "<tr><td colspan=\"5\" style=\"text-align:center;color:var(--text-muted)\">Loading…</td></tr>";
-    }
-    try {
-      var orders = await C.requestJson(apiBase, "/orders?status=Delivered&sort_field=created_at&sort_direction=desc", { token });
-      renderOrderHistory(Array.isArray(orders) ? orders : []);
-    } catch (error) {
-      if (el.orderHistoryMessage) C.showMessage(el.orderHistoryMessage, error.message, "error");
-    }
-  }
-
-  function renderOrderHistory(orders) {
-    if (!el.orderHistoryBody) return;
-    if (!orders.length) {
-      el.orderHistoryBody.innerHTML = "<tr><td colspan=\"5\" style=\"text-align:center;color:var(--text-muted);padding:24px\">No delivered orders yet.</td></tr>";
-      return;
-    }
-    el.orderHistoryBody.innerHTML = orders.map(function (order) {
-      var driver = order.assigned_to
-        ? "<span class=\"driver-pill\">" + C.escapeHtml(order.assigned_to) + "</span>"
-        : "<span style=\"color:var(--text-muted)\">—</span>";
-      var pickup = C.escapeHtml((order.pick_up_street || "") + ", " + (order.pick_up_city || ""));
-      var delivery = C.escapeHtml((order.delivery_street || "") + ", " + (order.delivery_city || ""));
-      return "<tr>" +
-        "<td><strong>" + C.escapeHtml(order.customer_name || "") + "</strong><br><small style=\"color:var(--text-muted)\">Ref " + C.escapeHtml(order.reference_id || "") + "</small></td>" +
-        "<td><small>" + pickup + "</small><br><small style=\"color:var(--text-muted)\">→ " + delivery + "</small></td>" +
-        "<td>" + driver + "</td>" +
-        "<td><small>" + C.escapeHtml(C.formatTimestamp(order.created_at)) + "</small></td>" +
-        "<td><button class=\"btn btn-ghost\" style=\"font-size:.75rem;padding:3px 8px\" type=\"button\" data-pod-order-id=\"" + C.escapeHtml(order.id) + "\">View POD</button></td>" +
-        "</tr>";
-    }).join("");
-  }
-
-  async function fetchAndShowPod(orderId) {
-    if (!requireAuthorized(el.orderHistoryMessage)) return;
-    if (el.podViewContent) el.podViewContent.innerHTML = "<p style=\"color:var(--text-muted);text-align:center;padding:32px\">Loading…</p>";
-    openPodViewModal();
-    try {
-      var records = await C.requestJson(apiBase, "/pod/order/" + orderId, { token });
-      renderPodModal(Array.isArray(records) ? records : []);
-    } catch (error) {
-      if (el.podViewContent) el.podViewContent.innerHTML = "<p class=\"message message-error\" style=\"margin:24px\">" + C.escapeHtml(error.message) + "</p>";
-    }
-  }
-
-  function renderPodModal(records) {
-    if (!el.podViewContent) return;
-    if (!records.length) {
-      el.podViewContent.innerHTML = "<p style=\"color:var(--text-muted);text-align:center;padding:32px\">No proof of delivery recorded for this order.</p>";
-      return;
-    }
-    el.podViewContent.innerHTML = records.map(function (record, i) {
-      var photos = (record.photo_urls || []).map(function (url) {
-        return "<a href=\"" + C.escapeHtml(url) + "\" target=\"_blank\" rel=\"noopener\"><img src=\"" + C.escapeHtml(url) + "\" class=\"pod-photo\" alt=\"Delivery photo\"></a>";
-      }).join("");
-      var sigs = (record.signature_urls || []).map(function (url) {
-        return "<a href=\"" + C.escapeHtml(url) + "\" target=\"_blank\" rel=\"noopener\"><img src=\"" + C.escapeHtml(url) + "\" class=\"pod-signature\" alt=\"Signature\"></a>";
-      }).join("");
-      return (i > 0 ? "<hr style=\"border-color:var(--border);margin:16px 0\">" : "") +
-        "<div class=\"pod-record\">" +
-        "<div class=\"pod-meta\">Driver: <strong>" + C.escapeHtml(record.driver_id || "—") + "</strong>" +
-        " &bull; Captured: <strong>" + C.escapeHtml(C.formatTimestamp(record.captured_at)) + "</strong>" +
-        (record.notes ? " &bull; Notes: <em>" + C.escapeHtml(record.notes) + "</em>" : "") +
-        "</div>" +
-        (photos ? "<div class=\"pod-photos\"><h4 style=\"margin:12px 0 6px\">Photos</h4>" + photos + "</div>" : "") +
-        (sigs ? "<div class=\"pod-signatures\"><h4 style=\"margin:12px 0 6px\">Signature</h4>" + sigs + "</div>" : "") +
-        "</div>";
-    }).join("");
   }
 
   function updateOrderStats(orders) {
@@ -1321,9 +1249,6 @@
     } else {
       showLoginScreen(false);
     }
-    if (el.adminNavTab) {
-      el.adminNavTab.hidden = !isAdminRole;
-    }
     setInteractiveState(isAuthorizedRole);
     setBillingInteractiveState(isAuthorizedRole && isAdminRole);
     if (!isAuthorizedRole) {
@@ -1709,7 +1634,6 @@
       });
       C.showMessage(el.createMessage, "Created order " + created.id, "success");
       el.createForm.reset();
-      closeCreateOrderModal();
       await refreshOrders();
     } catch (error) {
       C.showMessage(el.createMessage, error.message, "error");
@@ -1845,6 +1769,8 @@
       renderOrderPins(allOrders);
       const filteredOrders = _applyOrderFiltersAndSort(allOrders);
       renderOrders(filteredOrders || []);
+      renderInflight(allOrders);
+      renderHistory(allOrders);
       setLastSyncStamp();
       C.showMessage(
         el.ordersMessage,
@@ -1854,6 +1780,7 @@
     } catch (error) {
       allOrders = [];
       renderOrders([]);
+      renderHistory([]);
       updateOrderStats([]);
       C.showMessage(el.ordersMessage, error.message, "error");
     }
@@ -2015,7 +1942,7 @@
       source: activeRouteSourceId,
       layout: { "line-join": "round", "line-cap": "round" },
       paint: {
-        "line-color": "#C8973A",
+        "line-color": "#e63946",
         "line-width": 4,
         "line-opacity": 0.85,
       },
@@ -2075,9 +2002,9 @@
       '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
       '</filter>' +
       '</defs>' +
-      '<circle cx="16" cy="16" r="14" fill="#130F1A" stroke="' + borderColor + '" stroke-width="2.5"/>' +
+      '<circle cx="16" cy="16" r="14" fill="#1a1a2e" stroke="' + borderColor + '" stroke-width="2.5"/>' +
       '<circle cx="16" cy="16" r="14" fill="none" stroke="' + glowColor + '" stroke-width="1" opacity="0.3"/>' +
-      '<text x="16" y="22" text-anchor="middle" font-family="Cinzel,Georgia,serif" font-size="20" font-weight="900" fill="' + symbolColor + '" filter="url(#glow-' + symbolColor.replace('#','') + ')">' + symbol + '</text>' +
+      '<text x="16" y="22" text-anchor="middle" font-family="Georgia,\'Times New Roman\',serif" font-size="20" font-weight="900" fill="' + symbolColor + '" filter="url(#glow-' + symbolColor.replace('#','') + ')">' + symbol + '</text>' +
       '</svg>'
     );
   }
@@ -2092,7 +2019,7 @@
       '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
       '</filter>' +
       '</defs>' +
-      '<circle cx="16" cy="16" r="14" fill="#130F1A" stroke="' + fillColor + '" stroke-width="2.5"/>' +
+      '<circle cx="16" cy="16" r="14" fill="#1a1a2e" stroke="' + fillColor + '" stroke-width="2.5"/>' +
       '<circle cx="16" cy="16" r="14" fill="none" stroke="' + glowColor + '" stroke-width="1" opacity="0.25"/>' +
       '<g transform="translate(16,16)" filter="url(#glow-arrow)">' + arrowPath + '</g>' +
       '</svg>'
@@ -2101,33 +2028,38 @@
 
   var _pinConfigs = {
     unassigned: {
+      // Gold ! on dark circle — "quest available, needs pickup"
       svg: function () {
-        return _wowPinSvg("!", "#F0C060", "#F0C060", "#C8973A");
+        return _wowPinSvg("!", "#FFD100", "#FFD100", "#c8a400");
       }
     },
     assigned_online: {
+      // Gold ? on dark circle — "quest in progress, driver active"
       svg: function () {
-        return _wowPinSvg("?", "#F0C060", "#F0C060", "#C8973A");
+        return _wowPinSvg("?", "#FFD100", "#FFD100", "#c8a400");
       }
     },
     assigned_offline: {
+      // Silver/grey ! on dark circle — "quest unavailable, driver offline"
       svg: function () {
-        return _wowPinSvg("!", "#7A6E88", "#7A6E88", "#3A2F50");
+        return _wowPinSvg("!", "#8a8a8a", "#6a6a6a", "#555555");
       }
     },
     picked_up: {
+      // Blue up-arrow on dark circle — "active objective, package in hand"
       svg: function () {
         return _wowArrowPinSvg(
-          '<path d="M0,-9 L5,2 L2,2 L2,9 L-2,9 L-2,2 L-5,2 Z" fill="#9D6FC8"/>',
-          "#9D6FC8", "#7B4FA6"
+          '<path d="M0,-9 L5,2 L2,2 L2,9 L-2,9 L-2,2 L-5,2 Z" fill="#4FC3F7"/>',
+          "#4FC3F7", "#4FC3F7"
         );
       }
     },
     en_route: {
+      // Green arrow on dark circle — "moving toward objective"
       svg: function () {
         return _wowArrowPinSvg(
-          '<path d="M-9,0 L2,-5 L2,-2 L9,0 L2,2 L2,5 Z" fill="#6FBD80"/>',
-          "#6FBD80", "#4A9E5C"
+          '<path d="M-9,0 L2,-5 L2,-2 L9,0 L2,2 L2,5 Z" fill="#66BB6A"/>',
+          "#66BB6A", "#66BB6A"
         );
       }
     },
@@ -2187,18 +2119,18 @@
   }
 
   var _statusColors = {
-    unassigned: "#F0C060",
-    assigned_online: "#F0C060",
-    assigned_offline: "#7A6E88",
-    picked_up: "#9D6FC8",
-    en_route: "#6FBD80",
+    unassigned: "#FFD100",
+    assigned_online: "#FFD100",
+    assigned_offline: "#8a8a8a",
+    picked_up: "#4FC3F7",
+    en_route: "#66BB6A",
   };
 
   function _placeOrderPin(order, coords, currentMap) {
     var pinType = _orderPinType(order);
     var pinEl = _createPinElement(pinType);
     var statusText = _statusLabel(order);
-    var statusColor = _statusColors[pinType] || "#F0C060";
+    var statusColor = _statusColors[pinType] || "#f5c542";
     var driverLine = order.assigned_to
       ? "<span class='order-popup-driver'>" + C.escapeHtml(order.assigned_to) + "</span>"
       : "";
@@ -2285,22 +2217,22 @@
   function _createDriverMarkerElement(item, rosterEntry, isSelectedDriver) {
     var photoUrl = rosterEntry && rosterEntry.photo_url;
     var isTsa = rosterEntry && rosterEntry.tsa_certified;
-    var borderColor = isSelectedDriver ? "#C8973A" : (isTsa ? "#7B4FA6" : "#7A5C22");
+    var borderColor = isSelectedDriver ? "#e63946" : (isTsa ? "#1565c0" : "#3498db");
     if (isTsa) {
       var tsaEl = document.createElement("div");
       tsaEl.className = "dispatch-map-marker-tsa";
       tsaEl.style.cssText = "width:42px;height:42px;cursor:pointer;position:relative;";
       tsaEl.innerHTML = '<svg width="42" height="42" viewBox="0 0 42 42">' +
-        '<circle cx="21" cy="21" r="19" fill="#7B4FA6" stroke="#F0C060" stroke-width="2.5"/>' +
-        '<circle cx="21" cy="21" r="16" fill="none" stroke="#F0C060" stroke-width="1" opacity=".5"/>' +
+        '<circle cx="21" cy="21" r="19" fill="#1565c0" stroke="#fff" stroke-width="2.5"/>' +
+        '<circle cx="21" cy="21" r="16" fill="none" stroke="#fff" stroke-width="1" opacity=".5"/>' +
         '<g transform="translate(21,22) rotate(-45) scale(.55)">' +
-          '<path d="M-2,-14 L2,-14 L2,-4 L12,2 L12,5 L2,1 L2,8 L5,10 L5,12.5 L0,11 L-5,12.5 L-5,10 L-2,8 L-2,1 L-12,5 L-12,2 L-2,-4 Z" fill="#F5D98B"/>' +
+          '<path d="M-2,-14 L2,-14 L2,-4 L12,2 L12,5 L2,1 L2,8 L5,10 L5,12.5 L0,11 L-5,12.5 L-5,10 L-2,8 L-2,1 L-12,5 L-12,2 L-2,-4 Z" fill="#fff"/>' +
         '</g>' +
-        (photoUrl ? '' : '<text x="21" y="37" text-anchor="middle" font-size="7" font-weight="700" fill="#F0C060" font-family="Cinzel,Georgia,serif">TSA</text>') +
+        (photoUrl ? '' : '<text x="21" y="37" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="Inter,sans-serif">TSA</text>') +
       '</svg>';
       if (photoUrl) {
         var photoOverlay = document.createElement("div");
-        photoOverlay.style.cssText = "position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;border-radius:50%;border:2px solid #7B4FA6;overflow:hidden;background:#130F1A;";
+        photoOverlay.style.cssText = "position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;border-radius:50%;border:2px solid #1565c0;overflow:hidden;background:#fff;";
         var pImg = document.createElement("img");
         pImg.src = photoUrl; pImg.alt = "";
         pImg.style.cssText = "width:100%;height:100%;object-fit:cover;";
@@ -2311,7 +2243,7 @@
     } else if (photoUrl) {
       var elDiv = document.createElement("div");
       elDiv.className = "dispatch-map-marker-photo";
-      elDiv.style.cssText = "width:36px;height:36px;border-radius:50%;border:3px solid " + borderColor + ";overflow:hidden;cursor:pointer;background:#130F1A;box-shadow:0 0 8px rgba(200,151,58,0.35);";
+      elDiv.style.cssText = "width:36px;height:36px;border-radius:50%;border:3px solid " + borderColor + ";overflow:hidden;cursor:pointer;background:#fff;";
       var img = document.createElement("img");
       img.src = photoUrl; img.alt = "";
       img.style.cssText = "width:100%;height:100%;object-fit:cover;";
@@ -2345,7 +2277,7 @@
       var driverName = (rosterEntry && rosterEntry.username) || item.driver_id;
       var isTsa = rosterEntry && rosterEntry.tsa_certified;
       var popupHtml = "<strong>" + C.escapeHtml(driverName) + "</strong>" +
-        (isTsa ? "<br><span style=\"color:#9D6FC8;font-weight:700;font-size:.75rem;letter-spacing:0.08em;\">TSA CERTIFIED</span>" : "") +
+        (isTsa ? "<br><span style=\"color:#1565c0;font-weight:700;font-size:.75rem;\">TSA CERTIFIED</span>" : "") +
         "<br>Updated: " + C.escapeHtml(C.formatTimestamp(item.timestamp));
 
       var existing = mapMarkers.get(item.driver_id);
@@ -2756,10 +2688,204 @@
     }
     try {
       var orders = await C.requestJson(apiBase, "/orders", { token });
-      renderInflight(orders);
+      allOrders = Array.isArray(orders) ? orders : [];
+      renderInflight(allOrders);
+      renderHistory(allOrders);
       setLastSyncStamp();
     } catch (error) {
       if (el.inflightMessage) C.showMessage(el.inflightMessage, error.message, "error");
+    }
+  }
+
+  // ── Order History ──────────────────────────────────────────────
+
+  let historyFilters = { status: "", from: "", to: "", search: "" };
+
+  function _readHistoryFilters() {
+    return {
+      status: (el.historyStatusFilter && el.historyStatusFilter.value) || "",
+      from: (el.historyFromFilter && el.historyFromFilter.value) || "",
+      to: (el.historyToFilter && el.historyToFilter.value) || "",
+      search: ((el.historySearchFilter && el.historySearchFilter.value) || "").trim().toLowerCase(),
+    };
+  }
+
+  function _applyHistoryFilters(rows) {
+    let filtered = rows.slice();
+    if (historyFilters.status) {
+      filtered = filtered.filter(function (o) { return o.status === historyFilters.status; });
+    }
+    if (historyFilters.from) {
+      const fromMs = new Date(historyFilters.from + "T00:00:00").getTime();
+      if (!isNaN(fromMs)) {
+        filtered = filtered.filter(function (o) {
+          const d = o.updated_at || o.created_at;
+          return d ? new Date(d).getTime() >= fromMs : false;
+        });
+      }
+    }
+    if (historyFilters.to) {
+      const toMs = new Date(historyFilters.to + "T23:59:59").getTime();
+      if (!isNaN(toMs)) {
+        filtered = filtered.filter(function (o) {
+          const d = o.updated_at || o.created_at;
+          return d ? new Date(d).getTime() <= toMs : false;
+        });
+      }
+    }
+    if (historyFilters.search) {
+      const term = historyFilters.search;
+      filtered = filtered.filter(function (o) {
+        return (
+          (o.customer_name || "").toLowerCase().indexOf(term) !== -1 ||
+          (o.reference_id || "").toLowerCase().indexOf(term) !== -1 ||
+          (o.assigned_to || "").toLowerCase().indexOf(term) !== -1 ||
+          (o.id || "").toLowerCase().indexOf(term) !== -1
+        );
+      });
+    }
+    return filtered;
+  }
+
+  function renderHistory(orders) {
+    if (!el.historyTbody) return;
+    const terminal = (orders || []).filter(function (o) {
+      return o.status === "Delivered" || o.status === "Failed";
+    });
+    const filtered = _applyHistoryFilters(terminal).sort(function (a, b) {
+      const da = new Date(a.updated_at || a.created_at || 0).getTime();
+      const db = new Date(b.updated_at || b.created_at || 0).getTime();
+      return db - da;
+    });
+    if (el.historyCount) el.historyCount.textContent = String(filtered.length);
+    if (!filtered.length) {
+      el.historyTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">No past orders match these filters.</td></tr>';
+      return;
+    }
+    el.historyTbody.innerHTML = filtered.map(function (order) {
+      const pickup = [order.pick_up_street, order.pick_up_city].filter(Boolean).join(", ") || "-";
+      const delivery = [order.delivery_street, order.delivery_city].filter(Boolean).join(", ") || "-";
+      const completedAt = order.updated_at || order.created_at;
+      const completedLabel = completedAt ? new Date(completedAt).toLocaleString() : "-";
+      const statusBg = order.status === "Delivered" ? "rgba(28,143,105,0.18); color:#22c55e" : "rgba(229,57,70,0.18); color:#ef4444";
+      return (
+        '<tr>' +
+          '<td><strong>' + C.escapeHtml(order.customer_name || "-") + '</strong><br>' +
+            '<small>' + C.escapeHtml(order.reference_id || order.id || "") + '</small></td>' +
+          '<td><strong>From:</strong> ' + C.escapeHtml(pickup) + '<br>' +
+            '<strong>To:</strong> ' + C.escapeHtml(delivery) + '</td>' +
+          '<td>' + C.escapeHtml(completedLabel) + '</td>' +
+          '<td><span class="status-pill" style="background:' + statusBg + '">' + C.escapeHtml(order.status) + '</span></td>' +
+          '<td>' + C.escapeHtml(order.assigned_to || "-") + '</td>' +
+          '<td><button class="btn btn-ghost btn-xs" type="button" data-history-action="view-pod" data-order-id="' + C.escapeHtml(order.id) + '">View POD</button></td>' +
+        '</tr>'
+      );
+    }).join("");
+  }
+
+  async function refreshHistory() {
+    if (!requireAuthorized(el.historyMessage)) {
+      renderHistory([]);
+      return;
+    }
+    try {
+      const orders = await C.requestJson(apiBase, "/orders", { token });
+      allOrders = Array.isArray(orders) ? orders : [];
+      renderHistory(allOrders);
+      renderInflight(allOrders);
+      setLastSyncStamp();
+    } catch (error) {
+      if (el.historyMessage) C.showMessage(el.historyMessage, error.message, "error");
+    }
+  }
+
+  function applyHistoryFilters(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    historyFilters = _readHistoryFilters();
+    renderHistory(allOrders);
+  }
+
+  function clearHistoryFilters() {
+    historyFilters = { status: "", from: "", to: "", search: "" };
+    if (el.historyStatusFilter) el.historyStatusFilter.value = "";
+    if (el.historyFromFilter) el.historyFromFilter.value = "";
+    if (el.historyToFilter) el.historyToFilter.value = "";
+    if (el.historySearchFilter) el.historySearchFilter.value = "";
+    renderHistory(allOrders);
+  }
+
+  // ── POD Viewer Modal ───────────────────────────────────────────
+
+  function closePodViewer() {
+    if (el.podViewerOverlay) el.podViewerOverlay.style.display = "none";
+    if (el.podViewerBody) el.podViewerBody.innerHTML = "";
+    if (el.podViewerSummary) el.podViewerSummary.innerHTML = "";
+    if (el.podViewerMessage) el.podViewerMessage.textContent = "";
+  }
+
+  function _renderPodSummary(order) {
+    const pickup = [order.pick_up_street, order.pick_up_city, order.pick_up_state].filter(Boolean).join(", ") || "-";
+    const delivery = [order.delivery_street, order.delivery_city, order.delivery_state].filter(Boolean).join(", ") || "-";
+    const completedAt = order.updated_at || order.created_at;
+    return (
+      '<div><strong>Customer:</strong> ' + C.escapeHtml(order.customer_name || "-") + '</div>' +
+      '<div><strong>Reference:</strong> ' + C.escapeHtml(order.reference_id || order.id || "-") + '</div>' +
+      '<div><strong>Status:</strong> ' + C.escapeHtml(order.status) + '</div>' +
+      '<div><strong>Driver:</strong> ' + C.escapeHtml(order.assigned_to || "-") + '</div>' +
+      '<div><strong>Pickup:</strong> ' + C.escapeHtml(pickup) + '</div>' +
+      '<div><strong>Delivery:</strong> ' + C.escapeHtml(delivery) + '</div>' +
+      (completedAt ? '<div><strong>Completed:</strong> ' + C.escapeHtml(new Date(completedAt).toLocaleString()) + '</div>' : '')
+    );
+  }
+
+  function _renderPodRecord(record) {
+    const photos = (record.photo_urls || []).map(function (url) {
+      return '<a href="' + C.escapeHtml(url) + '" target="_blank" rel="noopener" class="pod-thumb-link">' +
+        '<img src="' + C.escapeHtml(url) + '" alt="POD photo" class="pod-thumb" style="max-width:160px;max-height:160px;border-radius:6px;border:1px solid var(--border);margin:4px;">' +
+      '</a>';
+    }).join("");
+    const sigs = (record.signature_urls || []).map(function (url) {
+      return '<a href="' + C.escapeHtml(url) + '" target="_blank" rel="noopener">' +
+        '<img src="' + C.escapeHtml(url) + '" alt="Signature" class="pod-signature" style="max-width:320px;max-height:120px;background:#fff;border-radius:6px;border:1px solid var(--border);margin:4px;">' +
+      '</a>';
+    }).join("");
+    let locLink = "";
+    if (record.location && typeof record.location.lat === "number" && typeof record.location.lng === "number") {
+      const url = "https://www.google.com/maps/search/?api=1&query=" + record.location.lat + "," + record.location.lng;
+      locLink = '<div><strong>Location:</strong> <a href="' + C.escapeHtml(url) + '" target="_blank" rel="noopener">' +
+        record.location.lat.toFixed(5) + ", " + record.location.lng.toFixed(5) +
+      '</a></div>';
+    }
+    const captured = record.captured_at ? new Date(record.captured_at).toLocaleString() : "";
+    return (
+      '<section class="data-surface" style="margin-bottom:12px;">' +
+        '<div><strong>Captured:</strong> ' + C.escapeHtml(captured) + '</div>' +
+        (record.driver_id ? '<div><strong>Driver ID:</strong> ' + C.escapeHtml(record.driver_id) + '</div>' : '') +
+        locLink +
+        (record.notes ? '<div style="margin-top:6px;"><strong>Notes:</strong> ' + C.escapeHtml(record.notes) + '</div>' : '') +
+        (photos ? '<div style="margin-top:8px;"><strong>Photos</strong><div>' + photos + '</div></div>' : '') +
+        (sigs ? '<div style="margin-top:8px;"><strong>Signature</strong><div>' + sigs + '</div></div>' : '') +
+      '</section>'
+    );
+  }
+
+  async function openPodViewer(order) {
+    if (!order || !el.podViewerOverlay) return;
+    if (el.podViewerTitle) el.podViewerTitle.textContent = "Proof of Delivery — " + (order.reference_id || order.customer_name || order.id);
+    if (el.podViewerSummary) el.podViewerSummary.innerHTML = _renderPodSummary(order);
+    if (el.podViewerBody) el.podViewerBody.innerHTML = '<p>Loading POD records…</p>';
+    if (el.podViewerMessage) el.podViewerMessage.textContent = "";
+    el.podViewerOverlay.style.display = "flex";
+    try {
+      const records = await C.requestJson(apiBase, "/pod/order/" + encodeURIComponent(order.id), { token });
+      if (!records || !records.length) {
+        el.podViewerBody.innerHTML = '<p>No POD records were captured for this order.</p>';
+        return;
+      }
+      el.podViewerBody.innerHTML = records.map(_renderPodRecord).join("");
+    } catch (error) {
+      el.podViewerBody.innerHTML = '<p>Unable to load POD records.</p>';
+      if (el.podViewerMessage) C.showMessage(el.podViewerMessage, error.message, "error");
     }
   }
 
@@ -3329,7 +3455,7 @@
     setInteractiveState(false);
     setBillingInteractiveState(false);
     initWorkspaceTabs();
-    initOrdersSubnav();
+    initOrdersSubviewTabs();
     if (el.authDebug) {
       el.authDebug.hidden = !debugAuth;
     }
@@ -3547,6 +3673,41 @@
       });
     });
   }
+  if (el.refreshHistory) {
+    el.refreshHistory.addEventListener("click", function () {
+      refreshHistory().catch(function (error) {
+        if (el.historyMessage) C.showMessage(el.historyMessage, error.message, "error");
+      });
+    });
+  }
+  if (el.historyFilterForm) {
+    el.historyFilterForm.addEventListener("submit", applyHistoryFilters);
+  }
+  if (el.historyClearFilters) {
+    el.historyClearFilters.addEventListener("click", clearHistoryFilters);
+  }
+  if (el.historyTbody) {
+    el.historyTbody.addEventListener("click", function (event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const btn = target.closest("[data-history-action]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-history-action");
+      const orderId = btn.getAttribute("data-order-id");
+      if (action === "view-pod" && orderId) {
+        const order = (allOrders || []).find(function (o) { return o.id === orderId; });
+        if (order) openPodViewer(order);
+      }
+    });
+  }
+  if (el.podViewerClose) {
+    el.podViewerClose.addEventListener("click", closePodViewer);
+  }
+  if (el.podViewerOverlay) {
+    el.podViewerOverlay.addEventListener("click", function (event) {
+      if (event.target === el.podViewerOverlay) closePodViewer();
+    });
+  }
   el.refreshAuditLogs.addEventListener("click", refreshAuditLogs);
   el.auditFilterForm.addEventListener("submit", function (event) {
     applyAuditFilters(event).catch(function (error) {
@@ -3571,41 +3732,6 @@
       el.purchaseModal.hidden = true;
     }
   });
-  if (el.addOrderBtn) {
-    el.addOrderBtn.addEventListener("click", openCreateOrderModal);
-  }
-  if (el.createOrderModalClose) {
-    el.createOrderModalClose.addEventListener("click", closeCreateOrderModal);
-  }
-  if (el.createOrderModal) {
-    el.createOrderModal.addEventListener("click", function (event) {
-      if (event.target === el.createOrderModal) closeCreateOrderModal();
-    });
-  }
-  if (el.podViewModalClose) {
-    el.podViewModalClose.addEventListener("click", closePodViewModal);
-  }
-  if (el.podViewModal) {
-    el.podViewModal.addEventListener("click", function (event) {
-      if (event.target === el.podViewModal) closePodViewModal();
-    });
-  }
-  if (el.orderHistoryBody) {
-    el.orderHistoryBody.addEventListener("click", function (event) {
-      var btn = event.target.closest("[data-pod-order-id]");
-      if (!btn) return;
-      fetchAndShowPod(btn.getAttribute("data-pod-order-id")).catch(function (error) {
-        if (el.orderHistoryMessage) C.showMessage(el.orderHistoryMessage, error.message, "error");
-      });
-    });
-  }
-  if (el.refreshOrderHistory) {
-    el.refreshOrderHistory.addEventListener("click", function () {
-      refreshOrderHistory().catch(function (error) {
-        if (el.orderHistoryMessage) C.showMessage(el.orderHistoryMessage, error.message, "error");
-      });
-    });
-  }
   if (el.devAuthActions) {
     el.devAuthActions.addEventListener("click", function (event) {
       onDevAuthActionClick(event).catch(function (error) {
@@ -3719,9 +3845,6 @@
   async function refreshEmailStatus() {
     try {
       var status = await C.requestJson(apiBase, "/email/status", { token: token });
-      var needsReauth = !!(status && status.needs_reauth);
-      if (el.gmailReauthBanner) el.gmailReauthBanner.hidden = !needsReauth;
-
       if (status && status.connected) {
         if (el.emailNotConnected) el.emailNotConnected.hidden = true;
         if (el.emailConnected) el.emailConnected.hidden = false;
@@ -3733,7 +3856,7 @@
         }
         if (el.emailPollStatus) {
           el.emailPollStatus.textContent = status.last_error || "OK";
-          el.emailPollStatus.style.color = (status.last_error || needsReauth) ? "#D94D4D" : "#4A9E5C";
+          el.emailPollStatus.style.color = status.last_error ? "#ef4444" : "#22c55e";
         }
       } else {
         if (el.emailNotConnected) el.emailNotConnected.hidden = false;
@@ -3828,7 +3951,7 @@
     if (!file && !text) {
       if (el.emailDetectResult) {
         el.emailDetectResult.style.display = "block";
-        el.emailDetectResult.style.color = "var(--text-danger, #D94D4D)";
+        el.emailDetectResult.style.color = "var(--color-error, #e55)";
         el.emailDetectResult.textContent = "Please upload a file or paste the email text first.";
       }
       return;
@@ -3837,7 +3960,7 @@
     if (el.emailDetectBtn) el.emailDetectBtn.disabled = true;
     if (el.emailDetectResult) {
       el.emailDetectResult.style.display = "block";
-      el.emailDetectResult.style.color = "var(--text-muted, #968AA8)";
+      el.emailDetectResult.style.color = "var(--text-muted, #aaa)";
       el.emailDetectResult.textContent = "Analyzing…";
     }
 
@@ -3861,7 +3984,7 @@
 
       if (!parserType) {
         if (el.emailDetectResult) {
-          el.emailDetectResult.style.color = "var(--gold-primary, #C8973A)";
+          el.emailDetectResult.style.color = "var(--color-warn, #f90)";
           el.emailDetectResult.textContent = "Couldn't determine a format. Try selecting one manually.";
         }
         return;
@@ -3875,19 +3998,19 @@
       var label = _parserLabel(parserType);
       if (parserType === "email-ai") {
         if (el.emailDetectResult) {
-          el.emailDetectResult.style.color = "var(--purple-accent, #7B4FA6)";
+          el.emailDetectResult.style.color = "var(--color-info, #4a9eff)";
           el.emailDetectResult.textContent = "No exact format matched — \"Let AI read it\" selected as a fallback. " + (reason || "");
         }
       } else {
         var confidenceText = confidence === "high" ? "High confidence" : confidence === "medium" ? "Medium confidence" : "Low confidence";
         if (el.emailDetectResult) {
-          el.emailDetectResult.style.color = "var(--text-success, #4A9E5C)";
+          el.emailDetectResult.style.color = "var(--color-success, #4c4)";
           el.emailDetectResult.textContent = "✓ " + confidenceText + " — " + label + ". " + (reason || "");
         }
       }
     } catch (error) {
       if (el.emailDetectResult) {
-        el.emailDetectResult.style.color = "var(--text-danger, #D94D4D)";
+        el.emailDetectResult.style.color = "var(--color-error, #e55)";
         el.emailDetectResult.textContent = "Detection failed: " + error.message;
       }
     } finally {
@@ -3953,42 +4076,37 @@
     }
   }
 
-  function startGmailOAuth() {
-    if (!googleOAuthClientId) return;
-    var redirectUri = window.location.origin + window.location.pathname;
-    var scope = "https://www.googleapis.com/auth/gmail.modify";
-    var authUrl = "https://accounts.google.com/o/oauth2/v2/auth" +
-      "?client_id=" + encodeURIComponent(googleOAuthClientId) +
-      "&redirect_uri=" + encodeURIComponent(redirectUri) +
-      "&response_type=code" +
-      "&scope=" + encodeURIComponent(scope) +
-      "&access_type=offline" +
-      "&prompt=consent" +
-      "&state=gmail_connect";
-    var popup = window.open(authUrl, "gmail_connect", "width=500,height=600");
-    function onGmailMessage(event) {
-      if (event.origin !== window.location.origin) return;
-      if (!event.data || event.data.type !== "gmail_oauth_callback") return;
-      window.removeEventListener("message", onGmailMessage);
-      if (popup && !popup.closed) popup.close();
-      if (event.data.code) {
-        connectGmailWithCode(event.data.code, redirectUri);
-      }
-    }
-    window.addEventListener("message", onGmailMessage);
-  }
-
   function initConnectGmail() {
     if (!googleOAuthClientId) {
       if (el.connectGmailBtn) el.connectGmailBtn.disabled = true;
-      if (el.gmailReauthReconnect) el.gmailReauthReconnect.disabled = true;
       return;
     }
     if (el.connectGmailBtn) {
-      el.connectGmailBtn.addEventListener("click", startGmailOAuth);
-    }
-    if (el.gmailReauthReconnect) {
-      el.gmailReauthReconnect.addEventListener("click", startGmailOAuth);
+      el.connectGmailBtn.addEventListener("click", function () {
+        // Open Google OAuth consent in a popup
+        var redirectUri = window.location.origin + window.location.pathname;
+        var scope = "https://www.googleapis.com/auth/gmail.modify";
+        var authUrl = "https://accounts.google.com/o/oauth2/v2/auth" +
+          "?client_id=" + encodeURIComponent(googleOAuthClientId) +
+          "&redirect_uri=" + encodeURIComponent(redirectUri) +
+          "&response_type=code" +
+          "&scope=" + encodeURIComponent(scope) +
+          "&access_type=offline" +
+          "&prompt=consent" +
+          "&state=gmail_connect";
+        var popup = window.open(authUrl, "gmail_connect", "width=500,height=600");
+        // Listen for the OAuth code posted back by the popup callback
+        function onGmailMessage(event) {
+          if (event.origin !== window.location.origin) return;
+          if (!event.data || event.data.type !== "gmail_oauth_callback") return;
+          window.removeEventListener("message", onGmailMessage);
+          if (popup && !popup.closed) popup.close();
+          if (event.data.code) {
+            connectGmailWithCode(event.data.code, redirectUri);
+          }
+        }
+        window.addEventListener("message", onGmailMessage);
+      });
     }
   }
 
@@ -4200,13 +4318,6 @@
         var msg = JSON.parse(event.data);
         if (msg.type === "new_order") {
           handleNewOrderNotification(msg.order || {});
-        } else if (msg.type === "gmail_auth_required") {
-          // Show the banner immediately, then refresh the status card.
-          if (el.gmailReauthBanner) el.gmailReauthBanner.hidden = false;
-          refreshEmailStatus().catch(function () {});
-        } else if (msg.type === "gmail_auth_restored") {
-          if (el.gmailReauthBanner) el.gmailReauthBanner.hidden = true;
-          refreshEmailStatus().catch(function () {});
         }
       } catch (e) { /* ignore malformed messages */ }
     };

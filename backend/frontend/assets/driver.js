@@ -797,7 +797,11 @@
     Object.entries(upload.fields || {}).forEach(function (e) { formData.append(e[0], e[1]); });
     formData.append("file", fileBlob, fileName);
     var resp = await fetch(upload.url, { method: "POST", body: formData });
-    if (!resp.ok) throw new Error("Upload failed.");
+    if (!resp.ok) {
+      var body = "";
+      try { body = await resp.text(); } catch (e) { /* ignore */ }
+      throw new Error("S3 upload " + resp.status + ": " + (body || "").slice(0, 300));
+    }
   }
 
   async function submitPod(orderId) {
@@ -812,19 +816,41 @@
     if (photoFile) artifacts.push({ artifact_type: "photo", content_type: photoFile.type || "image/jpeg", file_size_bytes: photoFile.size, file_name: photoFile.name || "photo.jpg", blob: photoFile });
     if (sigCanvas && sigCanvas.dataset.dirty === "1") {
       var sigBlob = await canvasToBlob(sigCanvas);
+      if (!sigBlob) throw new Error("Signature capture failed - please re-sign.");
       artifacts.push({ artifact_type: "signature", content_type: "image/png", file_size_bytes: sigBlob.size, file_name: "signature.png", blob: sigBlob });
     }
     if (!artifacts.length) throw new Error("Attach a photo or signature first.");
 
-    var presigned = await C.requestJson(apiBase, "/pod/presign", { method: "POST", token: token, json: { order_id: orderId, artifacts: artifacts.map(function (a) { return { artifact_type: a.artifact_type, content_type: a.content_type, file_size_bytes: a.file_size_bytes, file_name: a.file_name }; }) } });
+    var presigned;
+    try {
+      presigned = await C.requestJson(apiBase, "/pod/presign", { method: "POST", token: token, json: { order_id: orderId, artifacts: artifacts.map(function (a) { return { artifact_type: a.artifact_type, content_type: a.content_type, file_size_bytes: a.file_size_bytes, file_name: a.file_name }; }) } });
+    } catch (e) {
+      console.error("[submitPod] /pod/presign failed", e);
+      throw new Error("POD presign failed: " + (e && (e.message || String(e))));
+    }
     for (var i = 0; i < presigned.uploads.length; i++) {
-      await uploadWithPresignedPost(presigned.uploads[i], artifacts[i].blob, artifacts[i].file_name);
+      try {
+        await uploadWithPresignedPost(presigned.uploads[i], artifacts[i].blob, artifacts[i].file_name);
+      } catch (e) {
+        console.error("[submitPod] S3 upload failed for artifact " + i, e);
+        throw new Error("POD upload failed: " + (e && (e.message || String(e))));
+      }
     }
     var location = await getCurrentPosition();
     var photoKeys = presigned.uploads.filter(function (u) { return u.artifact_type === "photo"; }).map(function (u) { return u.key; });
     var sigKeys = presigned.uploads.filter(function (u) { return u.artifact_type === "signature"; }).map(function (u) { return u.key; });
-    await C.requestJson(apiBase, "/pod/metadata", { method: "POST", token: token, json: { order_id: orderId, photo_keys: photoKeys, signature_keys: sigKeys, notes: notes || null, location: location } });
-    await updateOrderStatus(orderId, "Delivered");
+    try {
+      await C.requestJson(apiBase, "/pod/metadata", { method: "POST", token: token, json: { order_id: orderId, photo_keys: photoKeys, signature_keys: sigKeys, notes: notes || null, location: location } });
+    } catch (e) {
+      console.error("[submitPod] /pod/metadata failed", e);
+      throw new Error("POD metadata save failed: " + (e && (e.message || String(e))));
+    }
+    try {
+      await updateOrderStatus(orderId, "Delivered");
+    } catch (e) {
+      console.error("[submitPod] status update to Delivered failed", e);
+      throw new Error("Delivery status update failed: " + (e && (e.message || String(e))));
+    }
   }
 
   // ── Profile ────────────────────────────────────────────────────
@@ -1092,7 +1118,8 @@
         closeDetailPanel();
       }
     } catch (err) {
-      C.showMessage(el.ordersMessage, err.message, "error");
+      console.error("[detailBody action]", action, err);
+      C.showMessage(el.ordersMessage, (err && (err.message || String(err))) || "Unknown error", "error");
     }
   });
 

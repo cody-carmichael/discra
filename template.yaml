@@ -693,6 +693,7 @@ Resources:
             Action:
               - s3:PutObject
               - s3:AbortMultipartUpload
+              - s3:GetObject
             Resource: !Sub "${PodArtifactsBucket.Arn}/*"
         - Statement:
             Effect: Allow

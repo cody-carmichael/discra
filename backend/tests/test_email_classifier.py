@@ -260,3 +260,90 @@ def test_custom_rule_subject_checked_against_fwd_subject():
         custom_rules=[rule],
     )
     assert result.is_order is True
+
+
+# --- Multi-rule iteration ---
+
+def _rule(name, sender, subject_pattern, parser_type="email-airspace", enabled=True):
+    return {
+        "rule_id": f"rule-{name}",
+        "name": name,
+        "sender_pattern": sender,
+        "subject_pattern": subject_pattern,
+        "parser_type": parser_type,
+        "enabled": enabled,
+    }
+
+
+def test_multiple_rules_same_sender_first_fails_second_matches():
+    """When rule A (subject 'PICKUP ALERT') fails, rule B (subject 'Agent Alert') should still be evaluated."""
+    rules = [
+        _rule("vel ai", "vellogistix.com", "PICKUP ALERT", parser_type="email-airspace"),
+        _rule("vel table", "vellogistix.com", "Agent Alert", parser_type="email-cap"),
+    ]
+    result = classify_email(
+        subject="Agent Alert 2604A5414",
+        sender="dispatch@vellogistix.com",
+        custom_rules=rules,
+    )
+    assert result.is_order is True
+    assert result.source == "email-cap"
+
+
+def test_catchall_rule_after_specific_rules():
+    """With an empty-subject catch-all at the end, any sender-matching email should classify as an order."""
+    rules = [
+        _rule("vel ai", "vellogistix.com", "PICKUP ALERT", parser_type="email-airspace"),
+        _rule("vel table", "vellogistix.com", "Agent Alert", parser_type="email-cap"),
+        _rule("Marken", "vellogistix.com", "Marken", parser_type="email-marken"),
+        _rule("Ai No Subject", "vellogistix.com", "", parser_type="email-airspace"),
+    ]
+    result = classify_email(
+        subject="Tracking ID: AT4YC6GGW9, Order #: 3607991 - Delivery Dispatch",
+        sender="dispatch@vellogistix.com",
+        custom_rules=rules,
+    )
+    assert result.is_order is True
+    assert result.source == "email-airspace"
+
+
+def test_catchall_rule_sorted_last_even_if_saved_first():
+    """A catch-all placed first in saved order must not shadow a more specific rule below it."""
+    rules = [
+        _rule("Ai No Subject", "vellogistix.com", "", parser_type="email-airspace"),
+        _rule("vel table", "vellogistix.com", "Agent Alert", parser_type="email-cap"),
+    ]
+    result = classify_email(
+        subject="Agent Alert 2604A5414",
+        sender="dispatch@vellogistix.com",
+        custom_rules=rules,
+    )
+    assert result.is_order is True
+    assert result.source == "email-cap"
+
+
+def test_all_matching_sender_rules_fail_subject():
+    """If every sender-matching rule has a subject filter that fails, return NO_SUBJECT_MATCH."""
+    rules = [
+        _rule("vel ai", "vellogistix.com", "PICKUP ALERT"),
+        _rule("vel table", "vellogistix.com", "Agent Alert"),
+    ]
+    result = classify_email(
+        subject="Weekly Summary",
+        sender="dispatch@vellogistix.com",
+        custom_rules=rules,
+    )
+    assert result.is_order is False
+    assert result.skip_reason == SkipReason.NO_SUBJECT_MATCH
+
+
+def test_no_custom_rule_sender_match_falls_through_to_builtin():
+    """If no custom rule's sender matches, built-in rules should still run."""
+    unrelated_rule = _rule("other", "otherdomain.com", "anything", parser_type="email-cap")
+    result = classify_email(
+        subject="PICKUP ALERT #55555",
+        sender="no-reply@marken.com",
+        custom_rules=[unrelated_rule],
+    )
+    assert result.is_order is True
+    assert result.source == EmailSource.MARKEN

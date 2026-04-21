@@ -28,7 +28,9 @@ class SkipReason(str, Enum):
 @dataclass
 class ClassificationResult:
     is_order: bool
-    source: Optional[EmailSource] = None
+    # Parser key as a plain string. For built-in rules it equals an
+    # EmailSource value; for custom rules it is the rule's parser_type.
+    source: Optional[str] = None
     skip_reason: Optional[SkipReason] = None
     original_sender: str = ""
     original_subject: str = ""
@@ -148,27 +150,28 @@ def classify_email(
     if fwd_subject.lower().startswith("fwd:"):
         fwd_subject = fwd_subject[4:].strip()
 
-    # Check org-level custom rules first (highest priority)
+    # Check org-level custom rules first (highest priority). Rules with a
+    # specific subject_pattern are tried before empty-subject catch-alls so a
+    # catch-all can't shadow more specific parsers regardless of saved order.
     if custom_rules:
-        for rule in custom_rules:
+        ordered_rules = sorted(
+            custom_rules,
+            key=lambda r: not r.get("subject_pattern", "").strip(),
+        )
+        sender_matched = False
+        for rule in ordered_rules:
             if not rule.get("enabled", True):
                 continue
             sp = rule.get("sender_pattern", "").lower()
-            if sp and sp in original_sender.lower():
-                subj_pat = rule.get("subject_pattern", "").lower()
-                if subj_pat:
-                    if subj_pat not in original_subject.lower() and subj_pat not in fwd_subject.lower():
-                        logger.info(
-                            "Custom rule '%s' sender matched but subject did not: %s",
-                            rule.get("name", ""),
-                            original_subject,
-                        )
-                        return ClassificationResult(
-                            is_order=False,
-                            skip_reason=SkipReason.NO_SUBJECT_MATCH,
-                            original_sender=original_sender,
-                            original_subject=original_subject,
-                        )
+            if not sp or sp not in original_sender.lower():
+                continue
+            sender_matched = True
+            subj_pat = rule.get("subject_pattern", "").lower()
+            if (
+                not subj_pat
+                or subj_pat in original_subject.lower()
+                or subj_pat in fwd_subject.lower()
+            ):
                 logger.info(
                     "Custom rule '%s' matched sender %s",
                     rule.get("name", ""),
@@ -180,6 +183,18 @@ def classify_email(
                     original_sender=original_sender,
                     original_subject=original_subject,
                 )
+        if sender_matched:
+            logger.info(
+                "Custom rules matched sender %s but no subject_pattern accepted %r",
+                original_sender,
+                original_subject,
+            )
+            return ClassificationResult(
+                is_order=False,
+                skip_reason=SkipReason.NO_SUBJECT_MATCH,
+                original_sender=original_sender,
+                original_subject=original_subject,
+            )
 
     # Fall back to built-in sender rules
     for rule in _SENDER_RULES:
@@ -192,7 +207,7 @@ def classify_email(
             if subject_match:
                 return ClassificationResult(
                     is_order=True,
-                    source=rule["source"],
+                    source=rule["source"].value,
                     original_sender=original_sender,
                     original_subject=original_subject,
                 )

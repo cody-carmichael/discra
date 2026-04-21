@@ -417,6 +417,16 @@ class PodMetadataRecord(BaseModel):
     location: Optional[PodLocation] = None
 
 
+class PodViewRecord(BaseModel):
+    pod_id: str
+    order_id: str
+    driver_id: str
+    captured_at: datetime
+    notes: Optional[str] = None
+    photo_urls: List[str] = Field(default_factory=list)
+    signature_urls: List[str] = Field(default_factory=list)
+
+
 class DriverLocationRecord(BaseModel):
     org_id: str
     driver_id: str

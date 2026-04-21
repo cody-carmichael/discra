@@ -20,6 +20,7 @@ try:
         PodPresignRequest,
         PodPresignResponse,
         PodPresignedUpload,
+        PodViewRecord,
     )
 except ModuleNotFoundError:  # local run from backend/ directory
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, require_roles
@@ -39,6 +40,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
         PodPresignRequest,
         PodPresignResponse,
         PodPresignedUpload,
+        PodViewRecord,
     )
 
 router = APIRouter(prefix="/pod", tags=["pod"])
@@ -135,3 +137,30 @@ async def create_pod_metadata(
         location=payload.location,
     )
     return pod_store.put_metadata(metadata)
+
+
+POD_VIEW_EXPIRES_SECONDS = 600
+
+
+@router.get("/order/{order_id}", response_model=List[PodViewRecord])
+async def list_pod_for_order(
+    order_id: str,
+    user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
+    pod_store=Depends(get_pod_data_store),
+):
+    _require_tenant_order(order_id, user["org_id"])
+    records = pod_store.list_by_order_id(user["org_id"], order_id)
+    result = []
+    for record in records:
+        photo_urls = [pod_store.generate_presigned_get_url(k, POD_VIEW_EXPIRES_SECONDS) for k in record.photo_keys]
+        sig_urls = [pod_store.generate_presigned_get_url(k, POD_VIEW_EXPIRES_SECONDS) for k in record.signature_keys]
+        result.append(PodViewRecord(
+            pod_id=record.pod_id,
+            order_id=record.order_id,
+            driver_id=record.driver_id,
+            captured_at=record.captured_at,
+            notes=record.notes,
+            photo_urls=photo_urls,
+            signature_urls=sig_urls,
+        ))
+    return result

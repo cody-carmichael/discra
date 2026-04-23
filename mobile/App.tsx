@@ -1,110 +1,41 @@
+// App.tsx — Auth gateway + workspace router for Discra Mobile
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as FileSystem from "expo-file-system";
-import * as ImagePicker from "expo-image-picker";
+import {
+  AuthenticationDetails,
+  CognitoUser,
+  CognitoUserPool,
+} from "amazon-cognito-identity-js";
 import { StatusBar } from "expo-status-bar";
-import * as Location from "expo-location";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Linking,
   Modal,
+  Platform,
   Pressable,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
-import MapView, { Marker, Polyline, Region } from "react-native-maps";
-import SignatureScreen from "react-native-signature-canvas";
+import { decodeJwtPayload, extractTokenGroups, normalizeApiBase } from "./lib";
+import AdminScreen from "./screens/AdminScreen";
+import DriverScreen from "./screens/DriverScreen";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const STORAGE_KEY = "discra_mobile_config_v4";
+const STORAGE_PKCE_KEY = "discra_mobile_pkce_v1";
+const DEFAULT_API_BASE =
+  Platform.OS === "web"
+    ? "http://localhost:8000/backend"
+    : "https://m50fjhgrn7.execute-api.us-east-1.amazonaws.com/dev/backend";
+const DEFAULT_COGNITO_USER_POOL_ID = "us-east-1_vMav7IRF7";
+const DEFAULT_COGNITO_CLIENT_ID = "4gq64lj8ndo8pltt6hj5ritqi";
+const REDIRECT_URI = "discra-mobile://auth/callback";
 
 type Workspace = "admin" | "driver";
-
-type OrderRecord = {
-  id: string;
-  customer_name: string;
-  reference_number: number;
-  pick_up_address: string;
-  delivery: string;
-  dimensions: string;
-  weight: number;
-  time_window_start?: string | null;
-  time_window_end?: string | null;
-  status: string;
-  assigned_to?: string | null;
-};
-
-type DriverLocationRecord = {
-  driver_id: string;
-  lat: number;
-  lng: number;
-  timestamp: string;
-};
-
-type RouteContextPoint = {
-  latitude: number;
-  longitude: number;
-};
-
-type RouteOptimizedStop = {
-  sequence: number;
-  order_id: string;
-  lat: number;
-  lng: number;
-  address?: string | null;
-  distance_from_previous_meters: number;
-  duration_from_previous_seconds: number;
-};
-
-type RouteOptimizeResponse = {
-  matrix_source: string;
-  total_distance_meters: number;
-  total_duration_seconds: number;
-  ordered_stops: RouteOptimizedStop[];
-};
-
-type PodPresignUpload = {
-  artifact_type: "photo" | "signature";
-  key: string;
-  url: string;
-  fields: Record<string, string>;
-};
-
-type OnboardingRegistrationRecord = {
-  registration_id: string;
-  tenant_name: string;
-  contact_name?: string | null;
-  requester_email?: string | null;
-  status: "Pending" | "Approved" | "Rejected";
-  org_id?: string | null;
-  submitted_at: string;
-  decided_at?: string | null;
-  decision_reason?: string | null;
-};
-
-type OnboardingRegistrationMeResponse = {
-  exists: boolean;
-  registration?: OnboardingRegistrationRecord | null;
-};
-
-type QueuedOperation =
-  | {
-      id: string;
-      created_at: string;
-      type: "driver_status";
-      order_id: string;
-      status: string;
-    }
-  | {
-      id: string;
-      created_at: string;
-      type: "driver_location";
-      lat: number;
-      lng: number;
-      heading: number | null;
-    };
 
 type PkceSession = {
   state: string;
@@ -113,2137 +44,675 @@ type PkceSession = {
   clientId: string;
 };
 
-type PkceChallenge = {
-  challenge: string;
-  method: "S256" | "plain";
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "discra_mobile_config_v2";
-const STORAGE_QUEUE_KEY = "discra_mobile_queue_v1";
-const STORAGE_PKCE_KEY = "discra_mobile_pkce_v1";
-const DEFAULT_API_BASE = "";
-const API_BASE_PLACEHOLDER = "https://<api-id>.execute-api.<region>.amazonaws.com/dev/backend";
-const REDIRECT_URI = "discra-mobile://auth/callback";
-const DRIVER_STATUS = ["PickedUp", "EnRoute", "Failed", "Delivered"];
-const ADMIN_STATUS = ["Assigned", "PickedUp", "EnRoute", "Delivered", "Failed"];
-
-function normalizeApiBase(url: string): string {
-  return (url || "").trim().replace(/\/+$/, "");
-}
-
-function endpointUrl(apiBase: string, path: string): string {
-  const base = normalizeApiBase(apiBase);
-  const suffix = path.startsWith("/") ? path : `/${path}`;
-  return `${base}${suffix}`;
-}
-
-function formatTime(value?: string): string {
-  if (!value) {
-    return "-";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleString();
+function looksLikeJwt(token: string): boolean {
+  return (token || "").trim().split(".").length >= 2;
 }
 
 function normalizeDomain(value: string): string {
   return (value || "").trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
 }
 
-function parseHashParams(url: string): URLSearchParams {
-  const hashIndex = url.indexOf("#");
-  if (hashIndex < 0) {
-    return new URLSearchParams();
-  }
-  return new URLSearchParams(url.slice(hashIndex + 1));
-}
-
 function parseQueryParams(url: string): URLSearchParams {
-  const queryIndex = url.indexOf("?");
-  if (queryIndex < 0) {
-    return new URLSearchParams();
-  }
-  const hashIndex = url.indexOf("#", queryIndex);
-  const query = hashIndex >= 0 ? url.slice(queryIndex + 1, hashIndex) : url.slice(queryIndex + 1);
+  const qi = url.indexOf("?");
+  if (qi < 0) return new URLSearchParams();
+  const hi = url.indexOf("#", qi);
+  const query = hi >= 0 ? url.slice(qi + 1, hi) : url.slice(qi + 1);
   return new URLSearchParams(query);
 }
 
+function parseHashParams(url: string): URLSearchParams {
+  const hi = url.indexOf("#");
+  if (hi < 0) return new URLSearchParams();
+  return new URLSearchParams(url.slice(hi + 1));
+}
+
 function toBase64Url(bytes: Uint8Array): string {
-  if (typeof globalThis.btoa !== "function") {
-    throw new Error("Hosted UI PKCE requires base64 encoding support.");
-  }
-  let binary = "";
-  for (const value of bytes) {
-    binary += String.fromCharCode(value);
-  }
-  return globalThis.btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  if (typeof globalThis.btoa !== "function") throw new Error("btoa required");
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return globalThis.btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function randomString(length: number): string {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-  const cryptoObj = globalThis.crypto;
-  if (!cryptoObj || typeof cryptoObj.getRandomValues !== "function") {
-    throw new Error("Hosted UI PKCE requires secure random support.");
-  }
-  const bytes = new Uint8Array(length);
-  cryptoObj.getRandomValues(bytes);
-  let output = "";
-  for (let index = 0; index < bytes.length; index += 1) {
-    output += alphabet[bytes[index] % alphabet.length];
-  }
-  return output;
+function randomStr(n: number): string {
+  const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  const bytes = new Uint8Array(n);
+  globalThis.crypto.getRandomValues(bytes);
+  let s = "";
+  for (const b of bytes) s += alpha[b % alpha.length];
+  return s;
 }
 
-async function buildPkceChallenge(verifier: string): Promise<PkceChallenge> {
-  const cryptoObj = globalThis.crypto;
-  if (!cryptoObj || !cryptoObj.subtle || typeof cryptoObj.subtle.digest !== "function") {
-    return { challenge: verifier, method: "plain" };
-  }
+async function buildPkce(verifier: string): Promise<{ challenge: string; method: "S256" | "plain" }> {
   try {
     const input = new Uint8Array(verifier.length);
-    for (let index = 0; index < verifier.length; index += 1) {
-      input[index] = verifier.charCodeAt(index);
-    }
-    const digest = await cryptoObj.subtle.digest("SHA-256", input);
+    for (let i = 0; i < verifier.length; i++) input[i] = verifier.charCodeAt(i);
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", input);
     return { challenge: toBase64Url(new Uint8Array(digest)), method: "S256" };
-  } catch (error) {
+  } catch {
     return { challenge: verifier, method: "plain" };
   }
 }
 
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  const parts = (token || "").split(".");
-  if (parts.length < 2 || !parts[1] || typeof globalThis.atob !== "function") {
-    return null;
-  }
-  try {
-    const normalized = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
-    return JSON.parse(globalThis.atob(padded)) as Record<string, unknown>;
-  } catch (error) {
-    return null;
-  }
-}
-
-function roleSummary(token: string): string {
-  return extractTokenGroups(token).join(", ");
-}
-
-function extractTokenGroups(token: string): string[] {
-  const payload = decodeJwtPayload(token);
-  if (!payload) {
-    return [];
-  }
-  const groups = payload["cognito:groups"] ?? payload.groups;
-  if (Array.isArray(groups)) {
-    return groups.map((item) => String(item));
-  }
-  if (groups) {
-    return [String(groups)];
-  }
-  return [];
-}
-
-function looksLikeJwt(token: string): boolean {
-  const trimmed = (token || "").trim();
-  return trimmed.split(".").length >= 2;
-}
-
-function looksLikeBackendApiBase(url: string): boolean {
-  const value = normalizeApiBase(url);
-  return value.endsWith("/backend");
-}
-
-function inferContentType(uri: string, fallback: string): string {
-  const lower = (uri || "").toLowerCase();
-  if (lower.endsWith(".png")) {
-    return "image/png";
-  }
-  if (lower.endsWith(".webp")) {
-    return "image/webp";
-  }
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
-    return "image/jpeg";
-  }
-  return fallback;
-}
-
-function buildMapRegion(drivers: DriverLocationRecord[]): Region | null {
-  if (!drivers.length) {
-    return null;
-  }
-  if (drivers.length === 1) {
-    return {
-      latitude: drivers[0].lat,
-      longitude: drivers[0].lng,
-      latitudeDelta: 0.05,
-      longitudeDelta: 0.05,
-    };
-  }
-
-  const latitudes = drivers.map((driver) => driver.lat);
-  const longitudes = drivers.map((driver) => driver.lng);
-  const minLat = Math.min(...latitudes);
-  const maxLat = Math.max(...latitudes);
-  const minLng = Math.min(...longitudes);
-  const maxLng = Math.max(...longitudes);
-
-  const latitude = (minLat + maxLat) / 2;
-  const longitude = (minLng + maxLng) / 2;
-  const latitudeDelta = Math.max((maxLat - minLat) * 1.5, 0.04);
-  const longitudeDelta = Math.max((maxLng - minLng) * 1.5, 0.04);
-
-  return {
-    latitude,
-    longitude,
-    latitudeDelta,
-    longitudeDelta,
-  };
-}
-
-function tryParseLatLng(value: string): RouteContextPoint | null {
-  const text = (value || "").trim();
-  if (!text) {
-    return null;
-  }
-  const match = text.match(/^(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)$/);
-  if (!match) {
-    return null;
-  }
-  const lat = Number.parseFloat(match[1]);
-  const lng = Number.parseFloat(match[3]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return null;
-  }
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-    return null;
-  }
-  return {
-    latitude: lat,
-    longitude: lng,
-  };
-}
-
-function formatDistanceMiles(meters: number): string {
-  if (!Number.isFinite(meters) || meters < 0) {
-    return "-";
-  }
-  const miles = meters / 1609.344;
-  return `${miles.toFixed(1)} mi`;
-}
-
-function formatDurationShort(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return "-";
-  }
-  const minutes = Math.max(1, Math.round(seconds / 60));
-  if (minutes < 60) {
-    return `${minutes} min`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  if (remainingMinutes === 0) {
-    return `${hours}h`;
-  }
-  return `${hours}h ${remainingMinutes}m`;
-}
-
-type ApiRequestOptions = {
-  method?: "GET" | "POST";
-  token: string;
-  json?: unknown;
-};
-
-async function apiRequest<T>(apiBase: string, path: string, options: ApiRequestOptions): Promise<T> {
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${options.token}`,
-  };
-  let body: string | undefined;
-  if (options.json !== undefined) {
-    headers["content-type"] = "application/json";
-    body = JSON.stringify(options.json);
-  }
-  const response = await fetch(endpointUrl(apiBase, path), {
-    method: options.method || "GET",
-    headers,
-    body,
-  });
-  const text = await response.text();
-  let payload: unknown = null;
-  if (text) {
-    try {
-      payload = JSON.parse(text);
-    } catch (error) {
-      payload = text;
-    }
-  }
-  if (!response.ok) {
-    if (payload && typeof payload === "object" && "detail" in payload) {
-      throw new Error(String((payload as { detail: unknown }).detail));
-    }
-    throw new Error(`Request failed (${response.status})`);
-  }
-  return payload as T;
-}
+// ─── App ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
   const [token, setToken] = useState("");
+  const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
+  const [cognitoUserPoolId] = useState(DEFAULT_COGNITO_USER_POOL_ID);
+  const [cognitoClientId] = useState(DEFAULT_COGNITO_CLIENT_ID);
   const [cognitoDomain, setCognitoDomain] = useState("");
-  const [cognitoClientId, setCognitoClientId] = useState("");
-  const [workspace, setWorkspace] = useState<Workspace>("admin");
-  const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("Configure API base and JWT to begin.");
-  const [onboardingEnabled, setOnboardingEnabled] = useState(true);
-  const [onboardingTenantName, setOnboardingTenantName] = useState("");
-  const [onboardingContactName, setOnboardingContactName] = useState("");
-  const [onboardingNotes, setOnboardingNotes] = useState("");
-  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingRegistrationRecord | null>(null);
+  const [workspace, setWorkspace] = useState<Workspace>("driver");
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
-  const [orders, setOrders] = useState<OrderRecord[]>([]);
-  const [inboxOrders, setInboxOrders] = useState<OrderRecord[]>([]);
-  const [drivers, setDrivers] = useState<DriverLocationRecord[]>([]);
-  const [assignInputs, setAssignInputs] = useState<Record<string, string>>({});
-  const [podNotes, setPodNotes] = useState<Record<string, string>>({});
-  const [podPhotoUris, setPodPhotoUris] = useState<Record<string, string>>({});
-  const [podSignatureData, setPodSignatureData] = useState<Record<string, string>>({});
-  const [podSubmitting, setPodSubmitting] = useState<Record<string, boolean>>({});
-  const [signatureOrderId, setSignatureOrderId] = useState<string | null>(null);
-  const [queue, setQueue] = useState<QueuedOperation[]>([]);
-  const [autoShareOn, setAutoShareOn] = useState(false);
-  const [adminMapRegion, setAdminMapRegion] = useState<Region | null>(null);
-  const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
-  const [routePlanDriverId, setRoutePlanDriverId] = useState<string | null>(null);
-  const [selectedDriverRoutePlan, setSelectedDriverRoutePlan] = useState<RouteOptimizeResponse | null>(null);
-  const [routePlanError, setRoutePlanError] = useState("");
-  const [isRoutePlanLoading, setIsRoutePlanLoading] = useState(false);
-  const locationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Login form
+  const [loginUser, setLoginUser] = useState("");
+  const [loginPass, setLoginPass] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginMsg, setLoginMsg] = useState("");
+
+  // Settings modal
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Token groups
+  const tokenGroups = useMemo(() => extractTokenGroups(token), [token]);
+  const isDriver = tokenGroups.includes("Driver");
+  const isAdmin = tokenGroups.includes("Admin") || tokenGroups.includes("Dispatcher");
+
+  // Auto-select workspace based on groups when token changes
+  useEffect(() => {
+    if (!token) return;
+    if (isDriver && !isAdmin) setWorkspace("driver");
+    else if (isAdmin && !isDriver) setWorkspace("admin");
+    // if both (like cody.carmichael), keep current choice or default to admin
+    else if (isAdmin && isDriver && workspace === "driver" && !isDriver) setWorkspace("admin");
+  }, [token, isDriver, isAdmin]);
+
+  // ── Storage ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([AsyncStorage.getItem(STORAGE_KEY), AsyncStorage.getItem(STORAGE_QUEUE_KEY)])
-      .then(([configRaw, queueRaw]) => {
-        if (!mounted) {
-          return;
-        }
-
-        if (configRaw) {
-          const parsed = JSON.parse(configRaw) as {
-            apiBase?: string;
-            token?: string;
-            workspace?: Workspace;
-            cognitoDomain?: string;
-            cognitoClientId?: string;
-          };
-          if (parsed.apiBase) {
-            setApiBase(parsed.apiBase);
-          }
-          if (parsed.token) {
-            setToken(parsed.token);
-          }
-          if (parsed.workspace === "admin" || parsed.workspace === "driver") {
-            setWorkspace(parsed.workspace);
-          }
-          if (parsed.cognitoDomain) {
-            setCognitoDomain(parsed.cognitoDomain);
-          }
-          if (parsed.cognitoClientId) {
-            setCognitoClientId(parsed.cognitoClientId);
-          }
-        }
-
-        if (queueRaw) {
-          const parsedQueue = JSON.parse(queueRaw) as QueuedOperation[];
-          if (Array.isArray(parsedQueue)) {
-            setQueue(parsedQueue);
-          }
-        }
+    AsyncStorage.getItem(STORAGE_KEY)
+      .then((raw) => {
+        if (!mounted || !raw) return;
+        const parsed = JSON.parse(raw) as {
+          token?: string;
+          apiBase?: string;
+          cognitoDomain?: string;
+          workspace?: Workspace;
+        };
+        if (parsed.token && looksLikeJwt(parsed.token)) setToken(parsed.token);
+        if (parsed.apiBase && Platform.OS !== "web") setApiBase(parsed.apiBase);
+        if (parsed.cognitoDomain) setCognitoDomain(normalizeDomain(parsed.cognitoDomain));
+        if (parsed.workspace === "admin" || parsed.workspace === "driver") setWorkspace(parsed.workspace);
       })
-      .catch(() => {
-        setStatusMessage("Could not load saved config.");
-      })
-      .finally(() => {
-        if (mounted) {
-          setIsLoadingConfig(false);
-        }
-      });
-    return () => {
-      mounted = false;
-    };
+      .catch(() => undefined)
+      .finally(() => { if (mounted) setIsLoadingConfig(false); });
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
-    const base = normalizeApiBase(apiBase);
-    if (!base) {
-      return;
-    }
-    let cancelled = false;
-    fetch(endpointUrl(base, "/ui/config"))
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Unable to load UI config (${response.status})`);
-        }
-        return (await response.json()) as Record<string, unknown>;
-      })
-      .then((config) => {
-        if (cancelled || !config) {
-          return;
-        }
-        if (typeof config.cognito_domain === "string" && config.cognito_domain && !normalizeDomain(cognitoDomain)) {
-          setCognitoDomain(normalizeDomain(config.cognito_domain));
-        }
-        if (typeof config.cognito_client_id === "string" && config.cognito_client_id && !cognitoClientId.trim()) {
-          setCognitoClientId(config.cognito_client_id.trim());
-        }
-        if (typeof config.onboarding_enabled === "boolean") {
-          setOnboardingEnabled(config.onboarding_enabled);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBase]);
-
-  useEffect(() => {
+    if (isLoadingConfig) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        apiBase: normalizeApiBase(apiBase),
         token: token.trim(),
-        workspace,
+        apiBase: normalizeApiBase(apiBase),
         cognitoDomain: normalizeDomain(cognitoDomain),
-        cognitoClientId: cognitoClientId.trim(),
+        workspace,
       })
     ).catch(() => undefined);
-  }, [apiBase, token, workspace, cognitoDomain, cognitoClientId]);
+  }, [token, apiBase, cognitoDomain, workspace, isLoadingConfig]);
+
+  // ── Deep-link / hosted UI callback ────────────────────────────────────────
 
   useEffect(() => {
-    AsyncStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify(queue)).catch(() => undefined);
-  }, [queue]);
-
-  useEffect(() => {
-    return () => {
-      if (locationTimer.current) {
-        clearInterval(locationTimer.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const subscription = Linking.addEventListener("url", (event) => {
-      consumeHostedCallback(event.url).catch(() => undefined);
-    });
+    const sub = Linking.addEventListener("url", (e) => consumeCallback(e.url).catch(() => undefined));
     Linking.getInitialURL()
-      .then((initialUrl) => {
-        if (initialUrl) {
-          consumeHostedCallback(initialUrl).catch(() => undefined);
-        }
-      })
+      .then((u) => { if (u) consumeCallback(u).catch(() => undefined); })
       .catch(() => undefined);
-    return () => {
-      subscription.remove();
-    };
+    return () => sub.remove();
   }, []);
 
-  const tokenRoleText = useMemo(() => roleSummary(token), [token]);
-  const tokenGroups = useMemo(() => extractTokenGroups(token), [token]);
-  const workspaceAllowed = useMemo(() => {
-    if (workspace === "admin") {
-      return tokenGroups.includes("Admin") || tokenGroups.includes("Dispatcher");
-    }
-    return tokenGroups.includes("Driver");
-  }, [tokenGroups, workspace]);
-  const sessionValidationMessage = useMemo(() => {
-    if (!normalizeApiBase(apiBase)) {
-      return "API base URL is required.";
-    }
-    if (!looksLikeBackendApiBase(apiBase)) {
-      return "API base should end with /backend (example: .../dev/backend).";
-    }
-    if (!token.trim()) {
-      return "JWT token is required.";
-    }
-    if (!looksLikeJwt(token)) {
-      return "JWT token format appears invalid.";
-    }
-    if (workspace === "admin" && !workspaceAllowed) {
-      return "Admin/Dispatcher workspace requires Admin or Dispatcher role.";
-    }
-    if (workspace === "driver" && !workspaceAllowed) {
-      return "Driver workspace requires Driver role.";
-    }
-    return "";
-  }, [apiBase, token, workspace, workspaceAllowed]);
-  const onboardingStatusText = useMemo(() => {
-    if (!onboardingStatus) {
-      return "No registration submitted yet.";
-    }
-    if (onboardingStatus.status === "Approved") {
-      return "Approved. Re-login via Hosted UI to refresh org claims, then continue.";
-    }
-    if (onboardingStatus.status === "Rejected") {
-      return "Rejected. Update details and resubmit registration.";
-    }
-    return "Pending App Dev review.";
-  }, [onboardingStatus]);
-  useEffect(() => {
-    if (sessionValidationMessage) {
-      setSessionSettingsOpen(true);
-    }
-  }, [sessionValidationMessage]);
-  useEffect(() => {
-    if (!normalizeApiBase(apiBase) || !token.trim()) {
-      setOnboardingStatus(null);
-      return;
-    }
-    refreshOnboardingStatus(true).catch(() => undefined);
-  }, [apiBase, token]);
-  const selectedDriver = useMemo(
-    () => drivers.find((driver) => driver.driver_id === selectedDriverId) || null,
-    [drivers, selectedDriverId]
-  );
-  const assignedOrdersCount = useMemo(
-    () => orders.filter((order) => !!order.assigned_to).length,
-    [orders]
-  );
-  const unassignedOrdersCount = useMemo(
-    () => Math.max(orders.length - assignedOrdersCount, 0),
-    [orders.length, assignedOrdersCount]
-  );
-  const selectedDriverOrders = useMemo(() => {
-    if (!selectedDriverId) {
-      return [];
-    }
-    return orders.filter((order) => order.assigned_to === selectedDriverId);
-  }, [orders, selectedDriverId]);
-  const selectedRoutePlan = useMemo(() => {
-    if (!selectedDriverId) {
-      return null;
-    }
-    if (routePlanDriverId !== selectedDriverId) {
-      return null;
-    }
-    return selectedDriverRoutePlan;
-  }, [selectedDriverId, routePlanDriverId, selectedDriverRoutePlan]);
-  const selectedDriverRoutePoints = useMemo<RouteContextPoint[]>(() => {
-    if (!selectedDriver) {
-      return [];
-    }
-    const points: RouteContextPoint[] = [{ latitude: selectedDriver.lat, longitude: selectedDriver.lng }];
-    if (selectedRoutePlan?.ordered_stops?.length) {
-      for (const stop of selectedRoutePlan.ordered_stops) {
-        points.push({ latitude: stop.lat, longitude: stop.lng });
-      }
-      return points;
-    }
-    for (const order of selectedDriverOrders) {
-      const parsed = tryParseLatLng(order.delivery);
-      if (parsed) {
-        points.push(parsed);
-      }
-    }
-    return points;
-  }, [selectedDriver, selectedDriverOrders, selectedRoutePlan]);
-
-  function setMessage(message: string) {
-    setStatusMessage(message);
-  }
-
-  function ensureWorkspaceAccess(): boolean {
-    if (sessionValidationMessage) {
-      setMessage(sessionValidationMessage);
-      return false;
-    }
-    return true;
-  }
-
-  async function withLoading(action: () => Promise<void>) {
-    setIsLoading(true);
-    try {
-      await action();
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  async function loadDriverRoutePlan(driverId: string, silent: boolean) {
-    if (!driverId) {
-      setRoutePlanDriverId(null);
-      setSelectedDriverRoutePlan(null);
-      setRoutePlanError("");
-      return;
-    }
-
-    setIsRoutePlanLoading(true);
-    setRoutePlanError("");
-    try {
-      const routePlan = await apiRequest<RouteOptimizeResponse>(apiBase, "/routes/optimize", {
-        method: "POST",
-        token,
-        json: { driver_id: driverId },
-      });
-      setRoutePlanDriverId(driverId);
-      setSelectedDriverRoutePlan(routePlan);
-      if (!silent) {
-        setMessage(
-          `Optimized ${routePlan.ordered_stops.length} stops (${formatDistanceMiles(routePlan.total_distance_meters)}, ${formatDurationShort(routePlan.total_duration_seconds)}).`
-        );
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to optimize route.";
-      setRoutePlanDriverId(driverId);
-      setSelectedDriverRoutePlan(null);
-      setRoutePlanError(message);
-      if (!silent) {
-        setMessage(message);
-      }
-    } finally {
-      setIsRoutePlanLoading(false);
-    }
-  }
-
-  function routeStopDestination(stop: RouteOptimizedStop): string {
-    const address = (stop.address || "").trim();
-    if (address) {
-      return address;
-    }
-    return `${stop.lat},${stop.lng}`;
-  }
-
-  function enqueueOperation(operation: QueuedOperation) {
-    setQueue((current) => [...current, operation]);
-  }
-
-  async function executeQueuedOperation(operation: QueuedOperation) {
-    if (operation.type === "driver_status") {
-      await apiRequest<OrderRecord>(apiBase, `/orders/${operation.order_id}/status`, {
-        method: "POST",
-        token,
-        json: { status: operation.status },
-      });
-      return;
-    }
-    await apiRequest(apiBase, "/drivers/location", {
-      method: "POST",
-      token,
-      json: {
-        lat: operation.lat,
-        lng: operation.lng,
-        heading: operation.heading,
-      },
-    });
-  }
-
-  async function flushQueue(silent: boolean = false) {
-    if (!ensureWorkspaceAccess()) {
-      if (silent) {
-        return;
-      }
-      return;
-    }
-    if (!queue.length) {
-      if (!silent) {
-        setMessage("No queued driver events.");
-      }
-      return;
-    }
-
-    await withLoading(async () => {
-      let synced = 0;
-      for (let index = 0; index < queue.length; index += 1) {
-        const operation = queue[index];
-        try {
-          await executeQueuedOperation(operation);
-          synced += 1;
-        } catch (error) {
-          const remaining = queue.slice(index);
-          setQueue(remaining);
-          if (!silent) {
-            setMessage(`Synced ${synced} event(s). ${remaining.length} still queued.`);
-          }
-          return;
-        }
-      }
-      setQueue([]);
-      if (!silent) {
-        setMessage(`Synced ${synced} queued event(s).`);
-      }
-    });
-  }
-
-  async function startHostedLogin() {
-    const domain = normalizeDomain(cognitoDomain);
-    const clientId = cognitoClientId.trim();
-    if (!domain || !clientId) {
-      setMessage("Cognito Hosted UI domain and client ID are required.");
-      return;
-    }
-    try {
-      const state = randomString(32);
-      const verifier = randomString(64);
-      const pkce = await buildPkceChallenge(verifier);
-      const session: PkceSession = { state, verifier, domain, clientId };
-      await AsyncStorage.setItem(STORAGE_PKCE_KEY, JSON.stringify(session));
-
-      const params = new URLSearchParams();
-      params.set("client_id", clientId);
-      params.set("response_type", "code");
-      params.set("scope", "openid email profile");
-      params.set("redirect_uri", REDIRECT_URI);
-      params.set("state", state);
-      params.set("code_challenge", pkce.challenge);
-      params.set("code_challenge_method", pkce.method);
-      await Linking.openURL(`https://${domain}/oauth2/authorize?${params.toString()}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to start Hosted UI login.";
-      setMessage(message);
-    }
-  }
-
-  async function logoutHostedLogin() {
-    const domain = normalizeDomain(cognitoDomain);
-    const clientId = cognitoClientId.trim();
-    setToken("");
-    if (!domain || !clientId) {
-      setMessage("Token cleared.");
-      return;
-    }
-    const params = new URLSearchParams();
-    params.set("client_id", clientId);
-    params.set("logout_uri", REDIRECT_URI);
-    await Linking.openURL(`https://${domain}/logout?${params.toString()}`);
-    setMessage("Hosted UI logout launched.");
-  }
-
-  async function consumeHostedCallback(url: string) {
+  async function consumeCallback(url: string) {
     const query = parseQueryParams(url);
     const code = (query.get("code") || "").trim();
-    const callbackState = (query.get("state") || "").trim();
-    const error = query.get("error");
-    const errorDescription = query.get("error_description");
-    if (error) {
-      await AsyncStorage.removeItem(STORAGE_PKCE_KEY);
-      setMessage(errorDescription || error);
-      return;
-    }
+    const cbState = (query.get("state") || "").trim();
+    const err = query.get("error");
+    if (err) { await AsyncStorage.removeItem(STORAGE_PKCE_KEY); setLoginMsg(query.get("error_description") || err); return; }
 
     if (code) {
       const sessionRaw = await AsyncStorage.getItem(STORAGE_PKCE_KEY);
-      if (!sessionRaw) {
-        setMessage("Hosted UI callback missing PKCE session. Start login again.");
-        return;
-      }
+      if (!sessionRaw) { setLoginMsg("PKCE session missing. Try logging in again."); return; }
       let session: PkceSession | null = null;
       try {
-        const parsed = JSON.parse(sessionRaw) as Partial<PkceSession>;
-        if (parsed.state && parsed.verifier && parsed.domain && parsed.clientId) {
-          session = {
-            state: parsed.state,
-            verifier: parsed.verifier,
-            domain: parsed.domain,
-            clientId: parsed.clientId,
-          };
-        }
-      } catch (error) {
-        session = null;
-      }
-      if (!session || !callbackState || callbackState !== session.state) {
+        const p = JSON.parse(sessionRaw) as Partial<PkceSession>;
+        if (p.state && p.verifier && p.domain && p.clientId) session = p as PkceSession;
+      } catch { /* ok */ }
+      if (!session || cbState !== session.state) {
         await AsyncStorage.removeItem(STORAGE_PKCE_KEY);
-        setMessage("Hosted UI state verification failed. Start login again.");
+        setLoginMsg("State mismatch. Try logging in again.");
         return;
       }
-
       const form = new URLSearchParams();
       form.set("grant_type", "authorization_code");
       form.set("client_id", session.clientId);
       form.set("code", code);
       form.set("redirect_uri", REDIRECT_URI);
       form.set("code_verifier", session.verifier);
-
-      let tokenResponse: Response;
       try {
-        tokenResponse = await fetch(`https://${session.domain}/oauth2/token`, {
+        const resp = await fetch(`https://${session.domain}/oauth2/token`, {
           method: "POST",
-          headers: {
-            "content-type": "application/x-www-form-urlencoded",
-          },
+          headers: { "content-type": "application/x-www-form-urlencoded" },
           body: form.toString(),
         });
-      } catch (error) {
+        const data = (await resp.json()) as Record<string, unknown>;
         await AsyncStorage.removeItem(STORAGE_PKCE_KEY);
-        setMessage("Hosted UI token exchange failed.");
-        return;
+        if (!resp.ok) { setLoginMsg(String(data.error_description || data.error || "Token exchange failed.")); return; }
+        const next = String(data.id_token || data.access_token || "").trim();
+        if (!next) { setLoginMsg("No token in response."); return; }
+        setToken(next);
+        setLoginMsg("");
+      } catch {
+        setLoginMsg("Token exchange failed.");
       }
-
-      let tokenPayload: Record<string, unknown> | null = null;
-      try {
-        tokenPayload = (await tokenResponse.json()) as Record<string, unknown>;
-      } catch (error) {
-        tokenPayload = null;
-      }
-
-      await AsyncStorage.removeItem(STORAGE_PKCE_KEY);
-      if (!tokenResponse.ok) {
-        const details =
-          (tokenPayload && typeof tokenPayload.error_description === "string" && tokenPayload.error_description) ||
-          (tokenPayload && typeof tokenPayload.error === "string" && tokenPayload.error) ||
-          "Hosted UI token exchange failed.";
-        setMessage(details);
-        return;
-      }
-
-      const idToken =
-        tokenPayload && typeof tokenPayload.id_token === "string" ? tokenPayload.id_token : "";
-      const accessToken =
-        tokenPayload && typeof tokenPayload.access_token === "string" ? tokenPayload.access_token : "";
-      const nextToken = (idToken || accessToken || "").trim();
-      if (!nextToken) {
-        setMessage("Hosted UI response did not include a token.");
-        return;
-      }
-      setToken(nextToken);
-      setMessage("Hosted UI login complete.");
       return;
     }
 
-    // Backward-compatible fallback for existing implicit-flow callbacks.
+    // Implicit flow fallback
     const hash = parseHashParams(url);
-    const idToken = hash.get("id_token");
-    const accessToken = hash.get("access_token");
-    const hashError = hash.get("error");
-    const hashErrorDescription = hash.get("error_description");
-    if (hashError) {
-      setMessage(hashErrorDescription || hashError);
-      return;
-    }
-    const nextToken = (idToken || accessToken || "").trim();
-    if (!nextToken) {
-      return;
-    }
-    setToken(nextToken);
-    setMessage("Hosted UI login complete.");
+    const next = (hash.get("id_token") || hash.get("access_token") || "").trim();
+    if (next) { setToken(next); setLoginMsg(""); }
   }
 
-  async function refreshOnboardingStatus(silent: boolean = false) {
-    const apiBaseValue = normalizeApiBase(apiBase);
-    if (!apiBaseValue) {
-      if (!silent) {
-        setMessage("API base URL is required.");
-      }
-      return;
-    }
-    const authToken = token.trim();
-    if (!authToken) {
-      setOnboardingStatus(null);
-      if (!silent) {
-        setMessage("Login first to check onboarding status.");
-      }
-      return;
-    }
+  // ── Sign-in with Cognito SRP ───────────────────────────────────────────────
 
+  async function signIn() {
+    const username = loginUser.trim();
+    if (!username || !loginPass) { setLoginMsg("Username and password are required."); return; }
+    setLoginLoading(true);
+    setLoginMsg("");
     try {
-      const response = await apiRequest<OnboardingRegistrationMeResponse>(apiBaseValue, "/onboarding/registrations/me", {
-        token: authToken,
-      });
-      const registration = response && response.exists ? response.registration || null : null;
-      setOnboardingStatus(registration);
-      if (registration && registration.tenant_name && !onboardingTenantName.trim()) {
-        setOnboardingTenantName(registration.tenant_name);
-      }
-      if (registration && registration.contact_name && !onboardingContactName.trim()) {
-        setOnboardingContactName(registration.contact_name);
-      }
-      if (!silent) {
-        if (registration) {
-          setMessage(`Onboarding status: ${registration.status}.`);
-        } else {
-          setMessage("No onboarding registration found yet.");
-        }
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to load onboarding status.";
-      if (!silent) {
-        setMessage(message);
-      }
-    }
-  }
-
-  async function submitOnboardingRegistration() {
-    const apiBaseValue = normalizeApiBase(apiBase);
-    if (!apiBaseValue) {
-      setMessage("API base URL is required.");
-      return;
-    }
-    const authToken = token.trim();
-    if (!authToken) {
-      setMessage("Hosted UI login is required before submitting onboarding.");
-      return;
-    }
-    const tenantName = onboardingTenantName.trim();
-    if (!tenantName) {
-      setMessage("Tenant name is required.");
-      return;
-    }
-    await withLoading(async () => {
-      const response = await apiRequest<OnboardingRegistrationMeResponse>(apiBaseValue, "/onboarding/registrations", {
-        method: "POST",
-        token: authToken,
-        json: {
-          tenant_name: tenantName,
-          contact_name: onboardingContactName.trim() || null,
-          notes: onboardingNotes.trim() || null,
-        },
-      });
-      const registration = response && response.registration ? response.registration : null;
-      setOnboardingStatus(registration);
-      if (registration) {
-        setMessage(`Registration submitted. Current status: ${registration.status}.`);
-      } else {
-        setMessage("Registration submitted.");
-      }
-    });
-  }
-
-  async function capturePodPhoto(orderId: string) {
-    const cameraPerm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!cameraPerm.granted) {
-      setMessage("Camera permission is required for POD photo.");
-      return;
-    }
-    const captured = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
-    if (captured.canceled || !captured.assets.length) {
-      return;
-    }
-    const asset = captured.assets[0];
-    if (!asset.uri) {
-      setMessage("Could not capture photo.");
-      return;
-    }
-    setPodPhotoUris((current) => ({ ...current, [orderId]: asset.uri }));
-    setMessage("POD photo captured.");
-  }
-
-  function onSignatureSaved(signatureDataUrl: string) {
-    if (!signatureOrderId) {
-      return;
-    }
-    setPodSignatureData((current) => ({ ...current, [signatureOrderId]: signatureDataUrl }));
-    setSignatureOrderId(null);
-    setMessage("Signature saved.");
-  }
-
-  function clearPodPhoto(orderId: string) {
-    setPodPhotoUris((current) => {
-      const next = { ...current };
-      delete next[orderId];
-      return next;
-    });
-  }
-
-  function clearPodSignature(orderId: string) {
-    setPodSignatureData((current) => {
-      const next = { ...current };
-      delete next[orderId];
-      return next;
-    });
-  }
-
-  async function writeSignatureTempFile(orderId: string, dataUrl: string) {
-    const marker = "base64,";
-    const markerIndex = dataUrl.indexOf(marker);
-    if (markerIndex < 0) {
-      throw new Error("Invalid signature payload.");
-    }
-    const base64Data = dataUrl.slice(markerIndex + marker.length);
-    const directory = FileSystem.cacheDirectory || FileSystem.documentDirectory;
-    if (!directory) {
-      throw new Error("No writable cache directory available.");
-    }
-    const fileUri = `${directory}pod-signature-${orderId}-${Date.now()}.png`;
-    await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    const info = await FileSystem.getInfoAsync(fileUri, { size: true });
-    if (!info.exists) {
-      throw new Error("Signature file creation failed.");
-    }
-    const size = typeof info.size === "number" && Number.isFinite(info.size) ? info.size : 0;
-    return {
-      uri: fileUri,
-      size,
-      contentType: "image/png",
-      fileName: `signature-${Date.now()}.png`,
-      cleanup: async () => {
-        await FileSystem.deleteAsync(fileUri, { idempotent: true });
-      },
-    };
-  }
-
-  async function uploadPresignedPost(upload: PodPresignUpload, fileUri: string, fileName: string, contentType: string) {
-    const formData = new FormData();
-    Object.entries(upload.fields || {}).forEach(([key, value]) => {
-      formData.append(key, value);
-    });
-    formData.append("file", {
-      uri: fileUri,
-      name: fileName,
-      type: contentType,
-    } as any);
-    const response = await fetch(upload.url, {
-      method: "POST",
-      body: formData,
-    });
-    if (!response.ok) {
-      throw new Error(`POD upload failed (${response.status})`);
-    }
-  }
-
-  async function maybeGetPodLocation() {
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
-        return null;
-      }
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const headingValue =
-        typeof location.coords.heading === "number" && Number.isFinite(location.coords.heading)
-          ? location.coords.heading
-          : null;
-      return {
-        lat: location.coords.latitude,
-        lng: location.coords.longitude,
-        heading: headingValue,
-      };
-    } catch (error) {
-      return null;
-    }
-  }
-
-  async function submitPod(order: OrderRecord) {
-    if (!ensureWorkspaceAccess()) {
-      return;
-    }
-    const orderId = order.id;
-    const photoUri = podPhotoUris[orderId];
-    const signatureDataUrl = podSignatureData[orderId];
-    if (!photoUri && !signatureDataUrl) {
-      setMessage("Capture a photo or signature before submitting POD.");
-      return;
-    }
-
-    setPodSubmitting((current) => ({ ...current, [orderId]: true }));
-    const cleanupTasks: Array<() => Promise<void>> = [];
-    try {
-      const artifacts: Array<{
-        artifact_type: "photo" | "signature";
-        content_type: string;
-        file_size_bytes: number;
-        file_name: string;
-        uri: string;
-      }> = [];
-
-      if (photoUri) {
-        const info = await FileSystem.getInfoAsync(photoUri, { size: true });
-        if (!info.exists) {
-          throw new Error("POD photo file is unavailable.");
-        }
-        const size = typeof info.size === "number" && Number.isFinite(info.size) ? info.size : 0;
-        artifacts.push({
-          artifact_type: "photo",
-          content_type: inferContentType(photoUri, "image/jpeg"),
-          file_size_bytes: size,
-          file_name: `photo-${Date.now()}.jpg`,
-          uri: photoUri,
-        });
-      }
-
-      if (signatureDataUrl) {
-        const tempFile = await writeSignatureTempFile(orderId, signatureDataUrl);
-        cleanupTasks.push(tempFile.cleanup);
-        artifacts.push({
-          artifact_type: "signature",
-          content_type: tempFile.contentType,
-          file_size_bytes: tempFile.size,
-          file_name: tempFile.fileName,
-          uri: tempFile.uri,
-        });
-      }
-
-      const presign = await apiRequest<{ uploads: PodPresignUpload[] }>(apiBase, "/pod/presign", {
-        method: "POST",
-        token,
-        json: {
-          order_id: orderId,
-          artifacts: artifacts.map((item) => ({
-            artifact_type: item.artifact_type,
-            content_type: item.content_type,
-            file_size_bytes: Math.max(item.file_size_bytes, 1),
-            file_name: item.file_name,
-          })),
-        },
-      });
-
-      const photoKeys: string[] = [];
-      const signatureKeys: string[] = [];
-      for (let index = 0; index < presign.uploads.length; index += 1) {
-        const upload = presign.uploads[index];
-        const artifact = artifacts[index];
-        if (!artifact) {
-          continue;
-        }
-        await uploadPresignedPost(upload, artifact.uri, artifact.file_name, artifact.content_type);
-        if (upload.artifact_type === "photo") {
-          photoKeys.push(upload.key);
-        } else {
-          signatureKeys.push(upload.key);
-        }
-      }
-
-      const location = await maybeGetPodLocation();
-      await apiRequest(apiBase, "/pod/metadata", {
-        method: "POST",
-        token,
-        json: {
-          order_id: orderId,
-          photo_keys: photoKeys,
-          signature_keys: signatureKeys,
-          notes: podNotes[orderId] || null,
-          location: location || null,
-        },
-      });
-
-      await updateOrderStatus(orderId, "Delivered", "driver");
-      clearPodPhoto(orderId);
-      clearPodSignature(orderId);
-      setPodNotes((current) => ({ ...current, [orderId]: "" }));
-      setMessage("POD submitted and delivery marked complete.");
-    } finally {
-      for (const cleanup of cleanupTasks) {
-        try {
-          await cleanup();
-        } catch (error) {
-          // no-op
-        }
-      }
-      setPodSubmitting((current) => ({ ...current, [orderId]: false }));
-    }
-  }
-
-  async function refreshAdminData() {
-    if (!ensureWorkspaceAccess()) {
-      return;
-    }
-    await withLoading(async () => {
-      const [ordersResponse, driversResponse] = await Promise.all([
-        apiRequest<OrderRecord[]>(apiBase, "/orders/", { token }),
-        apiRequest<DriverLocationRecord[]>(apiBase, "/drivers?active_minutes=120", { token }),
-      ]);
-      setOrders(ordersResponse || []);
-      setDrivers(driversResponse || []);
-      setAdminMapRegion(buildMapRegion(driversResponse || []));
-      let nextSelectedDriverId: string | null = null;
-      if (driversResponse && driversResponse.length) {
-        if (selectedDriverId && driversResponse.some((driver) => driver.driver_id === selectedDriverId)) {
-          nextSelectedDriverId = selectedDriverId;
-        } else {
-          nextSelectedDriverId = driversResponse[0].driver_id;
-        }
-      }
-      setSelectedDriverId(nextSelectedDriverId);
-      await loadDriverRoutePlan(nextSelectedDriverId || "", true);
-      setMessage(`Loaded ${ordersResponse.length} orders and ${driversResponse.length} active drivers.`);
-    });
-  }
-
-  function focusDriverOnMap(driver: DriverLocationRecord) {
-    setSelectedDriverId(driver.driver_id);
-    setAdminMapRegion({
-      latitude: driver.lat,
-      longitude: driver.lng,
-      latitudeDelta: 0.04,
-      longitudeDelta: 0.04,
-    });
-    loadDriverRoutePlan(driver.driver_id, true).catch(() => undefined);
-  }
-
-  async function optimizeSelectedDriverRoute() {
-    if (!ensureWorkspaceAccess()) {
-      return;
-    }
-    if (!selectedDriver) {
-      setMessage("Select an active driver first.");
-      return;
-    }
-    await withLoading(async () => {
-      await loadDriverRoutePlan(selectedDriver.driver_id, false);
-    });
-  }
-
-  async function openSelectedDriverRoute() {
-    if (!selectedDriver) {
-      setMessage("Select an active driver first.");
-      return;
-    }
-    const routeStops = selectedRoutePlan?.ordered_stops || [];
-    if (routeStops.length) {
-      const destination = routeStopDestination(routeStops[routeStops.length - 1]);
-      const waypoints = routeStops.slice(0, -1).map((stop) => routeStopDestination(stop));
-      const params = new URLSearchParams();
-      params.set("api", "1");
-      params.set("origin", `${selectedDriver.lat},${selectedDriver.lng}`);
-      params.set("destination", destination);
-      if (waypoints.length) {
-        params.set("waypoints", waypoints.join("|"));
-      }
-      params.set("travelmode", "driving");
-      await Linking.openURL(`https://www.google.com/maps/dir/?${params.toString()}`);
-      return;
-    }
-    if (!selectedDriverOrders.length) {
-      setMessage("Selected driver has no assigned orders.");
-      return;
-    }
-    const firstStop = selectedDriverOrders[0];
-    const params = new URLSearchParams();
-    params.set("api", "1");
-    params.set("origin", `${selectedDriver.lat},${selectedDriver.lng}`);
-    params.set("destination", firstStop.delivery);
-    params.set("travelmode", "driving");
-    await Linking.openURL(`https://www.google.com/maps/dir/?${params.toString()}`);
-  }
-
-  async function refreshDriverInbox() {
-    if (!ensureWorkspaceAccess()) {
-      return;
-    }
-    await withLoading(async () => {
-      const response = await apiRequest<OrderRecord[]>(apiBase, "/orders/driver/inbox", { token });
-      setInboxOrders(response || []);
-      setMessage(`Loaded ${response.length} assigned orders.`);
-      await flushQueue(true);
-    });
-  }
-
-  async function assignOrder(orderId: string) {
-    if (!ensureWorkspaceAccess()) {
-      return;
-    }
-    const driverId = (assignInputs[orderId] || "").trim();
-    if (!driverId) {
-      setMessage("Driver ID is required for assignment.");
-      return;
-    }
-    await withLoading(async () => {
-      await apiRequest<OrderRecord>(apiBase, `/orders/${orderId}/assign`, {
-        method: "POST",
-        token,
-        json: { driver_id: driverId },
-      });
-      await refreshAdminData();
-    });
-  }
-
-  async function unassignOrder(orderId: string) {
-    if (!ensureWorkspaceAccess()) {
-      return;
-    }
-    await withLoading(async () => {
-      await apiRequest<OrderRecord>(apiBase, `/orders/${orderId}/unassign`, {
-        method: "POST",
-        token,
-      });
-      await refreshAdminData();
-    });
-  }
-
-  async function updateOrderStatus(orderId: string, status: string, nextWorkspace: Workspace) {
-    if (!ensureWorkspaceAccess()) {
-      return;
-    }
-    await withLoading(async () => {
-      try {
-        await apiRequest<OrderRecord>(apiBase, `/orders/${orderId}/status`, {
-          method: "POST",
-          token,
-          json: { status },
-        });
-      } catch (error) {
-        if (nextWorkspace === "driver") {
-          enqueueOperation({
-            id: `${Date.now()}-status-${orderId}-${status}`,
-            created_at: new Date().toISOString(),
-            type: "driver_status",
-            order_id: orderId,
-            status,
-          });
-          setMessage(`Queued status ${status} for retry sync.`);
-          return;
-        }
-        throw error;
-      }
-      if (nextWorkspace === "admin") {
-        await refreshAdminData();
-      } else {
-        await refreshDriverInbox();
-      }
-    });
-  }
-
-  async function sendDriverLocation() {
-    if (!ensureWorkspaceAccess()) {
-      return;
-    }
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!permission.granted) {
-      setMessage("Location permission denied.");
-      return;
-    }
-    await withLoading(async () => {
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      const headingValue =
-        typeof location.coords.heading === "number" && Number.isFinite(location.coords.heading)
-          ? location.coords.heading
-          : null;
-      const payload = {
-        lat: location.coords.latitude,
-        lng: location.coords.longitude,
-        heading: headingValue,
-      };
-      try {
-        await apiRequest(apiBase, "/drivers/location", {
-          method: "POST",
-          token,
-          json: payload,
-        });
-        setMessage(
-          `Sent location at ${new Date().toLocaleTimeString()} (${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)}).`
+      const idToken = await new Promise<string>((resolve, reject) => {
+        const pool = new CognitoUserPool({ UserPoolId: cognitoUserPoolId, ClientId: cognitoClientId });
+        const user = new CognitoUser({ Username: username, Pool: pool });
+        user.authenticateUser(
+          new AuthenticationDetails({ Username: username, Password: loginPass }),
+          {
+            onSuccess: (session) => resolve(session.getIdToken().getJwtToken()),
+            onFailure: (err) => reject(err),
+            newPasswordRequired: () => reject(new Error("A new password is required. Please reset via Forgot Password.")),
+          }
         );
-      } catch (error) {
-        enqueueOperation({
-          id: `${Date.now()}-location`,
-          created_at: new Date().toISOString(),
-          type: "driver_location",
-          lat: payload.lat,
-          lng: payload.lng,
-          heading: payload.heading,
-        });
-        setMessage("Location send failed; queued for retry.");
-      }
-    });
+      });
+      setToken(idToken);
+      setLoginPass("");
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code ?? "";
+      const msgMap: Record<string, string> = {
+        NotAuthorizedException: "Incorrect username or password.",
+        UserNotFoundException: "No account found with that username.",
+        UserNotConfirmedException: "Please verify your email before signing in.",
+        PasswordResetRequiredException: "A password reset is required.",
+        LimitExceededException: "Too many attempts. Please wait and try again.",
+      };
+      setLoginMsg(msgMap[code] ?? (err instanceof Error ? err.message : "Sign-in failed."));
+    } finally {
+      setLoginLoading(false);
+    }
   }
 
-  function toggleAutoShare() {
-    if (autoShareOn) {
-      if (locationTimer.current) {
-        clearInterval(locationTimer.current);
-        locationTimer.current = null;
-      }
-      setAutoShareOn(false);
-      setMessage("Auto-share disabled.");
-      return;
-    }
-    if (!ensureWorkspaceAccess()) {
-      return;
-    }
-    sendDriverLocation().catch((error) => {
-      setMessage(String(error instanceof Error ? error.message : error));
-    });
-    locationTimer.current = setInterval(() => {
-      sendDriverLocation().catch(() => undefined);
-    }, 60_000);
-    setAutoShareOn(true);
-    setMessage("Auto-share enabled (every 60s).");
+  // ── Hosted UI login ────────────────────────────────────────────────────────
+
+  async function startHostedLogin() {
+    const domain = normalizeDomain(cognitoDomain || "");
+    if (!domain) { setLoginMsg("Cognito domain is required for Hosted UI login."); return; }
+    const state = randomStr(32);
+    const verifier = randomStr(64);
+    const pkce = await buildPkce(verifier);
+    const session: PkceSession = { state, verifier, domain, clientId: cognitoClientId };
+    await AsyncStorage.setItem(STORAGE_PKCE_KEY, JSON.stringify(session));
+    const params = new URLSearchParams();
+    params.set("client_id", cognitoClientId);
+    params.set("response_type", "code");
+    params.set("scope", "openid email profile");
+    params.set("redirect_uri", REDIRECT_URI);
+    params.set("state", state);
+    params.set("code_challenge", pkce.challenge);
+    params.set("code_challenge_method", pkce.method);
+    await Linking.openURL(`https://${domain}/oauth2/authorize?${params.toString()}`);
   }
 
-  function onError(error: unknown) {
-    setMessage(error instanceof Error ? error.message : "Request failed.");
+  // ── Sign out ───────────────────────────────────────────────────────────────
+
+  function signOut() {
+    setToken("");
+    setLoginMsg("");
   }
+
+  // ─── Loading splash ───────────────────────────────────────────────────────
 
   if (isLoadingConfig) {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.loadingWrap}>
-          <ActivityIndicator />
-          <Text style={styles.loadingText}>Loading mobile workspace...</Text>
+          <ActivityIndicator color="#C8973A" />
+          <Text style={styles.loadingText}>Loading…</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <Text style={styles.appTitle}>Discra Mobile</Text>
-        <Text style={styles.subtitle}>Role-focused dispatch and driver workflows</Text>
+  // ─── Authenticated: route to workspace ───────────────────────────────────
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Workspace</Text>
-          <View style={styles.toggleRow}>
+  if (looksLikeJwt(token)) {
+    // If token is valid but groups are empty (shouldn't happen normally), show sign-out
+    const canAdmin = isAdmin;
+    const canDriver = isDriver;
+
+    // Workspace selector — shown when user has BOTH roles
+    const showWorkspaceSelector = canAdmin && canDriver;
+
+    // Pick which screen to render
+    const renderScreen = () => {
+      if (workspace === "admin" && canAdmin) {
+        return <AdminScreen token={token} apiBase={apiBase} onSignOut={signOut} />;
+      }
+      if (workspace === "driver" && canDriver) {
+        return <DriverScreen token={token} apiBase={apiBase} onSignOut={signOut} />;
+      }
+      // Fallback — user lacks permission for selected workspace
+      return (
+        <SafeAreaView style={styles.screen}>
+          <View style={styles.loadingWrap}>
+            <Text style={styles.loginHeading}>Workspace Unavailable</Text>
+            <Text style={styles.loginLead}>
+              Your account ({tokenGroups.join(", ")}) doesn't have access to the{" "}
+              {workspace} workspace.
+            </Text>
+            <View style={styles.workspaceSwitcher}>
+              {canAdmin ? (
+                <Pressable style={[styles.wsBtn, styles.wsBtnActive]} onPress={() => setWorkspace("admin")}>
+                  <Text style={styles.wsBtnText}>Go to Dispatch</Text>
+                </Pressable>
+              ) : null}
+              {canDriver ? (
+                <Pressable style={[styles.wsBtn, styles.wsBtnActive]} onPress={() => setWorkspace("driver")}>
+                  <Text style={styles.wsBtnText}>Go to Driver</Text>
+                </Pressable>
+              ) : null}
+              <Pressable style={styles.wsBtn} onPress={signOut}>
+                <Text style={styles.wsBtnGhostText}>Sign Out</Text>
+              </Pressable>
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    };
+
+    return (
+      <View style={styles.screen}>
+        <StatusBar style="light" />
+        {showWorkspaceSelector ? (
+          <View style={styles.workspaceBanner}>
             <Pressable
-              style={[styles.toggleButton, workspace === "admin" && styles.toggleButtonActive]}
-              onPress={() => setWorkspace("admin")}
-            >
-              <Text style={[styles.toggleText, workspace === "admin" && styles.toggleTextActive]}>Admin/Dispatcher</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.toggleButton, workspace === "driver" && styles.toggleButtonActive]}
+              style={[styles.wsChip, workspace === "driver" && styles.wsChipActive]}
               onPress={() => setWorkspace("driver")}
             >
-              <Text style={[styles.toggleText, workspace === "driver" && styles.toggleTextActive]}>Driver</Text>
+              <Text style={[styles.wsChipText, workspace === "driver" && styles.wsChipTextActive]}>
+                Driver
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.wsChip, workspace === "admin" && styles.wsChipActive]}
+              onPress={() => setWorkspace("admin")}
+            >
+              <Text style={[styles.wsChipText, workspace === "admin" && styles.wsChipTextActive]}>
+                Dispatch
+              </Text>
             </Pressable>
           </View>
-          <Text style={styles.metaText}>
-            {workspace === "admin"
-              ? "Dispatch workspace active for operations and route planning."
-              : "Driver workspace active for live stops and POD."}
-          </Text>
-          {tokenRoleText ? <Text style={styles.metaText}>Token roles: {tokenRoleText}</Text> : null}
-          {queue.length ? <Text style={styles.metaText}>Queued driver events: {queue.length}</Text> : null}
-          <Pressable
-            style={[styles.button, styles.buttonGhost, styles.sessionToggle]}
-            onPress={() => setSessionSettingsOpen((current) => !current)}
-          >
-            <Text style={styles.buttonGhostText}>
-              {sessionSettingsOpen ? "Hide Session Settings" : "Show Session Settings"}
-            </Text>
-          </Pressable>
-          {sessionValidationMessage ? <Text style={styles.validationText}>{sessionValidationMessage}</Text> : null}
+        ) : null}
+        {renderScreen()}
 
-          {sessionSettingsOpen ? (
-            <>
-              <Text style={styles.label}>API Base URL</Text>
-              <TextInput
-                value={apiBase}
-                onChangeText={setApiBase}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-                placeholder={API_BASE_PLACEHOLDER}
-                placeholderTextColor="#758591"
-              />
-              <Text style={styles.label}>Cognito Hosted UI Domain</Text>
-              <TextInput
-                value={cognitoDomain}
-                onChangeText={setCognitoDomain}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-                placeholder="your-domain.auth.us-east-1.amazoncognito.com"
-                placeholderTextColor="#758591"
-              />
-              <Text style={styles.label}>Cognito App Client ID</Text>
-              <TextInput
-                value={cognitoClientId}
-                onChangeText={setCognitoClientId}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-                placeholder="app client id"
-                placeholderTextColor="#758591"
-              />
-              <View style={styles.row}>
-                <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => startHostedLogin().catch(onError)}>
-                  <Text style={styles.buttonText}>Login Hosted UI</Text>
-                </Pressable>
-                <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => logoutHostedLogin().catch(onError)}>
-                  <Text style={styles.buttonGhostText}>Logout Hosted UI</Text>
-                </Pressable>
-              </View>
-              <Text style={styles.label}>JWT Token</Text>
-              <TextInput
-                value={token}
-                onChangeText={setToken}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={[styles.input, styles.tokenInput]}
-                multiline
-                placeholder="Paste JWT or login via Hosted UI"
-                placeholderTextColor="#758591"
-              />
-              <Text style={styles.metaText}>Use `/dev/backend` API base from deployed SAM endpoint.</Text>
-            </>
-          ) : null}
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Tenant Registration</Text>
-          {onboardingEnabled ? (
-            <>
-              <Text style={styles.metaText}>
-                New Admin users can submit registration here. App Dev approval is required before workspace access.
-              </Text>
-              <Text style={styles.label}>Tenant Name</Text>
-              <TextInput
-                value={onboardingTenantName}
-                onChangeText={setOnboardingTenantName}
-                style={styles.input}
-                placeholder="Acme Logistics"
-                placeholderTextColor="#758591"
-              />
-              <Text style={styles.label}>Contact Name (optional)</Text>
-              <TextInput
-                value={onboardingContactName}
-                onChangeText={setOnboardingContactName}
-                style={styles.input}
-                placeholder="Jane Doe"
-                placeholderTextColor="#758591"
-              />
-              <Text style={styles.label}>Notes (optional)</Text>
-              <TextInput
-                value={onboardingNotes}
-                onChangeText={setOnboardingNotes}
-                style={styles.input}
-                placeholder="Anything approvers should know"
-                placeholderTextColor="#758591"
-                multiline
-              />
-              <View style={styles.row}>
-                <Pressable
-                  style={[styles.button, styles.buttonPrimary]}
-                  onPress={() => submitOnboardingRegistration().catch(onError)}
-                >
-                  <Text style={styles.buttonText}>Submit Registration</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.button, styles.buttonGhost]}
-                  onPress={() => refreshOnboardingStatus(false).catch(onError)}
-                >
-                  <Text style={styles.buttonGhostText}>Refresh Status</Text>
-                </Pressable>
-              </View>
-              <Text style={styles.metaText}>
-                Status: {onboardingStatus ? onboardingStatus.status : "Not Submitted"} - {onboardingStatusText}
-              </Text>
-              {onboardingStatus?.status === "Approved" ? (
-                <View style={styles.row}>
-                  <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => startHostedLogin().catch(onError)}>
-                    <Text style={styles.buttonText}>Continue To Login</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-            </>
-          ) : (
-            <Text style={styles.metaText}>Onboarding flow is disabled in this environment.</Text>
-          )}
-        </View>
-
-        {workspace === "admin" ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Dispatch + Driver Tracking</Text>
-            <View style={styles.metricRow}>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>Orders</Text>
-                <Text style={styles.metricValue}>{orders.length}</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>Assigned</Text>
-                <Text style={styles.metricValue}>{assignedOrdersCount}</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>Unassigned</Text>
-                <Text style={styles.metricValue}>{unassignedOrdersCount}</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>Drivers</Text>
-                <Text style={styles.metricValue}>{drivers.length}</Text>
-              </View>
-            </View>
-            <View style={styles.row}>
-              <Pressable
-                style={[styles.button, styles.buttonPrimary]}
-                onPress={() => refreshAdminData().catch(onError)}
-                disabled={isLoading}
-              >
-                <Text style={styles.buttonText}>Refresh Orders + Drivers</Text>
-              </Pressable>
-            </View>
-            {drivers.length && adminMapRegion ? (
-              <MapView
-                style={styles.mapView}
-                region={adminMapRegion}
-                onRegionChangeComplete={setAdminMapRegion}
-                showsUserLocation={false}
-              >
-                {drivers.map((driver) => (
-                  <Marker
-                    key={`marker-${driver.driver_id}`}
-                    coordinate={{ latitude: driver.lat, longitude: driver.lng }}
-                    pinColor={driver.driver_id === selectedDriverId ? "#1c8f69" : "#0e7aa6"}
-                    title={driver.driver_id}
-                    description={formatTime(driver.timestamp)}
-                  />
-                ))}
-                {selectedDriverRoutePoints.length > 1 ? (
-                  <Polyline coordinates={selectedDriverRoutePoints} strokeColor="#1c8f69" strokeWidth={3} />
-                ) : null}
-              </MapView>
-            ) : (
-              <Text style={styles.metaText}>No active drivers to display on the map.</Text>
-            )}
-            <View style={styles.routeContextCard}>
-              <Text style={styles.sectionSubtitle}>Route Context</Text>
-              <Text style={styles.metaText}>
-                Selected driver: {selectedDriver ? selectedDriver.driver_id : "None"}
-              </Text>
-              {selectedRoutePlan ? (
-                <Text style={styles.metaText}>
-                  Optimized via {selectedRoutePlan.matrix_source}:{" "}
-                  {formatDistanceMiles(selectedRoutePlan.total_distance_meters)} /{" "}
-                  {formatDurationShort(selectedRoutePlan.total_duration_seconds)}
-                </Text>
-              ) : (
-                <Text style={styles.metaText}>No optimized route loaded yet.</Text>
-              )}
-              {isRoutePlanLoading ? <Text style={styles.metaText}>Optimizing route...</Text> : null}
-              {routePlanError && routePlanDriverId === selectedDriverId ? (
-                <Text style={styles.validationText}>{routePlanError}</Text>
-              ) : null}
-              <View style={styles.row}>
-                <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => optimizeSelectedDriverRoute().catch(onError)}>
-                  <Text style={styles.buttonText}>Optimize Route</Text>
-                </Pressable>
-                <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => openSelectedDriverRoute().catch(onError)}>
-                  <Text style={styles.buttonGhostText}>Open Route in Maps</Text>
-                </Pressable>
-              </View>
-              {selectedRoutePlan && selectedRoutePlan.ordered_stops.length ? (
-                selectedRoutePlan.ordered_stops.map((stop) => {
-                  const order = orders.find((candidate) => candidate.id === stop.order_id);
-                  return (
-                    <View key={`route-order-${stop.order_id}`} style={styles.routeStopCard}>
-                      <Text style={styles.routeStopTitle}>
-                        {stop.sequence}. {order ? `#${order.reference_number} - ${order.customer_name}` : stop.order_id}
-                      </Text>
-                      <Text style={styles.metaText}>Delivery: {stop.address || routeStopDestination(stop)}</Text>
-                      <Text style={styles.metaText}>
-                        Leg: {formatDistanceMiles(stop.distance_from_previous_meters)} /{" "}
-                        {formatDurationShort(stop.duration_from_previous_seconds)}
-                      </Text>
-                    </View>
-                  );
-                })
-              ) : selectedDriverOrders.length ? (
-                selectedDriverOrders.map((order) => (
-                  <View key={`route-order-${order.id}`} style={styles.routeStopCard}>
-                    <Text style={styles.routeStopTitle}>
-                      #{order.reference_number} - {order.customer_name} ({order.status})
-                    </Text>
-                    <Text style={styles.metaText}>Delivery: {order.delivery}</Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={styles.metaText}>No assigned stops for selected driver.</Text>
-              )}
-            </View>
-            <Text style={styles.sectionSubtitle}>Orders Queue</Text>
-            {orders.map((order) => (
-              <View key={order.id} style={styles.orderCard}>
-                <Text style={styles.orderTitle}>{order.customer_name}</Text>
-                <Text style={styles.orderMeta}>
-                  #{order.reference_number} - {order.status} - Assigned: {order.assigned_to || "-"}
-                </Text>
-                <Text style={styles.orderMeta}>Pick Up: {order.pick_up_address}</Text>
-                <Text style={styles.orderMeta}>Delivery: {order.delivery}</Text>
-                <Text style={styles.orderMeta}>
-                  Window: {formatTime(order.time_window_start || undefined)} -{" "}
-                  {formatTime(order.time_window_end || undefined)}
-                </Text>
+        {/* Settings modal — accessible from workspace banner */}
+        <Modal visible={settingsOpen} animationType="slide" transparent onRequestClose={() => setSettingsOpen(false)}>
+          <View style={styles.settingsBackdrop}>
+            <SafeAreaView>
+              <View style={styles.settingsCard}>
+                <Text style={styles.loginHeading}>Settings</Text>
+                <Text style={styles.label}>API Base URL</Text>
                 <TextInput
                   style={styles.input}
-                  value={assignInputs[order.id] ?? order.assigned_to ?? ""}
-                  placeholder="Driver ID"
-                  placeholderTextColor="#758591"
-                  onChangeText={(value) => setAssignInputs((prev) => ({ ...prev, [order.id]: value }))}
+                  value={apiBase}
+                  onChangeText={setApiBase}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholderTextColor="#4A3F60"
                 />
-                <View style={styles.row}>
-                  <Pressable
-                    style={[styles.button, styles.buttonPrimary]}
-                    onPress={() => assignOrder(order.id).catch(onError)}
-                  >
-                    <Text style={styles.buttonText}>Assign</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.button, styles.buttonGhost]}
-                    onPress={() => unassignOrder(order.id).catch(onError)}
-                  >
-                    <Text style={styles.buttonGhostText}>Unassign</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.statusWrap}>
-                  {ADMIN_STATUS.map((status) => (
-                    <Pressable
-                      key={`${order.id}-${status}`}
-                      style={[styles.statusButton, order.status === status && styles.statusButtonActive]}
-                      onPress={() => updateOrderStatus(order.id, status, "admin").catch(onError)}
-                    >
-                      <Text style={styles.statusButtonText}>{status}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            ))}
-            <Text style={styles.sectionSubtitle}>Active Drivers</Text>
-            {drivers.length === 0 ? <Text style={styles.metaText}>No active drivers found.</Text> : null}
-            {drivers.map((driver) => (
-              <Pressable
-                key={driver.driver_id}
-                style={[styles.driverCard, driver.driver_id === selectedDriverId && styles.driverCardSelected]}
-                onPress={() => focusDriverOnMap(driver)}
-              >
-                <Text style={styles.driverTitle}>{driver.driver_id}</Text>
-                <Text style={styles.metaText}>
-                  {driver.lat.toFixed(5)}, {driver.lng.toFixed(5)}
-                </Text>
-                <Text style={styles.metaText}>{formatTime(driver.timestamp)}</Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Driver Workflow</Text>
-            <View style={styles.row}>
-              <Pressable
-                style={[styles.button, styles.buttonPrimary]}
-                onPress={() => refreshDriverInbox().catch(onError)}
-                disabled={isLoading}
-              >
-                <Text style={styles.buttonText}>Refresh Inbox</Text>
-              </Pressable>
-              <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => sendDriverLocation().catch(onError)}>
-                <Text style={styles.buttonText}>Send Location</Text>
-              </Pressable>
-              <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => flushQueue(false).catch(onError)}>
-                <Text style={styles.buttonGhostText}>Sync Queue ({queue.length})</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.button, autoShareOn ? styles.buttonDanger : styles.buttonGhost]}
-                onPress={toggleAutoShare}
-              >
-                <Text style={autoShareOn ? styles.buttonText : styles.buttonGhostText}>
-                  {autoShareOn ? "Stop Auto Share" : "Start Auto Share"}
-                </Text>
-              </Pressable>
-            </View>
-            <Text style={styles.sectionSubtitle}>Assigned Stops</Text>
-            {inboxOrders.map((order) => (
-              <View key={order.id} style={styles.orderCard}>
-                <Text style={styles.orderTitle}>{order.customer_name}</Text>
-                <Text style={styles.orderMeta}>
-                  #{order.reference_number} - {order.status}
-                </Text>
-                <Text style={styles.orderMeta}>Pick Up: {order.pick_up_address}</Text>
-                <Text style={styles.orderMeta}>Delivery: {order.delivery}</Text>
-                <Text style={styles.orderMeta}>
-                  Window: {formatTime(order.time_window_start || undefined)} -{" "}
-                  {formatTime(order.time_window_end || undefined)}
-                </Text>
-                <View style={styles.statusWrap}>
-                  {DRIVER_STATUS.map((status) => (
-                    <Pressable
-                      key={`${order.id}-${status}`}
-                      style={[styles.statusButton, order.status === status && styles.statusButtonActive]}
-                      onPress={() => updateOrderStatus(order.id, status, "driver").catch(onError)}
-                    >
-                      <Text style={styles.statusButtonText}>{status}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <View style={styles.podSection}>
-                  <Text style={styles.podTitle}>Proof Of Delivery</Text>
-                  {podPhotoUris[order.id] ? (
-                    <Image source={{ uri: podPhotoUris[order.id] }} style={styles.podPhotoPreview} />
-                  ) : (
-                    <Text style={styles.metaText}>No POD photo captured.</Text>
-                  )}
-                  <View style={styles.row}>
-                    <Pressable
-                      style={[styles.button, styles.buttonPrimary]}
-                      onPress={() => capturePodPhoto(order.id).catch(onError)}
-                    >
-                      <Text style={styles.buttonText}>Capture Photo</Text>
-                    </Pressable>
-                    {podPhotoUris[order.id] ? (
-                      <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => clearPodPhoto(order.id)}>
-                        <Text style={styles.buttonGhostText}>Clear Photo</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                  <View style={styles.row}>
-                    <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => setSignatureOrderId(order.id)}>
-                      <Text style={styles.buttonText}>
-                        {podSignatureData[order.id] ? "Re-Capture Signature" : "Capture Signature"}
-                      </Text>
-                    </Pressable>
-                    {podSignatureData[order.id] ? (
-                      <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => clearPodSignature(order.id)}>
-                        <Text style={styles.buttonGhostText}>Clear Signature</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                  <Text style={styles.metaText}>
-                    {podSignatureData[order.id] ? "Signature captured." : "No signature captured."}
-                  </Text>
-                  <TextInput
-                    style={styles.input}
-                    value={podNotes[order.id] || ""}
-                    onChangeText={(value) => setPodNotes((current) => ({ ...current, [order.id]: value }))}
-                    placeholder="Delivery notes"
-                    placeholderTextColor="#758591"
-                    multiline
-                  />
-                  <Pressable
-                    style={[styles.button, styles.buttonPrimary]}
-                    onPress={() => submitPod(order).catch(onError)}
-                    disabled={!!podSubmitting[order.id]}
-                  >
-                    <Text style={styles.buttonText}>
-                      {podSubmitting[order.id] ? "Submitting POD..." : "Submit POD + Mark Delivered"}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-            {inboxOrders.length === 0 ? <Text style={styles.metaText}>No assigned orders.</Text> : null}
-          </View>
-        )}
-
-        <Modal visible={!!signatureOrderId} transparent animationType="slide" onRequestClose={() => setSignatureOrderId(null)}>
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <Text style={styles.sectionTitle}>Capture Signature</Text>
-              <View style={styles.signatureWrap}>
-                <SignatureScreen
-                  onOK={onSignatureSaved}
-                  onEmpty={() => setMessage("Draw a signature before saving.")}
-                  clearText="Clear"
-                  confirmText="Save"
-                  descriptionText="Sign below"
-                  autoClear
-                  webStyle={`
-                    .m-signature-pad--footer { background: #dce8ef; }
-                    .m-signature-pad--body { border: 1px solid #b4c8d6; }
-                    .button { background: #0e7aa6; color: #f6fcff; border-radius: 8px; }
-                  `}
+                <Text style={styles.label}>Cognito Domain (Hosted UI)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={cognitoDomain}
+                  onChangeText={setCognitoDomain}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholderTextColor="#4A3F60"
+                  placeholder="auth.example.com"
                 />
+                <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setSettingsOpen(false)}>
+                  <Text style={styles.btnGhostText}>Done</Text>
+                </Pressable>
               </View>
-              <Pressable style={[styles.button, styles.buttonGhost]} onPress={() => setSignatureOrderId(null)}>
-                <Text style={styles.buttonGhostText}>Cancel</Text>
-              </Pressable>
-            </View>
+            </SafeAreaView>
           </View>
         </Modal>
+      </View>
+    );
+  }
 
-        {isLoading ? <ActivityIndicator color="#0e7aa6" /> : null}
-        <Text style={styles.footerMessage}>{statusMessage}</Text>
-      </ScrollView>
+  // ─── Login screen ─────────────────────────────────────────────────────────
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style="light" />
+      <View style={styles.loginScreen}>
+        <View style={styles.loginCard}>
+          {/* Brand */}
+          <View style={styles.brandRow}>
+            <View style={styles.brandMark}>
+              <Text style={styles.brandMarkText}>D</Text>
+            </View>
+            <Text style={styles.brandName}>Discra</Text>
+          </View>
+          <Text style={styles.loginHeading}>Welcome Back</Text>
+          <Text style={styles.loginLead}>Sign in to your workspace.</Text>
+
+          {/* Username / password */}
+          <Text style={styles.label}>Username</Text>
+          <TextInput
+            style={styles.input}
+            value={loginUser}
+            onChangeText={setLoginUser}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="default"
+            placeholder="Enter username"
+            placeholderTextColor="#4A3F60"
+            returnKeyType="next"
+          />
+          <Text style={styles.label}>Password</Text>
+          <TextInput
+            style={styles.input}
+            value={loginPass}
+            onChangeText={setLoginPass}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="••••••••"
+            placeholderTextColor="#4A3F60"
+            returnKeyType="done"
+            onSubmitEditing={() => signIn().catch(() => undefined)}
+          />
+
+          {loginMsg ? <Text style={styles.errorText}>{loginMsg}</Text> : null}
+
+          <Pressable
+            style={[styles.btn, styles.btnPrimary, styles.loginBtn, loginLoading && { opacity: 0.6 }]}
+            onPress={() => signIn().catch(() => undefined)}
+            disabled={loginLoading}
+          >
+            <Text style={styles.btnPrimaryText}>{loginLoading ? "Signing in…" : "Sign In"}</Text>
+          </Pressable>
+
+          {/* Settings link */}
+          <Pressable onPress={() => setSettingsOpen(true)} style={{ alignSelf: "center" }}>
+            <Text style={styles.settingsLink}>Advanced settings</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Settings modal */}
+      <Modal visible={settingsOpen} animationType="slide" transparent onRequestClose={() => setSettingsOpen(false)}>
+        <View style={styles.settingsBackdrop}>
+          <View style={styles.settingsCard}>
+            <Text style={styles.loginHeading}>Settings</Text>
+            <Text style={styles.label}>API Base URL</Text>
+            <TextInput
+              style={styles.input}
+              value={apiBase}
+              onChangeText={setApiBase}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholderTextColor="#4A3F60"
+              placeholder="https://.../dev/backend"
+            />
+            <Text style={styles.label}>Cognito Domain (Hosted UI)</Text>
+            <TextInput
+              style={styles.input}
+              value={cognitoDomain}
+              onChangeText={setCognitoDomain}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholderTextColor="#4A3F60"
+              placeholder="auth.example.com"
+            />
+            <View style={styles.row}>
+              <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => startHostedLogin().catch((e) => setLoginMsg(e instanceof Error ? e.message : "Failed."))}>
+                <Text style={styles.btnPrimaryText}>Hosted UI Login</Text>
+              </Pressable>
+              <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setSettingsOpen(false)}>
+                <Text style={styles.btnGhostText}>Done</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#f2f6fa",
-  },
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    padding: 16,
-    gap: 12,
-    paddingBottom: 28,
+    backgroundColor: "#0B0910",
   },
   loadingWrap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
+    padding: 24,
   },
   loadingText: {
-    color: "#4f5f6c",
-  },
-  appTitle: {
-    color: "#13222f",
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  subtitle: {
-    color: "#596a78",
-    marginTop: 2,
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: "#d2dde7",
-    borderRadius: 14,
-    padding: 12,
-    backgroundColor: "#ffffff",
-    gap: 8,
-  },
-  sectionTitle: {
-    color: "#13222f",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  sectionSubtitle: {
-    color: "#1f3342",
+    color: "#968AA8",
     fontSize: 14,
-    fontWeight: "600",
-    marginTop: 6,
+  },
+  loginScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  loginCard: {
+    width: "100%",
+    maxWidth: 400,
+    backgroundColor: "#130F1A",
+    borderWidth: 1,
+    borderColor: "#3A2F50",
+    borderRadius: 16,
+    padding: 24,
+    gap: 10,
+  },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 4,
+  },
+  brandMark: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#C8973A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  brandMarkText: {
+    color: "#0B0910",
+    fontWeight: "800",
+    fontSize: 18,
+  },
+  brandName: {
+    color: "#F5D98B",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  loginHeading: {
+    color: "#F5D98B",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  loginLead: {
+    color: "#968AA8",
+    fontSize: 13,
   },
   label: {
-    color: "#5e6f7c",
-    fontSize: 12,
+    color: "#968AA8",
+    fontSize: 11,
     fontWeight: "600",
   },
   input: {
     borderWidth: 1,
-    borderColor: "#c8d6e2",
+    borderColor: "#3A2F50",
     borderRadius: 10,
-    color: "#172532",
-    backgroundColor: "#f9fbfd",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  tokenInput: {
-    minHeight: 72,
-    textAlignVertical: "top",
-  },
-  toggleRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
-  },
-  toggleButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#c8d6e2",
-    borderRadius: 999,
+    color: "#EDE0C4",
+    backgroundColor: "#0F0C16",
+    paddingHorizontal: 12,
     paddingVertical: 9,
-    alignItems: "center",
+    fontSize: 14,
   },
-  toggleButtonActive: {
-    backgroundColor: "#0e7aa6",
-    borderColor: "#0e7aa6",
-  },
-  toggleText: {
-    color: "#5d6d79",
+  errorText: {
+    color: "#F0C060",
+    fontSize: 12,
     fontWeight: "600",
   },
-  toggleTextActive: {
-    color: "#f5fbff",
+  btn: {
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  btnPrimary: {
+    backgroundColor: "#C8973A",
+  },
+  btnGhost: {
+    borderWidth: 1,
+    borderColor: "#6B4F2A",
+    backgroundColor: "#130F1A",
+  },
+  btnPrimaryText: {
+    color: "#0B0910",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  btnGhostText: {
+    color: "#C8973A",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  loginBtn: {
+    marginTop: 4,
+    paddingVertical: 13,
+  },
+  settingsLink: {
+    color: "#968AA8",
+    fontSize: 12,
+    marginTop: 4,
+    textDecorationLine: "underline",
   },
   row: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
   },
-  button: {
+  // Workspace banner (shown when user has both roles)
+  workspaceBanner: {
+    flexDirection: "row",
+    backgroundColor: "#0B0910",
+    borderBottomWidth: 1,
+    borderBottomColor: "#3A2F50",
+    padding: 8,
+    gap: 8,
+    justifyContent: "center",
+  },
+  wsChip: {
     borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "#3A2F50",
+    backgroundColor: "#1A1526",
+  },
+  wsChipActive: {
+    backgroundColor: "#C8973A",
+    borderColor: "#C8973A",
+  },
+  wsChipText: {
+    color: "#968AA8",
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  wsChipTextActive: {
+    color: "#0B0910",
+  },
+  // Workspace not available
+  workspaceSwitcher: {
+    gap: 10,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  wsBtn: {
+    borderRadius: 999,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#3A2F50",
+    backgroundColor: "#1A1526",
+    minWidth: 160,
     alignItems: "center",
   },
-  buttonPrimary: {
-    backgroundColor: "#0e7aa6",
+  wsBtnActive: {
+    backgroundColor: "#C8973A",
+    borderColor: "#C8973A",
   },
-  buttonDanger: {
-    backgroundColor: "#cc4f4a",
-  },
-  buttonGhost: {
-    borderWidth: 1,
-    borderColor: "#b8cad7",
-    backgroundColor: "#ffffff",
-  },
-  buttonText: {
-    color: "#f4fbff",
+  wsBtnText: {
+    color: "#0B0910",
     fontWeight: "700",
-    fontSize: 12,
+    fontSize: 14,
   },
-  buttonGhostText: {
-    color: "#274356",
-    fontWeight: "700",
-    fontSize: 12,
-  },
-  sessionToggle: {
-    alignSelf: "flex-start",
-    marginTop: 4,
-  },
-  metricRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  metricCard: {
-    minWidth: 100,
-    borderWidth: 1,
-    borderColor: "#d7e2ea",
-    borderRadius: 10,
-    backgroundColor: "#f8fbfd",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 2,
-  },
-  metricLabel: {
-    color: "#5f7280",
-    fontSize: 11,
+  wsBtnGhostText: {
+    color: "#968AA8",
     fontWeight: "600",
-    textTransform: "uppercase",
+    fontSize: 14,
   },
-  metricValue: {
-    color: "#13222f",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  orderCard: {
-    borderWidth: 1,
-    borderColor: "#d2dde7",
-    borderRadius: 12,
-    backgroundColor: "#f8fbfd",
-    padding: 10,
-    gap: 6,
-  },
-  orderTitle: {
-    color: "#13222f",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  orderMeta: {
-    color: "#5f7280",
-    fontSize: 12,
-  },
-  statusWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 2,
-  },
-  statusButton: {
-    borderWidth: 1,
-    borderColor: "#c6d6e2",
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  statusButtonActive: {
-    backgroundColor: "#e8f3f8",
-    borderColor: "#0e7aa6",
-  },
-  statusButtonText: {
-    color: "#2f4a5d",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  driverCard: {
-    borderWidth: 1,
-    borderColor: "#d2dde7",
-    borderRadius: 10,
-    padding: 10,
-    backgroundColor: "#f8fbfd",
-  },
-  driverCardSelected: {
-    borderColor: "#1c8f69",
-    backgroundColor: "#edf8f3",
-  },
-  driverTitle: {
-    color: "#13222f",
-    fontWeight: "700",
-  },
-  mapView: {
-    width: "100%",
-    height: 220,
-    borderRadius: 10,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#d2dde7",
-    backgroundColor: "#ecf4f9",
-  },
-  routeContextCard: {
-    borderWidth: 1,
-    borderColor: "#d2dde7",
-    borderRadius: 10,
-    padding: 10,
-    gap: 8,
-    backgroundColor: "#f8fbfd",
-  },
-  routeStopCard: {
-    borderWidth: 1,
-    borderColor: "#d2dde7",
-    borderRadius: 8,
-    padding: 8,
-    backgroundColor: "#ffffff",
-  },
-  routeStopTitle: {
-    color: "#13222f",
-    fontSize: 12,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  podSection: {
-    borderTopWidth: 1,
-    borderTopColor: "#d2dde7",
-    paddingTop: 8,
-    gap: 8,
-  },
-  podTitle: {
-    color: "#1f3342",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  podPhotoPreview: {
-    width: "100%",
-    height: 160,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#d2dde7",
-    backgroundColor: "#ecf3f8",
-  },
-  modalBackdrop: {
+  // Settings modal
+  settingsBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(20, 36, 50, 0.5)",
-    justifyContent: "center",
-    padding: 16,
+    backgroundColor: "rgba(7,5,12,0.88)",
+    justifyContent: "flex-end",
   },
-  modalCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 14,
+  settingsCard: {
+    backgroundColor: "#130F1A",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: "#d2dde7",
-    padding: 12,
+    borderColor: "#3A2F50",
+    padding: 20,
     gap: 10,
-    maxHeight: "85%",
-  },
-  signatureWrap: {
-    height: 280,
-    borderRadius: 8,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#d2dde7",
-    backgroundColor: "#f7fcff",
-  },
-  metaText: {
-    color: "#5f7280",
-    fontSize: 12,
-  },
-  footerMessage: {
-    color: "#4f6270",
-    fontSize: 12,
-    marginTop: 8,
-  },
-  validationText: {
-    color: "#b7601a",
-    fontSize: 12,
-    fontWeight: "600",
   },
 });

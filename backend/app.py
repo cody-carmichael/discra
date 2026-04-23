@@ -5,11 +5,28 @@ import os
 import time
 import uuid
 from pathlib import Path
+
+def _load_dotenv() -> None:
+    """Load key=value pairs from a .env file in the project root into os.environ.
+    Only sets variables that are not already present (os.environ.setdefault).
+    Safe to call in Lambda — the file simply won't exist there."""
+    env_file = Path(__file__).parent.parent / ".env"
+    if not env_file.exists():
+        return
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+_load_dotenv()
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from mangum import Mangum
@@ -231,6 +248,14 @@ def create_app() -> FastAPI:
         version=os.environ.get("VERSION", "dev"),
     )
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     @app.middleware("http")
     async def log_request(request: Request, call_next):
         request_id = (
@@ -357,6 +382,18 @@ def create_app() -> FastAPI:
     @app.get("/dev/backend/ui/login", include_in_schema=False)
     async def dev_backend_ui_login():
         return FileResponse(str(FRONTEND_DIR / "login.html"))
+
+    @app.get("/ui/signup", include_in_schema=False)
+    async def ui_signup():
+        return FileResponse(str(FRONTEND_DIR / "signup.html"))
+
+    @app.get("/backend/ui/signup", include_in_schema=False)
+    async def backend_ui_signup():
+        return FileResponse(str(FRONTEND_DIR / "signup.html"))
+
+    @app.get("/dev/backend/ui/signup", include_in_schema=False)
+    async def dev_backend_ui_signup():
+        return FileResponse(str(FRONTEND_DIR / "signup.html"))
 
     @app.get("/ui/review", include_in_schema=False)
     async def ui_review():

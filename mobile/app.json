@@ -29,6 +29,9 @@
         "ACCESS_FINE_LOCATION"
       ]
     },
-    "web": {}
+    "web": {},
+    "plugins": [
+      "expo-asset"
+    ]
   }
 }

@@ -26,6 +26,7 @@ import {
   OrderRecord,
   OsrmResult,
   PodPresignUpload,
+  ProfilePhotoPresignResponse,
   RouteStep,
   UserProfile,
   apiRequest,
@@ -200,6 +201,11 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       const perm = await Location.requestForegroundPermissionsAsync();
       if (!perm.granted) {
         setStatusMsg("Location permission denied — enable it in Settings.");
+        // Stop the repeating timer; no point hammering the permission API.
+        if (locationTimerRef.current) {
+          clearInterval(locationTimerRef.current);
+          locationTimerRef.current = null;
+        }
         setLocationActive(false);
         return;
       }
@@ -493,10 +499,16 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
     try {
       const data = await apiRequest<UserProfile>(apiBase, "/users/me", { token });
       setProfile(data);
-      setProfilePhone(data.phone || "");
+      setProfilePhone(formatPhoneNumber(data.phone || ""));
       setProfileEmail(data.email || "");
       setProfileTsa(!!data.tsa_certified);
-      setProfilePhotoUrl(data.photo_url || "");
+      // Only replace the locally-picked photo if the server has a real HTTP URL.
+      // A null/missing server value must never wipe a photo the user picked
+      // this session (data: / file: URI).
+      setProfilePhotoUrl((prev) => {
+        const serverUrl = data.photo_url || "";
+        return serverUrl.startsWith("http") ? serverUrl : prev;
+      });
     } catch (e) {
       setProfileMsg(e instanceof Error ? e.message : "Failed to load profile.");
     }
@@ -512,8 +524,48 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       quality: 0.7,
     });
     if (result.canceled || !result.assets.length) return;
-    const uri = result.assets[0].uri;
-    if (uri) setProfilePhotoUrl(uri);
+    const asset = result.assets[0];
+    if (!asset.uri) return;
+
+    // Show local preview immediately while the upload is in flight.
+    setProfilePhotoUrl(asset.uri);
+    setProfileMsg("Uploading photo…");
+    try {
+      const filename = asset.uri.split("/").pop() || "photo.jpg";
+      const ext = (filename.split(".").pop() || "jpg").toLowerCase();
+      const mimeType =
+        asset.mimeType ||
+        (ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg");
+      const form = new FormData();
+      if (Platform.OS === "web") {
+        // On web, {uri,name,type} serialises as "[object Object]". Fetch the
+        // data: URI to get a real Blob, then wrap in a File before appending.
+        const blobResp = await fetch(asset.uri);
+        const blob = await blobResp.blob();
+        form.append("file", new File([blob], filename, { type: mimeType }));
+      } else {
+        form.append("file", { uri: asset.uri, name: filename, type: mimeType } as any);
+      }
+      // Single-request direct upload — backend handles dev (filesystem) vs prod (S3).
+      const resp = await fetch(
+        `${apiBase.replace(/\/+$/, "")}/users/me/photo`,
+        { method: "POST", headers: { authorization: `Bearer ${token}` }, body: form }
+      );
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        throw new Error(text || `Upload failed (${resp.status})`);
+      }
+      const body = await resp.json() as { photo_url?: string };
+      if (body.photo_url) {
+        // Replace the temporary local URI with the persisted HTTP URL.
+        setProfilePhotoUrl(body.photo_url);
+        setProfile((prev) => prev ? { ...prev, photo_url: body.photo_url } : prev);
+        setProfileMsg("Photo saved.");
+      }
+    } catch (e) {
+      setProfileMsg(e instanceof Error ? e.message : "Photo upload failed.");
+      // Leave the local URI as the preview even if upload fails.
+    }
   }
 
   async function saveProfile() {
@@ -525,7 +577,13 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
         json: {
           phone: profilePhone || null,
           tsa_certified: profileTsa,
-          photo_url: profilePhotoUrl || null,
+          // Only persist URLs the backend can actually store and share.
+          // Local file:// and data: URIs from the image picker are display-only
+          // for the current session; a proper S3 upload is needed for full persistence.
+          photo_url:
+            profilePhotoUrl && profilePhotoUrl.startsWith("http")
+              ? profilePhotoUrl
+              : undefined,
         },
       });
       setProfileMsg("Profile saved.");
@@ -537,6 +595,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
               ...prev,
               phone: profilePhone || undefined,
               tsa_certified: profileTsa,
+              // Always reflect the picked photo locally (for top-bar avatar)
+              // even if we couldn't persist a data:/file: URI to the backend.
               photo_url: profilePhotoUrl || prev.photo_url,
             }
           : prev
@@ -622,8 +682,11 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                 setProfileVisible(true);
               }}
             >
-              {profile?.photo_url ? (
-                <Image source={{ uri: profile.photo_url }} style={styles.profileAvatar} />
+              {(profilePhotoUrl || profile?.photo_url) ? (
+                <Image
+                  source={{ uri: profilePhotoUrl || profile!.photo_url! }}
+                  style={styles.profileAvatar}
+                />
               ) : (
                 <Text style={styles.profileBtnText}>👤</Text>
               )}
@@ -943,10 +1006,11 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
               <TextInput
                 style={styles.input}
                 value={profilePhone}
-                onChangeText={setProfilePhone}
-                placeholder="Phone number"
+                onChangeText={(v) => setProfilePhone(formatPhoneNumber(v))}
+                placeholder="(555) 555-5555"
                 placeholderTextColor="#4A3F60"
                 keyboardType="phone-pad"
+                maxLength={14}
               />
               <View style={styles.row}>
                 <Text style={styles.detailLabel}>TSA CERTIFIED</Text>
@@ -1010,6 +1074,15 @@ function DirectionsTab({ routeResult }: { routeResult: OsrmResult | null }) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Formats a raw string into US (XXX) XXX-XXXX mask as the user types. */
+function formatPhoneNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 10);
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
 
 function statusBg(status: string): string {
   const s = (status || "").toLowerCase();

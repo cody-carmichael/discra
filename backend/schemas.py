@@ -183,8 +183,23 @@ class UserRecord(BaseModel):
 class UserProfileUpdate(BaseModel):
     phone: Optional[str] = Field(default=None, max_length=40)
     email: Optional[str] = Field(default=None, max_length=320)
-    photo_url: Optional[str] = Field(default=None, max_length=500)
+    photo_url: Optional[str] = Field(default=None, max_length=2048)
     tsa_certified: Optional[bool] = None
+
+
+class ProfilePhotoPresignRequest(BaseModel):
+    content_type: str = Field(..., max_length=100)
+    file_size_bytes: int = Field(..., gt=0)
+    file_name: Optional[str] = Field(default=None, max_length=255)
+
+
+class ProfilePhotoPresignResponse(BaseModel):
+    url: str
+    fields: Dict[str, str]
+    key: str
+    object_url: str
+    expires_in: int
+    max_size_bytes: int
 
 
 class SeatRole(str, Enum):

@@ -354,29 +354,37 @@ export default function App() {
     return (
       <View style={styles.screen}>
         <StatusBar style="light" />
-        {showWorkspaceSelector ? (
-          <View style={styles.workspaceBanner}>
-            <Pressable
-              style={[styles.wsChip, workspace === "driver" && styles.wsChipActive]}
-              onPress={() => setWorkspace("driver")}
-            >
-              <Text style={[styles.wsChipText, workspace === "driver" && styles.wsChipTextActive]}>
-                Driver
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.wsChip, workspace === "admin" && styles.wsChipActive]}
-              onPress={() => setWorkspace("admin")}
-            >
-              <Text style={[styles.wsChipText, workspace === "admin" && styles.wsChipTextActive]}>
-                Dispatch
-              </Text>
-            </Pressable>
+        {/* Top banner — always visible when authenticated; tabs only for multi-role users */}
+        <View style={styles.workspaceBanner}>
+          <View style={styles.workspaceBannerTabs}>
+            {showWorkspaceSelector ? (
+              <>
+                <Pressable
+                  style={[styles.wsChip, workspace === "driver" && styles.wsChipActive]}
+                  onPress={() => setWorkspace("driver")}
+                >
+                  <Text style={[styles.wsChipText, workspace === "driver" && styles.wsChipTextActive]}>
+                    Driver
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.wsChip, workspace === "admin" && styles.wsChipActive]}
+                  onPress={() => setWorkspace("admin")}
+                >
+                  <Text style={[styles.wsChipText, workspace === "admin" && styles.wsChipTextActive]}>
+                    Dispatch
+                  </Text>
+                </Pressable>
+              </>
+            ) : null}
           </View>
-        ) : null}
+          <Pressable style={styles.settingsGearBtn} onPress={() => setSettingsOpen(true)}>
+            <Text style={styles.settingsGearText}>⚙</Text>
+          </Pressable>
+        </View>
         {renderScreen()}
 
-        {/* Settings modal — accessible from workspace banner */}
+        {/* Settings modal — opened via ⚙ in the top banner */}
         <Modal visible={settingsOpen} animationType="slide" transparent onRequestClose={() => setSettingsOpen(false)}>
           <View style={styles.settingsBackdrop}>
             <SafeAreaView>
@@ -640,15 +648,31 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
-  // Workspace banner (shown when user has both roles)
+  // Workspace banner — always visible when authenticated
   workspaceBanner: {
     flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#0B0910",
     borderBottomWidth: 1,
     borderBottomColor: "#3A2F50",
-    padding: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  workspaceBannerTabs: {
+    flex: 1,
+    flexDirection: "row",
     gap: 8,
     justifyContent: "center",
+  },
+  settingsGearBtn: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  settingsGearText: {
+    fontSize: 18,
+    color: "#968AA8",
   },
   wsChip: {
     borderRadius: 999,

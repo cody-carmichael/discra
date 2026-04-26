@@ -96,6 +96,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   const [profilePhone, setProfilePhone] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profileTsa, setProfileTsa] = useState(false);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
   const [profileMsg, setProfileMsg] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
   const [loading, setLoading] = useState(false);
@@ -111,8 +112,17 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 5,
+        // Only claim the gesture after a clear vertical move — lets taps and
+        // horizontal swipes pass through to buttons and the scroll view.
+        onMoveShouldSetPanResponder: (_, gs) =>
+          Math.abs(gs.dy) > 6 && Math.abs(gs.dy) > Math.abs(gs.dx),
+        onPanResponderGrant: () => {
+          // Stop any in-flight spring and latch the real current position so
+          // the sheet doesn't jump when the user grabs it mid-animation.
+          sheetAnim.stopAnimation((currentValue) => {
+            sheetCurrentY.current = currentValue;
+          });
+        },
         onPanResponderMove: (_, gs) => {
           const next = Math.max(
             SHEET_OPEN_Y,
@@ -137,8 +147,11 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       toValue,
       useNativeDriver: true,
       bounciness: 4,
-    }).start();
-    sheetCurrentY.current = toValue;
+    }).start(() => {
+      // Update only after the spring settles so intermediate drags read the
+      // correct resting position.
+      sheetCurrentY.current = toValue;
+    });
   }
 
   // ── Sorted orders by distance ──────────────────────────────────────────────
@@ -185,7 +198,11 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   const sendLocation = useCallback(async () => {
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
-      if (!perm.granted) return;
+      if (!perm.granted) {
+        setStatusMsg("Location permission denied — enable it in Settings.");
+        setLocationActive(false);
+        return;
+      }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const lat = loc.coords.latitude;
       const lng = loc.coords.longitude;
@@ -200,8 +217,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
         token,
         json: { lat, lng, heading },
       });
-    } catch {
-      // silent — queuing handled in parent if needed
+    } catch (e) {
+      setStatusMsg(e instanceof Error ? e.message : "Could not get location.");
     }
   }, [apiBase, token]);
 
@@ -479,9 +496,24 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       setProfilePhone(data.phone || "");
       setProfileEmail(data.email || "");
       setProfileTsa(!!data.tsa_certified);
+      setProfilePhotoUrl(data.photo_url || "");
     } catch (e) {
       setProfileMsg(e instanceof Error ? e.message : "Failed to load profile.");
     }
+  }
+
+  async function pickProfilePhoto() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { setProfileMsg("Photo library permission required."); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets.length) return;
+    const uri = result.assets[0].uri;
+    if (uri) setProfilePhotoUrl(uri);
   }
 
   async function saveProfile() {
@@ -490,10 +522,25 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       await apiRequest(apiBase, "/users/me", {
         method: "PUT",
         token,
-        json: { phone: profilePhone || null, tsa_certified: profileTsa },
+        json: {
+          phone: profilePhone || null,
+          tsa_certified: profileTsa,
+          photo_url: profilePhotoUrl || null,
+        },
       });
       setProfileMsg("Profile saved.");
-      await loadProfile();
+      // Optimistic update — reflect the just-saved values immediately without
+      // issuing another GET (which could race and return stale data).
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              phone: profilePhone || undefined,
+              tsa_certified: profileTsa,
+              photo_url: profilePhotoUrl || prev.photo_url,
+            }
+          : prev
+      );
     } catch (e) {
       setProfileMsg(e instanceof Error ? e.message : "Save failed.");
     } finally {
@@ -523,7 +570,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
         style={StyleSheet.absoluteFillObject}
         region={mapRegion}
         onRegionChangeComplete={setMapRegion}
-        showsUserLocation={false}
+        showsUserLocation={true}
       >
         {/* Driver marker */}
         {driverLoc ? (
@@ -877,9 +924,19 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                   <Text style={styles.detailClose}>✕</Text>
                 </Pressable>
               </View>
-              {profile?.photo_url ? (
-                <Image source={{ uri: profile.photo_url }} style={styles.profileAvatarLarge} />
-              ) : null}
+              <Pressable
+                style={styles.avatarPickerBtn}
+                onPress={() => pickProfilePhoto().catch(() => undefined)}
+              >
+                {profilePhotoUrl ? (
+                  <Image source={{ uri: profilePhotoUrl }} style={styles.profileAvatarLarge} />
+                ) : (
+                  <View style={[styles.profileAvatarLarge, styles.avatarPlaceholder]}>
+                    <Text style={styles.avatarPlaceholderText}>📷</Text>
+                  </View>
+                )}
+                <Text style={styles.avatarPickerLabel}>Change Photo</Text>
+              </Pressable>
               <Text style={styles.detailLabel}>EMAIL</Text>
               <Text style={styles.detailValue}>{profile?.email || profileEmail || "-"}</Text>
               <Text style={styles.detailLabel}>PHONE</Text>
@@ -1468,5 +1525,26 @@ const styles = StyleSheet.create({
   },
   toggleChipTextActive: {
     color: "#EDE0C4",
+  },
+  // Profile photo picker
+  avatarPickerBtn: {
+    alignSelf: "center",
+    alignItems: "center",
+    gap: 4,
+  },
+  avatarPlaceholder: {
+    backgroundColor: "#1A1526",
+    borderColor: "#3A2F50",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarPlaceholderText: {
+    fontSize: 32,
+  },
+  avatarPickerLabel: {
+    color: "#C8973A",
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.5,
   },
 });

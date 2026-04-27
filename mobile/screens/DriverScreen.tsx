@@ -611,6 +611,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   useEffect(() => {
     loadInbox().catch(() => undefined);
+    loadProfile().catch(() => undefined);
     startAutoLocation();
     return () => {
       stopAutoLocation();

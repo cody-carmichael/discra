@@ -102,6 +102,15 @@ export type AdminStats = {
   due_soon: number;
 };
 
+export type AuditLogRecord = {
+  event_id: string;
+  action: string;
+  actor_id?: string | null;
+  target_type?: string | null;
+  target_id?: string | null;
+  created_at: string;
+};
+
 // ─── Address helpers ──────────────────────────────────────────────────────────
 
 export function pickupAddress(order: OrderRecord): string {

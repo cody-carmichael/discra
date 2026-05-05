@@ -6,7 +6,7 @@ import {
   CognitoUserPool,
 } from "amazon-cognito-identity-js";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -33,7 +33,12 @@ const DEFAULT_API_BASE =
     : "https://m50fjhgrn7.execute-api.us-east-1.amazonaws.com/dev/backend";
 const DEFAULT_COGNITO_USER_POOL_ID = "us-east-1_vMav7IRF7";
 const DEFAULT_COGNITO_CLIENT_ID = "4gq64lj8ndo8pltt6hj5ritqi";
-const REDIRECT_URI = "discra-mobile://auth/callback";
+
+// Used only for the Hosted UI fallback in Advanced settings.
+const REDIRECT_URI =
+  Platform.OS === "web" && typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.host}`
+    : "discra-mobile://auth/callback";
 
 type Workspace = "admin" | "driver";
 
@@ -100,17 +105,19 @@ async function buildPkce(verifier: string): Promise<{ challenge: string; method:
 export default function App() {
   const [token, setToken] = useState("");
   const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
-  const [cognitoUserPoolId] = useState(DEFAULT_COGNITO_USER_POOL_ID);
   const [cognitoClientId] = useState(DEFAULT_COGNITO_CLIENT_ID);
+  const [cognitoUserPoolId] = useState(DEFAULT_COGNITO_USER_POOL_ID);
   const [cognitoDomain, setCognitoDomain] = useState("");
   const [workspace, setWorkspace] = useState<Workspace>("driver");
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
-  // Login form
+  // Login state
   const [loginUser, setLoginUser] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginMsg, setLoginMsg] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [manualToken, setManualToken] = useState("");
 
   // Settings modal
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -226,7 +233,7 @@ export default function App() {
     if (next) { setToken(next); setLoginMsg(""); }
   }
 
-  // ── Sign-in with Cognito SRP ───────────────────────────────────────────────
+  // ── Sign-in with Cognito SRP (primary — no domain required) ─────────────────
 
   async function signIn() {
     const username = loginUser.trim();
@@ -263,25 +270,40 @@ export default function App() {
     }
   }
 
-  // ── Hosted UI login ────────────────────────────────────────────────────────
+  // ── Hosted UI login (advanced fallback) ──────────────────────────────────────
 
   async function startHostedLogin() {
     const domain = normalizeDomain(cognitoDomain || "");
-    if (!domain) { setLoginMsg("Cognito domain is required for Hosted UI login."); return; }
-    const state = randomStr(32);
-    const verifier = randomStr(64);
-    const pkce = await buildPkce(verifier);
-    const session: PkceSession = { state, verifier, domain, clientId: cognitoClientId };
-    await AsyncStorage.setItem(STORAGE_PKCE_KEY, JSON.stringify(session));
-    const params = new URLSearchParams();
-    params.set("client_id", cognitoClientId);
-    params.set("response_type", "code");
-    params.set("scope", "openid email profile");
-    params.set("redirect_uri", REDIRECT_URI);
-    params.set("state", state);
-    params.set("code_challenge", pkce.challenge);
-    params.set("code_challenge_method", pkce.method);
-    await Linking.openURL(`https://${domain}/oauth2/authorize?${params.toString()}`);
+    if (!domain) { setLoginMsg("Enter your Cognito domain to continue."); return; }
+    setLoginLoading(true);
+    setLoginMsg("");
+    try {
+      const state = randomStr(32);
+      const verifier = randomStr(64);
+      const pkce = await buildPkce(verifier);
+      const session: PkceSession = { state, verifier, domain, clientId: cognitoClientId };
+      await AsyncStorage.setItem(STORAGE_PKCE_KEY, JSON.stringify(session));
+      const params = new URLSearchParams();
+      params.set("client_id", cognitoClientId);
+      params.set("response_type", "code");
+      params.set("scope", "openid email profile");
+      params.set("redirect_uri", REDIRECT_URI);
+      params.set("state", state);
+      params.set("code_challenge", pkce.challenge);
+      params.set("code_challenge_method", pkce.method);
+      await Linking.openURL(`https://${domain}/oauth2/authorize?${params.toString()}`);
+    } catch (err) {
+      setLoginMsg(err instanceof Error ? err.message : "Failed to open login.");
+      setLoginLoading(false);
+    }
+  }
+
+  function applyManualToken() {
+    const t = manualToken.trim();
+    if (!looksLikeJwt(t)) { setLoginMsg("Paste a valid JWT id_token."); return; }
+    setToken(t);
+    setManualToken("");
+    setLoginMsg("");
   }
 
   // ── Sign out ───────────────────────────────────────────────────────────────
@@ -354,29 +376,37 @@ export default function App() {
     return (
       <View style={styles.screen}>
         <StatusBar style="light" />
-        {showWorkspaceSelector ? (
-          <View style={styles.workspaceBanner}>
-            <Pressable
-              style={[styles.wsChip, workspace === "driver" && styles.wsChipActive]}
-              onPress={() => setWorkspace("driver")}
-            >
-              <Text style={[styles.wsChipText, workspace === "driver" && styles.wsChipTextActive]}>
-                Driver
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.wsChip, workspace === "admin" && styles.wsChipActive]}
-              onPress={() => setWorkspace("admin")}
-            >
-              <Text style={[styles.wsChipText, workspace === "admin" && styles.wsChipTextActive]}>
-                Dispatch
-              </Text>
-            </Pressable>
+        {/* Top banner — always visible when authenticated; tabs only for multi-role users */}
+        <View style={styles.workspaceBanner}>
+          <View style={styles.workspaceBannerTabs}>
+            {showWorkspaceSelector ? (
+              <>
+                <Pressable
+                  style={[styles.wsChip, workspace === "driver" && styles.wsChipActive]}
+                  onPress={() => setWorkspace("driver")}
+                >
+                  <Text style={[styles.wsChipText, workspace === "driver" && styles.wsChipTextActive]}>
+                    Driver
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.wsChip, workspace === "admin" && styles.wsChipActive]}
+                  onPress={() => setWorkspace("admin")}
+                >
+                  <Text style={[styles.wsChipText, workspace === "admin" && styles.wsChipTextActive]}>
+                    Dispatch
+                  </Text>
+                </Pressable>
+              </>
+            ) : null}
           </View>
-        ) : null}
+          <Pressable style={styles.settingsGearBtn} onPress={() => setSettingsOpen(true)}>
+            <Text style={styles.settingsGearText}>⚙</Text>
+          </Pressable>
+        </View>
         {renderScreen()}
 
-        {/* Settings modal — accessible from workspace banner */}
+        {/* Settings modal — opened via ⚙ in the top banner */}
         <Modal visible={settingsOpen} animationType="slide" transparent onRequestClose={() => setSettingsOpen(false)}>
           <View style={styles.settingsBackdrop}>
             <SafeAreaView>
@@ -429,7 +459,6 @@ export default function App() {
           <Text style={styles.loginHeading}>Welcome Back</Text>
           <Text style={styles.loginLead}>Sign in to your workspace.</Text>
 
-          {/* Username / password */}
           <Text style={styles.label}>Username</Text>
           <TextInput
             style={styles.input}
@@ -437,7 +466,6 @@ export default function App() {
             onChangeText={setLoginUser}
             autoCapitalize="none"
             autoCorrect={false}
-            keyboardType="default"
             placeholder="Enter username"
             placeholderTextColor="#4A3F60"
             returnKeyType="next"
@@ -463,52 +491,62 @@ export default function App() {
             onPress={() => signIn().catch(() => undefined)}
             disabled={loginLoading}
           >
-            <Text style={styles.btnPrimaryText}>{loginLoading ? "Signing in…" : "Sign In"}</Text>
+            {loginLoading
+              ? <ActivityIndicator size="small" color="#0B0910" />
+              : <Text style={styles.btnPrimaryText}>Sign In</Text>}
           </Pressable>
 
-          {/* Settings link */}
-          <Pressable onPress={() => setSettingsOpen(true)} style={{ alignSelf: "center" }}>
-            <Text style={styles.settingsLink}>Advanced settings</Text>
+          {/* Advanced: Hosted UI + token paste + API URL */}
+          <Pressable onPress={() => setShowAdvanced((v) => !v)} style={{ alignSelf: "center", marginTop: 4 }}>
+            <Text style={styles.settingsLink}>{showAdvanced ? "Hide advanced ▲" : "Advanced ▼"}</Text>
           </Pressable>
+
+          {showAdvanced ? (
+            <>
+              <Text style={[styles.label, { marginTop: 8 }]}>Hosted UI Domain</Text>
+              <TextInput
+                style={styles.input}
+                value={cognitoDomain}
+                onChangeText={setCognitoDomain}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="your-domain.auth.us-east-1.amazoncognito.com"
+                placeholderTextColor="#4A3F60"
+              />
+              <Pressable
+                style={[styles.btn, styles.btnGhost]}
+                onPress={() => startHostedLogin().catch((e) => setLoginMsg(e instanceof Error ? e.message : "Failed."))}
+              >
+                <Text style={styles.btnGhostText}>Sign In with Hosted UI</Text>
+              </Pressable>
+              <Text style={[styles.label, { marginTop: 8 }]}>Paste id_token</Text>
+              <TextInput
+                style={[styles.input, { height: 72, textAlignVertical: "top" }]}
+                value={manualToken}
+                onChangeText={setManualToken}
+                multiline
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="eyJ..."
+                placeholderTextColor="#4A3F60"
+              />
+              <Pressable style={[styles.btn, styles.btnGhost]} onPress={applyManualToken}>
+                <Text style={styles.btnGhostText}>Use Token</Text>
+              </Pressable>
+              <Text style={[styles.label, { marginTop: 8 }]}>API Base URL</Text>
+              <TextInput
+                style={styles.input}
+                value={apiBase}
+                onChangeText={setApiBase}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholderTextColor="#4A3F60"
+                placeholder="https://.../dev/backend"
+              />
+            </>
+          ) : null}
         </View>
       </View>
-
-      {/* Settings modal */}
-      <Modal visible={settingsOpen} animationType="slide" transparent onRequestClose={() => setSettingsOpen(false)}>
-        <View style={styles.settingsBackdrop}>
-          <View style={styles.settingsCard}>
-            <Text style={styles.loginHeading}>Settings</Text>
-            <Text style={styles.label}>API Base URL</Text>
-            <TextInput
-              style={styles.input}
-              value={apiBase}
-              onChangeText={setApiBase}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholderTextColor="#4A3F60"
-              placeholder="https://.../dev/backend"
-            />
-            <Text style={styles.label}>Cognito Domain (Hosted UI)</Text>
-            <TextInput
-              style={styles.input}
-              value={cognitoDomain}
-              onChangeText={setCognitoDomain}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholderTextColor="#4A3F60"
-              placeholder="auth.example.com"
-            />
-            <View style={styles.row}>
-              <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => startHostedLogin().catch((e) => setLoginMsg(e instanceof Error ? e.message : "Failed."))}>
-                <Text style={styles.btnPrimaryText}>Hosted UI Login</Text>
-              </Pressable>
-              <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setSettingsOpen(false)}>
-                <Text style={styles.btnGhostText}>Done</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -640,15 +678,31 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
-  // Workspace banner (shown when user has both roles)
+  // Workspace banner — always visible when authenticated
   workspaceBanner: {
     flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#0B0910",
     borderBottomWidth: 1,
     borderBottomColor: "#3A2F50",
-    padding: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  workspaceBannerTabs: {
+    flex: 1,
+    flexDirection: "row",
     gap: 8,
     justifyContent: "center",
+  },
+  settingsGearBtn: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  settingsGearText: {
+    fontSize: 18,
+    color: "#968AA8",
   },
   wsChip: {
     borderRadius: 999,

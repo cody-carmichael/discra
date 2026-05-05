@@ -26,6 +26,7 @@ import {
   OrderRecord,
   OsrmResult,
   PodPresignUpload,
+  ProfilePhotoPresignResponse,
   RouteStep,
   UserProfile,
   apiRequest,
@@ -96,6 +97,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   const [profilePhone, setProfilePhone] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profileTsa, setProfileTsa] = useState(false);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
   const [profileMsg, setProfileMsg] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
   const [loading, setLoading] = useState(false);
@@ -111,8 +113,17 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 5,
+        // Only claim the gesture after a clear vertical move — lets taps and
+        // horizontal swipes pass through to buttons and the scroll view.
+        onMoveShouldSetPanResponder: (_, gs) =>
+          Math.abs(gs.dy) > 6 && Math.abs(gs.dy) > Math.abs(gs.dx),
+        onPanResponderGrant: () => {
+          // Stop any in-flight spring and latch the real current position so
+          // the sheet doesn't jump when the user grabs it mid-animation.
+          sheetAnim.stopAnimation((currentValue) => {
+            sheetCurrentY.current = currentValue;
+          });
+        },
         onPanResponderMove: (_, gs) => {
           const next = Math.max(
             SHEET_OPEN_Y,
@@ -137,8 +148,11 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       toValue,
       useNativeDriver: true,
       bounciness: 4,
-    }).start();
-    sheetCurrentY.current = toValue;
+    }).start(() => {
+      // Update only after the spring settles so intermediate drags read the
+      // correct resting position.
+      sheetCurrentY.current = toValue;
+    });
   }
 
   // ── Sorted orders by distance ──────────────────────────────────────────────
@@ -185,7 +199,16 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   const sendLocation = useCallback(async () => {
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
-      if (!perm.granted) return;
+      if (!perm.granted) {
+        setStatusMsg("Location permission denied — enable it in Settings.");
+        // Stop the repeating timer; no point hammering the permission API.
+        if (locationTimerRef.current) {
+          clearInterval(locationTimerRef.current);
+          locationTimerRef.current = null;
+        }
+        setLocationActive(false);
+        return;
+      }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const lat = loc.coords.latitude;
       const lng = loc.coords.longitude;
@@ -200,8 +223,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
         token,
         json: { lat, lng, heading },
       });
-    } catch {
-      // silent — queuing handled in parent if needed
+    } catch (e) {
+      setStatusMsg(e instanceof Error ? e.message : "Could not get location.");
     }
   }, [apiBase, token]);
 
@@ -476,11 +499,72 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
     try {
       const data = await apiRequest<UserProfile>(apiBase, "/users/me", { token });
       setProfile(data);
-      setProfilePhone(data.phone || "");
+      setProfilePhone(formatPhoneNumber(data.phone || ""));
       setProfileEmail(data.email || "");
       setProfileTsa(!!data.tsa_certified);
+      // Only replace the locally-picked photo if the server has a real HTTP URL.
+      // A null/missing server value must never wipe a photo the user picked
+      // this session (data: / file: URI).
+      setProfilePhotoUrl((prev) => {
+        const serverUrl = data.photo_url || "";
+        return serverUrl.startsWith("http") ? serverUrl : prev;
+      });
     } catch (e) {
       setProfileMsg(e instanceof Error ? e.message : "Failed to load profile.");
+    }
+  }
+
+  async function pickProfilePhoto() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { setProfileMsg("Photo library permission required."); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets.length) return;
+    const asset = result.assets[0];
+    if (!asset.uri) return;
+
+    // Show local preview immediately while the upload is in flight.
+    setProfilePhotoUrl(asset.uri);
+    setProfileMsg("Uploading photo…");
+    try {
+      const filename = asset.uri.split("/").pop() || "photo.jpg";
+      const ext = (filename.split(".").pop() || "jpg").toLowerCase();
+      const mimeType =
+        asset.mimeType ||
+        (ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg");
+      const form = new FormData();
+      if (Platform.OS === "web") {
+        // On web, {uri,name,type} serialises as "[object Object]". Fetch the
+        // data: URI to get a real Blob, then wrap in a File before appending.
+        const blobResp = await fetch(asset.uri);
+        const blob = await blobResp.blob();
+        form.append("file", new File([blob], filename, { type: mimeType }));
+      } else {
+        form.append("file", { uri: asset.uri, name: filename, type: mimeType } as any);
+      }
+      // Single-request direct upload — backend handles dev (filesystem) vs prod (S3).
+      const resp = await fetch(
+        `${apiBase.replace(/\/+$/, "")}/users/me/photo`,
+        { method: "POST", headers: { authorization: `Bearer ${token}` }, body: form }
+      );
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        throw new Error(text || `Upload failed (${resp.status})`);
+      }
+      const body = await resp.json() as { photo_url?: string };
+      if (body.photo_url) {
+        // Replace the temporary local URI with the persisted HTTP URL.
+        setProfilePhotoUrl(body.photo_url);
+        setProfile((prev) => prev ? { ...prev, photo_url: body.photo_url } : prev);
+        setProfileMsg("Photo saved.");
+      }
+    } catch (e) {
+      setProfileMsg(e instanceof Error ? e.message : "Photo upload failed.");
+      // Leave the local URI as the preview even if upload fails.
     }
   }
 
@@ -490,10 +574,33 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       await apiRequest(apiBase, "/users/me", {
         method: "PUT",
         token,
-        json: { phone: profilePhone || null, tsa_certified: profileTsa },
+        json: {
+          phone: profilePhone || null,
+          tsa_certified: profileTsa,
+          // Only persist URLs the backend can actually store and share.
+          // Local file:// and data: URIs from the image picker are display-only
+          // for the current session; a proper S3 upload is needed for full persistence.
+          photo_url:
+            profilePhotoUrl && profilePhotoUrl.startsWith("http")
+              ? profilePhotoUrl
+              : undefined,
+        },
       });
       setProfileMsg("Profile saved.");
-      await loadProfile();
+      // Optimistic update — reflect the just-saved values immediately without
+      // issuing another GET (which could race and return stale data).
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              phone: profilePhone || undefined,
+              tsa_certified: profileTsa,
+              // Always reflect the picked photo locally (for top-bar avatar)
+              // even if we couldn't persist a data:/file: URI to the backend.
+              photo_url: profilePhotoUrl || prev.photo_url,
+            }
+          : prev
+      );
     } catch (e) {
       setProfileMsg(e instanceof Error ? e.message : "Save failed.");
     } finally {
@@ -504,6 +611,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   useEffect(() => {
     loadInbox().catch(() => undefined);
+    loadProfile().catch(() => undefined);
     startAutoLocation();
     return () => {
       stopAutoLocation();
@@ -523,7 +631,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
         style={StyleSheet.absoluteFillObject}
         region={mapRegion}
         onRegionChangeComplete={setMapRegion}
-        showsUserLocation={false}
+        showsUserLocation={true}
       >
         {/* Driver marker */}
         {driverLoc ? (
@@ -575,8 +683,11 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                 setProfileVisible(true);
               }}
             >
-              {profile?.photo_url ? (
-                <Image source={{ uri: profile.photo_url }} style={styles.profileAvatar} />
+              {(profilePhotoUrl || profile?.photo_url) ? (
+                <Image
+                  source={{ uri: profilePhotoUrl || profile!.photo_url! }}
+                  style={styles.profileAvatar}
+                />
               ) : (
                 <Text style={styles.profileBtnText}>👤</Text>
               )}
@@ -877,19 +988,30 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                   <Text style={styles.detailClose}>✕</Text>
                 </Pressable>
               </View>
-              {profile?.photo_url ? (
-                <Image source={{ uri: profile.photo_url }} style={styles.profileAvatarLarge} />
-              ) : null}
+              <Pressable
+                style={styles.avatarPickerBtn}
+                onPress={() => pickProfilePhoto().catch(() => undefined)}
+              >
+                {profilePhotoUrl ? (
+                  <Image source={{ uri: profilePhotoUrl }} style={styles.profileAvatarLarge} />
+                ) : (
+                  <View style={[styles.profileAvatarLarge, styles.avatarPlaceholder]}>
+                    <Text style={styles.avatarPlaceholderText}>📷</Text>
+                  </View>
+                )}
+                <Text style={styles.avatarPickerLabel}>Change Photo</Text>
+              </Pressable>
               <Text style={styles.detailLabel}>EMAIL</Text>
               <Text style={styles.detailValue}>{profile?.email || profileEmail || "-"}</Text>
               <Text style={styles.detailLabel}>PHONE</Text>
               <TextInput
                 style={styles.input}
                 value={profilePhone}
-                onChangeText={setProfilePhone}
-                placeholder="Phone number"
+                onChangeText={(v) => setProfilePhone(formatPhoneNumber(v))}
+                placeholder="(555) 555-5555"
                 placeholderTextColor="#4A3F60"
                 keyboardType="phone-pad"
+                maxLength={14}
               />
               <View style={styles.row}>
                 <Text style={styles.detailLabel}>TSA CERTIFIED</Text>
@@ -953,6 +1075,15 @@ function DirectionsTab({ routeResult }: { routeResult: OsrmResult | null }) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Formats a raw string into US (XXX) XXX-XXXX mask as the user types. */
+function formatPhoneNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 10);
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
 
 function statusBg(status: string): string {
   const s = (status || "").toLowerCase();
@@ -1468,5 +1599,26 @@ const styles = StyleSheet.create({
   },
   toggleChipTextActive: {
     color: "#EDE0C4",
+  },
+  // Profile photo picker
+  avatarPickerBtn: {
+    alignSelf: "center",
+    alignItems: "center",
+    gap: 4,
+  },
+  avatarPlaceholder: {
+    backgroundColor: "#1A1526",
+    borderColor: "#3A2F50",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarPlaceholderText: {
+    fontSize: 32,
+  },
+  avatarPickerLabel: {
+    color: "#C8973A",
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.5,
   },
 });

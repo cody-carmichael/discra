@@ -68,6 +68,15 @@ export type PodPresignUpload = {
   fields: Record<string, string>;
 };
 
+export type ProfilePhotoPresignResponse = {
+  url: string;
+  fields: Record<string, string>;
+  key: string;
+  object_url: string;
+  expires_in: number;
+  max_size_bytes: number;
+};
+
 export type RouteOptimizedStop = {
   sequence: number;
   order_id: string;
@@ -91,6 +100,15 @@ export type AdminStats = {
   unassigned: number;
   active_drivers: number;
   due_soon: number;
+};
+
+export type AuditLogRecord = {
+  event_id: string;
+  action: string;
+  actor_id?: string | null;
+  target_type?: string | null;
+  target_id?: string | null;
+  created_at: string;
 };
 
 // ─── Address helpers ──────────────────────────────────────────────────────────
@@ -237,7 +255,24 @@ export async function apiRequest<T>(
   }
   if (!response.ok) {
     if (payload && typeof payload === "object" && "detail" in payload) {
-      throw new Error(String((payload as { detail: unknown }).detail));
+      const detail = (payload as { detail: unknown }).detail;
+      // FastAPI validation errors return detail as an array of objects;
+      // plain app errors return it as a string.
+      let msg: string;
+      if (typeof detail === "string") {
+        msg = detail;
+      } else if (Array.isArray(detail)) {
+        msg = detail
+          .map((d: unknown) => {
+            if (d && typeof d === "object" && "msg" in d)
+              return String((d as { msg: unknown }).msg);
+            return JSON.stringify(d);
+          })
+          .join("; ");
+      } else {
+        msg = JSON.stringify(detail);
+      }
+      throw new Error(msg);
     }
     throw new Error(`Request failed (${response.status})`);
   }

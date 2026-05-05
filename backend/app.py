@@ -306,6 +306,13 @@ def create_app() -> FastAPI:
     async def dev_backend_version():
         return {"version": os.environ.get("VERSION", "dev")}
 
+    # Local-dev static serving for profile photos uploaded via POST /users/me/photo.
+    # In production the file lives in S3 and this mount is never hit.
+    import tempfile as _tempfile
+    _upload_root = Path(_tempfile.gettempdir()) / "discra_uploads"
+    _upload_root.mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=str(_upload_root)), name="uploads")
+
     if FRONTEND_ASSETS_DIR.exists():
         app.mount("/ui/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR)), name="ui-assets")
         app.mount("/backend/ui/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR)), name="backend-ui-assets")

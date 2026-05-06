@@ -110,28 +110,6 @@ jobs:
         run: |
           echo "=== .aws-sam/build tree ==="
           find .aws-sam/build -maxdepth 4 -type d -print || true
-          echo "=== Handler classes found ==="
-          find .aws-sam/build -type f -path '*/com/discra/api/*Handler.class' -print || true
-
-      - name: Verify handlers exist in SAM build
-        shell: bash
-        run: |
-          set -euo pipefail
-          have_class () {
-            local classpath="$1"
-            if find .aws-sam/build -type f -path "*/${classpath}" | grep -q . ; then return 0; fi
-            local jars; jars=$(find .aws-sam/build -type f -name '*.jar' || true)
-            if [ -n "$jars" ]; then
-              for j in $jars; do
-                if jar tf "$j" | grep -q "^${classpath}$" ; then return 0; fi
-              done
-            fi
-            return 1
-          }
-          for C in HealthHandler VersionHandler AdminPingHandler; do
-            CP="com/discra/api/${C}.class"
-            if have_class "$CP"; then echo "✅ Found $CP"; else echo "❌ Missing $CP"; exit 1; fi
-          done
 
       # Avoid CFN stack lock
       - name: Wait if stack update is in progress

@@ -293,14 +293,6 @@ export default function App() {
     }
   }
 
-  function applyManualToken() {
-    const t = manualToken.trim();
-    if (!looksLikeJwt(t)) { setLoginMsg("Paste a valid JWT id_token."); return; }
-    setToken(t);
-    setManualToken("");
-    setLoginMsg("");
-  }
-
   // ── Sign out ───────────────────────────────────────────────────────────────
 
   function signOut() {

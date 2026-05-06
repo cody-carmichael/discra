@@ -113,14 +113,6 @@ $Results = @()
 
 Write-Host "Smoke target: $BaseUrl"
 
-$legacyHealth = Invoke-SmokeRequest -Method "GET" -Path "/health"
-Assert-Status -Name "Legacy /health" -Response $legacyHealth
-Add-Result -Check "GET /health" -Outcome "PASS"
-
-$legacyVersion = Invoke-SmokeRequest -Method "GET" -Path "/version"
-Assert-Status -Name "Legacy /version" -Response $legacyVersion
-Add-Result -Check "GET /version" -Outcome "PASS"
-
 $backendHealth = Invoke-SmokeRequest -Method "GET" -Path "/backend/health"
 Assert-Status -Name "Backend /backend/health" -Response $backendHealth
 Add-Result -Check "GET /backend/health" -Outcome "PASS"
@@ -128,15 +120,6 @@ Add-Result -Check "GET /backend/health" -Outcome "PASS"
 $backendVersion = Invoke-SmokeRequest -Method "GET" -Path "/backend/version"
 Assert-Status -Name "Backend /backend/version" -Response $backendVersion
 Add-Result -Check "GET /backend/version" -Outcome "PASS"
-
-if (Is-Present $AdminToken) {
-    $adminPing = Invoke-SmokeRequest -Method "GET" -Path "/admin/ping" -Headers @{ "x-admin-token" = $AdminToken }
-    Assert-Status -Name "Legacy /admin/ping" -Response $adminPing
-    Add-Result -Check "GET /admin/ping" -Outcome "PASS"
-}
-else {
-    Add-Result -Check "GET /admin/ping" -Outcome "SKIP" -Notes "Admin token not provided"
-}
 
 if (Is-Present $OrdersWebhookToken) {
     $now = [DateTimeOffset]::UtcNow

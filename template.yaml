@@ -186,17 +186,27 @@ Globals:
       App: Discra
       Env: dev
       Owner: Cody
-  Api:
-    Cors:
-      AllowOrigins: "'*'"
-      AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-      AllowHeaders: "'content-type,x-admin-token,authorization,x-correlation-id'"
 
 Resources:
   DiscraApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: dev
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - content-type
+          - authorization
+          - x-admin-token
+          - x-correlation-id
       Auth:
         Authorizers:
           CognitoJwtAuthorizer:
@@ -540,53 +550,6 @@ Resources:
         - Key: Env
           Value: dev
 
-  HealthFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Runtime: java21
-      CodeUri: .
-      Handler: com.discra.api.HealthHandler::handleRequest
-      Events:
-        HealthGet:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref DiscraApi
-            Path: /health
-            Method: GET
-      Tags: { App: Discra, Env: dev }
-
-  VersionFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Runtime: java21
-      CodeUri: .
-      Handler: com.discra.api.VersionHandler::handleRequest
-      Events:
-        VersionGet:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref DiscraApi
-            Path: /version
-            Method: GET
-      Tags: { App: Discra, Env: dev }
-
-  AdminPingFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Runtime: java21
-      CodeUri: .
-      Handler: com.discra.api.AdminPingHandler::handleRequest
-      Environment:
-        Variables:
-          ADMIN_TOKEN: !Ref AdminToken
-      Events:
-        AdminPingGet:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref DiscraApi
-            Path: /admin/ping
-            Method: GET
-      Tags: { App: Discra, Env: dev }
 
   BackendApiFunction:
     Type: AWS::Serverless::Function

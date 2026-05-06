@@ -27,10 +27,7 @@ import DriverScreen from "./screens/DriverScreen";
 
 const STORAGE_KEY = "discra_mobile_config_v4";
 const STORAGE_PKCE_KEY = "discra_mobile_pkce_v1";
-const DEFAULT_API_BASE =
-  Platform.OS === "web"
-    ? "http://localhost:8000/backend"
-    : "https://m50fjhgrn7.execute-api.us-east-1.amazonaws.com/dev/backend";
+const DEFAULT_API_BASE = "https://m50fjhgrn7.execute-api.us-east-1.amazonaws.com/dev/backend";
 const DEFAULT_COGNITO_USER_POOL_ID = "us-east-1_vMav7IRF7";
 const DEFAULT_COGNITO_CLIENT_ID = "4gq64lj8ndo8pltt6hj5ritqi";
 
@@ -116,8 +113,6 @@ export default function App() {
   const [loginPass, setLoginPass] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginMsg, setLoginMsg] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [manualToken, setManualToken] = useState("");
 
   // Settings modal
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -296,14 +291,6 @@ export default function App() {
       setLoginMsg(err instanceof Error ? err.message : "Failed to open login.");
       setLoginLoading(false);
     }
-  }
-
-  function applyManualToken() {
-    const t = manualToken.trim();
-    if (!looksLikeJwt(t)) { setLoginMsg("Paste a valid JWT id_token."); return; }
-    setToken(t);
-    setManualToken("");
-    setLoginMsg("");
   }
 
   // ── Sign out ───────────────────────────────────────────────────────────────
@@ -496,55 +483,6 @@ export default function App() {
               : <Text style={styles.btnPrimaryText}>Sign In</Text>}
           </Pressable>
 
-          {/* Advanced: Hosted UI + token paste + API URL */}
-          <Pressable onPress={() => setShowAdvanced((v) => !v)} style={{ alignSelf: "center", marginTop: 4 }}>
-            <Text style={styles.settingsLink}>{showAdvanced ? "Hide advanced ▲" : "Advanced ▼"}</Text>
-          </Pressable>
-
-          {showAdvanced ? (
-            <>
-              <Text style={[styles.label, { marginTop: 8 }]}>Hosted UI Domain</Text>
-              <TextInput
-                style={styles.input}
-                value={cognitoDomain}
-                onChangeText={setCognitoDomain}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="your-domain.auth.us-east-1.amazoncognito.com"
-                placeholderTextColor="#4A3F60"
-              />
-              <Pressable
-                style={[styles.btn, styles.btnGhost]}
-                onPress={() => startHostedLogin().catch((e) => setLoginMsg(e instanceof Error ? e.message : "Failed."))}
-              >
-                <Text style={styles.btnGhostText}>Sign In with Hosted UI</Text>
-              </Pressable>
-              <Text style={[styles.label, { marginTop: 8 }]}>Paste id_token</Text>
-              <TextInput
-                style={[styles.input, { height: 72, textAlignVertical: "top" }]}
-                value={manualToken}
-                onChangeText={setManualToken}
-                multiline
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="eyJ..."
-                placeholderTextColor="#4A3F60"
-              />
-              <Pressable style={[styles.btn, styles.btnGhost]} onPress={applyManualToken}>
-                <Text style={styles.btnGhostText}>Use Token</Text>
-              </Pressable>
-              <Text style={[styles.label, { marginTop: 8 }]}>API Base URL</Text>
-              <TextInput
-                style={styles.input}
-                value={apiBase}
-                onChangeText={setApiBase}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholderTextColor="#4A3F60"
-                placeholder="https://.../dev/backend"
-              />
-            </>
-          ) : null}
         </View>
       </View>
     </SafeAreaView>

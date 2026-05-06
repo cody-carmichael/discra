@@ -16,11 +16,11 @@ lint = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
+resolve_image_repos = true
 stack_name = "discra-api-dev"
 s3_prefix = "discra-api-dev"
 region = "us-east-1"
 parameter_overrides = "Version=\"0.0.2-admin-ping\""
-image_repositories = []
 
 [default.package.parameters]
 resolve_s3 = true
@@ -37,8 +37,8 @@ warm_containers = "EAGER"
 [dev.deploy.parameters]
 stack_name = "discra-api-dev"
 resolve_s3 = true
+resolve_image_repos = true
 s3_prefix = "discra-api-dev"
 region = "us-east-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
-image_repositories = []

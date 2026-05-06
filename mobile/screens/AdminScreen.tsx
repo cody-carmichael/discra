@@ -106,9 +106,7 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [assignInputs, setAssignInputs] = useState<Record<string, string>>({});
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
-  const [bulkDriverId, setBulkDriverId] = useState("");
 
   // ── Create order modal ─────────────────────────────────────────────────────
   const [createVisible, setCreateVisible] = useState(false);
@@ -123,9 +121,6 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
   // ── Orders sub-tab ────────────────────────────────────────────────────────
   const [ordersSubTab, setOrdersSubTab] = useState<OrdersSubTab>("list");
 
-  // ── Inflight modal ────────────────────────────────────────────────────────
-  const [inflight, setInflight] = useState<OrderRecord[]>([]);
-  const [inflightVisible, setInflightVisible] = useState(false);
 
   // ── Admin tab data ─────────────────────────────────────────────────────────
   const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
@@ -323,6 +318,13 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-optimise route whenever the selected driver changes
+  useEffect(() => {
+    if (!selectedDriverId) return;
+    optimiseRoute().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDriverId]);
+
   // ── Optimise route ────────────────────────────────────────────────────────
   async function optimiseRoute() {
     if (!selectedDriverId) { setStatusMsg("Select a driver first."); return; }
@@ -346,8 +348,8 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
 
   // ── Assign / unassign ─────────────────────────────────────────────────────
   async function assignOrder(orderId: string) {
-    const driverId = (assignInputs[orderId] || selectedDriverId || "").trim();
-    if (!driverId) { setStatusMsg("Select a driver or enter a driver ID."); return; }
+    const driverId = (selectedDriverId || "").trim();
+    if (!driverId) { setStatusMsg("Select a driver first."); return; }
     setLoading(true);
     try {
       await apiRequest(apiBase, `/orders/${orderId}/assign`, {
@@ -396,8 +398,8 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
 
   // ── Bulk assign ────────────────────────────────────────────────────────────
   async function bulkAssign() {
-    const driverId = bulkDriverId.trim() || selectedDriverId || "";
-    if (!driverId) { setStatusMsg("Enter a driver ID for bulk assign."); return; }
+    const driverId = selectedDriverId || "";
+    if (!driverId) { setStatusMsg("Select a driver first."); return; }
     if (!selectedOrderIds.size) { setStatusMsg("Select orders to assign."); return; }
     setLoading(true);
     let ok = 0;
@@ -479,20 +481,6 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
       await loadData(true);
     } catch (e) {
       setEditMsg(e instanceof Error ? e.message : "Update failed.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ── Inflight ───────────────────────────────────────────────────────────────
-  async function loadInflight() {
-    setLoading(true);
-    try {
-      const data = await apiRequest<OrderRecord[]>(apiBase, "/inflight", { token });
-      setInflight(data || []);
-      setInflightVisible(true);
-    } catch (e) {
-      setStatusMsg(e instanceof Error ? e.message : "Inflight load failed.");
     } finally {
       setLoading(false);
     }
@@ -624,18 +612,6 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                 </ScrollView>
               </View>
 
-              {/* Map action buttons (top-right) */}
-              <View style={styles.mapActions} pointerEvents="box-none">
-                <Pressable style={styles.mapBtn} onPress={() => loadData().catch(() => undefined)}>
-                  <Text style={styles.mapBtnText}>↻ Refresh</Text>
-                </Pressable>
-                <Pressable style={styles.mapBtn} onPress={() => optimiseRoute().catch(() => undefined)}>
-                  <Text style={styles.mapBtnText}>⚡ Optimise</Text>
-                </Pressable>
-                <Pressable style={styles.mapBtn} onPress={() => loadInflight().catch(() => undefined)}>
-                  <Text style={styles.mapBtnText}>✈ In Flight</Text>
-                </Pressable>
-              </View>
             </View>
 
             {/* Bottom dispatch panel */}
@@ -664,12 +640,8 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                   assignedOrders={assignedOrders}
                   selectedDriverId={selectedDriverId}
                   drivers={drivers}
-                  assignInputs={assignInputs}
-                  setAssignInputs={setAssignInputs}
                   selectedOrderIds={selectedOrderIds}
                   setSelectedOrderIds={setSelectedOrderIds}
-                  bulkDriverId={bulkDriverId}
-                  setBulkDriverId={setBulkDriverId}
                   onAssign={assignOrder}
                   onUnassign={unassignOrder}
                   onBulkAssign={bulkAssign}
@@ -711,8 +683,6 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                   onUpdateStatus={updateStatus}
                   onAssign={assignOrder}
                   onUnassign={unassignOrder}
-                  assignInputs={assignInputs}
-                  setAssignInputs={setAssignInputs}
                   onCreateNew={() => { setCreateForm(BLANK_FORM); setCreateMsg(""); setCreateVisible(true); }}
                 />
               ) : ordersSubTab === "inflight" ? (
@@ -990,27 +960,6 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
         </View>
       </Modal>
 
-      {/* ── In-flight modal ──────────────────────────────────────── */}
-      <Modal visible={inflightVisible} animationType="slide" transparent onRequestClose={() => setInflightVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>In Flight ({inflight.length})</Text>
-              <Pressable onPress={() => setInflightVisible(false)}><Text style={styles.modalClose}>✕</Text></Pressable>
-            </View>
-            <ScrollView contentContainerStyle={{ gap: 8 }}>
-              {inflight.length === 0 ? <Text style={styles.metaText}>No in-flight orders.</Text> : null}
-              {inflight.map((o) => (
-                <View key={o.id} style={styles.orderCard}>
-                  <Text style={styles.orderTitle}>{o.customer_name}</Text>
-                  <Text style={styles.orderMeta}>#{orderReference(o)} · {o.status} · {o.assigned_to || "Unassigned"}</Text>
-                  <Text style={styles.orderMeta}>Delivery: {deliveryAddress(o) || "-"}</Text>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -1045,12 +994,8 @@ type DispatchTabProps = {
   assignedOrders: OrderRecord[];
   selectedDriverId: string | null;
   drivers: DriverLocationRecord[];
-  assignInputs: Record<string, string>;
-  setAssignInputs: (fn: (prev: Record<string, string>) => Record<string, string>) => void;
   selectedOrderIds: Set<string>;
   setSelectedOrderIds: (fn: (prev: Set<string>) => Set<string>) => void;
-  bulkDriverId: string;
-  setBulkDriverId: (v: string) => void;
   onAssign: (id: string) => void;
   onUnassign: (id: string) => void;
   onBulkAssign: () => void;
@@ -1065,12 +1010,8 @@ function DispatchTab({
   assignedOrders,
   selectedDriverId,
   drivers,
-  assignInputs,
-  setAssignInputs,
   selectedOrderIds,
   setSelectedOrderIds,
-  bulkDriverId,
-  setBulkDriverId,
   onAssign,
   onUnassign,
   onBulkAssign,
@@ -1148,16 +1089,17 @@ function DispatchTab({
       {selectedOrderIds.size > 0 ? (
         <View style={styles.sectionCard}>
           <Text style={styles.sectionSubtitle}>Bulk Assign ({selectedOrderIds.size} selected)</Text>
-          <TextInput
-            style={styles.input}
-            value={bulkDriverId}
-            onChangeText={setBulkDriverId}
-            placeholder={selectedDriverId ? `Driver: ${selectedDriverId}` : "Driver ID"}
-            placeholderTextColor="#4A3F60"
-            autoCapitalize="none"
-          />
+          {selectedDriverId ? (
+            <Text style={styles.metaText}>Assign to: {selectedDriverId}</Text>
+          ) : (
+            <Text style={[styles.metaText, { color: "#C8973A" }]}>Tap a driver above to select them first</Text>
+          )}
           <View style={styles.row}>
-            <Pressable style={[styles.btn, styles.btnPrimary]} onPress={onBulkAssign}>
+            <Pressable
+              style={[styles.btn, styles.btnPrimary, !selectedDriverId && { opacity: 0.4 }]}
+              onPress={onBulkAssign}
+              disabled={!selectedDriverId}
+            >
               <Text style={styles.btnText}>Assign Selected</Text>
             </Pressable>
             <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setSelectedOrderIds(() => new Set())}>
@@ -1188,16 +1130,14 @@ function DispatchTab({
               ) : null}
             </View>
           </Pressable>
-          <TextInput
-            style={[styles.input, { marginTop: 6 }]}
-            value={assignInputs[order.id] ?? ""}
-            placeholder={selectedDriverId ? `Driver: ${selectedDriverId}` : "Driver ID"}
-            placeholderTextColor="#4A3F60"
-            onChangeText={(v) => setAssignInputs((p) => ({ ...p, [order.id]: v }))}
-            autoCapitalize="none"
-          />
-          <Pressable style={[styles.btn, styles.btnPrimary, { marginTop: 4 }]} onPress={() => onAssign(order.id)}>
-            <Text style={styles.btnText}>Assign</Text>
+          <Pressable
+            style={[styles.btn, styles.btnPrimary, { marginTop: 8 }, !selectedDriverId && { opacity: 0.4 }]}
+            onPress={() => onAssign(order.id)}
+            disabled={!selectedDriverId}
+          >
+            <Text style={styles.btnText}>
+              {selectedDriverId ? `Assign to ${selectedDriverId}` : "Select a driver first"}
+            </Text>
           </Pressable>
         </View>
       ))}
@@ -1232,12 +1172,10 @@ type OrdersTabProps = {
   onUpdateStatus: (id: string, status: string) => void;
   onAssign: (id: string) => void;
   onUnassign: (id: string) => void;
-  assignInputs: Record<string, string>;
-  setAssignInputs: (fn: (prev: Record<string, string>) => Record<string, string>) => void;
   onCreateNew: () => void;
 };
 
-function OrdersTab({ orders, searchQuery, setSearchQuery, onEdit, onUpdateStatus, onAssign, onUnassign, assignInputs, setAssignInputs, onCreateNew }: OrdersTabProps) {
+function OrdersTab({ orders, searchQuery, setSearchQuery, onEdit, onUpdateStatus, onAssign, onUnassign, onCreateNew }: OrdersTabProps) {
   return (
     <>
       <View style={styles.row}>
@@ -1280,21 +1218,16 @@ function OrdersTab({ orders, searchQuery, setSearchQuery, onEdit, onUpdateStatus
               </Pressable>
             ))}
           </View>
-          <TextInput
-            style={[styles.input, { marginTop: 6 }]}
-            value={assignInputs[order.id] ?? order.assigned_to ?? ""}
-            placeholder="Driver ID"
-            placeholderTextColor="#4A3F60"
-            onChangeText={(v) => setAssignInputs((p) => ({ ...p, [order.id]: v }))}
-            autoCapitalize="none"
-          />
           <View style={styles.row}>
-            <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => onAssign(order.id)}>
-              <Text style={styles.btnText}>Assign</Text>
-            </Pressable>
-            <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => onUnassign(order.id)}>
-              <Text style={styles.btnGhostText}>Unassign</Text>
-            </Pressable>
+            {!order.assigned_to ? (
+              <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => onAssign(order.id)}>
+                <Text style={styles.btnText}>Assign</Text>
+              </Pressable>
+            ) : (
+              <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => onUnassign(order.id)}>
+                <Text style={styles.btnGhostText}>Unassign</Text>
+              </Pressable>
+            )}
           </View>
         </View>
       ))}
@@ -1400,23 +1333,6 @@ const styles = StyleSheet.create({
   statChipAccent: { borderColor: "#C8973A", backgroundColor: "rgba(42,30,16,0.92)" },
   statValue: { color: "#EDE0C4", fontWeight: "700", fontSize: 14 },
   statLabel: { color: "#968AA8", fontSize: 9, fontWeight: "600", textTransform: "uppercase" },
-
-  // Map action buttons
-  mapActions: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    gap: 6,
-  },
-  mapBtn: {
-    backgroundColor: "rgba(19,15,26,0.9)",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#3A2F50",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  mapBtnText: { color: "#C8973A", fontWeight: "700", fontSize: 11 },
 
   // Dispatch bottom panel
   dispatchPanel: {

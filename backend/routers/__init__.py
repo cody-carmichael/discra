@@ -8,6 +8,7 @@ from .pod import router as pod_router
 from .push import router as push_router
 from .reports import router as reports_router
 from .routes import router as routes_router
+from .simulator import router as simulator_router
 
 __all__ = [
     "billing_router",
@@ -20,4 +21,5 @@ __all__ = [
     "push_router",
     "reports_router",
     "routes_router",
+    "simulator_router",
 ]

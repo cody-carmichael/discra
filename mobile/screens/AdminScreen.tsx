@@ -22,9 +22,14 @@ import {
   RouteOptimizeResponse,
   apiRequest,
   deliveryAddress,
+  deriveDriverName,
+  fetchOsrmRoute,
+  fetchOsrmRouteMulti,
   formatDistanceMiles,
   formatDurationShort,
   formatTime,
+  geocodeAddress,
+  haversineDistance,
   orderReference,
   pickupAddress,
 } from "../lib";
@@ -107,6 +112,27 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
   const [statusMsg, setStatusMsg] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [assignSheetOrderIds, setAssignSheetOrderIds] = useState<string[] | null>(null);
+
+  // Preview state shown on the map while the assign sheet is open. The
+  // route is fetched on demand from OSRM (driver pos → first-order pickup).
+  type PreviewState = {
+    driverId: string;
+    pickupCoord: { lat: number; lng: number };
+    route: { latitude: number; longitude: number }[] | null;
+  };
+  const [previewState, setPreviewState] = useState<PreviewState | null>(null);
+  const previewReqRef = useRef(0);
+
+  // Toast for assignment confirmation. Slides in from the top, auto-dismisses.
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+
+  // Pickup geocode cache. Refs avoid stale-closure issues; bump version to re-render.
+  const pickupCacheRef = useRef<Map<string, { lat: number; lng: number }>>(new Map());
+  const pickupInflightRef = useRef<Set<string>>(new Set());
+  const [, setPickupCoordsVersion] = useState(0);
 
   // ── Create order modal ─────────────────────────────────────────────────────
   const [createVisible, setCreateVisible] = useState(false);
@@ -214,17 +240,51 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
   );
 
   // ── Route points ──────────────────────────────────────────────────────────
-  const routePoints = useMemo(() => {
+  // Straight-line fallback (used while the OSRM call is in flight or if it fails).
+  const straightRoutePoints = useMemo(() => {
     if (!selectedDriver) return [];
     const pts: { latitude: number; longitude: number }[] = [
       { latitude: selectedDriver.lat, longitude: selectedDriver.lng },
     ];
     if (routePlan?.ordered_stops?.length) {
       for (const s of routePlan.ordered_stops) pts.push({ latitude: s.lat, longitude: s.lng });
-      return pts;
     }
     return pts;
   }, [selectedDriver, routePlan]);
+
+  // Road-following polyline from OSRM. Re-fetches whenever the selected driver
+  // or the optimised stop sequence changes.
+  const [roadRoutePoints, setRoadRoutePoints] = useState<
+    { latitude: number; longitude: number }[] | null
+  >(null);
+  const roadRouteReqRef = useRef(0);
+  const stopsKey = useMemo(
+    () =>
+      routePlan?.ordered_stops
+        ?.map((s) => `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`)
+        .join("|") || "",
+    [routePlan]
+  );
+  useEffect(() => {
+    if (!selectedDriver || !routePlan?.ordered_stops?.length) {
+      setRoadRoutePoints(null);
+      return;
+    }
+    const reqId = ++roadRouteReqRef.current;
+    const waypoints = [
+      { lat: selectedDriver.lat, lng: selectedDriver.lng },
+      ...routePlan.ordered_stops.map((s) => ({ lat: s.lat, lng: s.lng })),
+    ];
+    fetchOsrmRouteMulti(waypoints)
+      .then((result) => {
+        if (roadRouteReqRef.current !== reqId) return;
+        setRoadRoutePoints(result?.coords && result.coords.length > 1 ? result.coords : null);
+      })
+      .catch(() => undefined);
+  }, [selectedDriver?.driver_id, selectedDriver?.lat, selectedDriver?.lng, stopsKey]);
+
+  // What the map actually renders: road polyline if we have it, else straight lines.
+  const routePoints = roadRoutePoints || straightRoutePoints;
 
   // ── Filtered orders ────────────────────────────────────────────────────────
   const filteredOrders = useMemo(() => {
@@ -244,6 +304,27 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
     () => filteredOrders.filter((o) => !o.assigned_to),
     [filteredOrders]
   );
+
+  // ── Pickup geocoding (for proximity ranking + map pins) ───────────────────
+  const ensurePickupGeocode = useCallback(async (address: string) => {
+    const key = address.trim().toLowerCase();
+    if (!key) return;
+    if (pickupCacheRef.current.has(key)) return;
+    if (pickupInflightRef.current.has(key)) return;
+    pickupInflightRef.current.add(key);
+    try {
+      const result = await geocodeAddress(address, pickupCacheRef.current);
+      if (result) setPickupCoordsVersion((v) => v + 1);
+    } finally {
+      pickupInflightRef.current.delete(key);
+    }
+  }, []);
+
+  const getPickupCoord = useCallback((order: OrderRecord) => {
+    const addr = pickupAddress(order);
+    if (!addr) return null;
+    return pickupCacheRef.current.get(addr.trim().toLowerCase()) || null;
+  }, []);
 
   const assignedOrders = useMemo(
     () =>
@@ -318,12 +399,27 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-optimise route whenever the selected driver changes
+  // Pre-fetch pickup coords for unassigned orders so the assign sheet ranks
+  // by proximity instantly. ensurePickupGeocode is a no-op for cached/inflight keys.
+  useEffect(() => {
+    for (const o of unassignedOrders) {
+      const addr = pickupAddress(o);
+      if (addr) ensurePickupGeocode(addr).catch(() => undefined);
+    }
+  }, [unassignedOrders, ensurePickupGeocode]);
+
+  // Auto-optimise route whenever the selected driver changes OR their assigned
+  // orders change (e.g. dispatcher just assigned a new order to this driver).
+  // The set-of-IDs key avoids spurious reruns from unrelated order edits.
+  const assignedOrderIdsKey = useMemo(
+    () => assignedOrders.map((o) => o.id).sort().join(","),
+    [assignedOrders]
+  );
   useEffect(() => {
     if (!selectedDriverId) return;
     optimiseRoute().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDriverId]);
+  }, [selectedDriverId, assignedOrderIdsKey]);
 
   // ── Optimise route ────────────────────────────────────────────────────────
   async function optimiseRoute() {
@@ -350,6 +446,10 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
   async function assignOrder(orderId: string) {
     const driverId = (selectedDriverId || "").trim();
     if (!driverId) { setStatusMsg("Select a driver first."); return; }
+    await assignOrderToDriver(orderId, driverId);
+  }
+
+  async function assignOrderToDriver(orderId: string, driverId: string) {
     setLoading(true);
     try {
       await apiRequest(apiBase, `/orders/${orderId}/assign`, {
@@ -397,22 +497,107 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
   }
 
   // ── Bulk assign ────────────────────────────────────────────────────────────
-  async function bulkAssign() {
-    const driverId = selectedDriverId || "";
-    if (!driverId) { setStatusMsg("Select a driver first."); return; }
-    if (!selectedOrderIds.size) { setStatusMsg("Select orders to assign."); return; }
+  async function bulkAssignToDriver(orderIds: string[], driverId: string) {
+    if (!orderIds.length) return;
     setLoading(true);
     let ok = 0;
-    for (const id of selectedOrderIds) {
+    for (const id of orderIds) {
       try {
         await apiRequest(apiBase, `/orders/${id}/assign`, { method: "POST", token, json: { driver_id: driverId } });
         ok++;
       } catch { /* skip */ }
     }
     setSelectedOrderIds(new Set());
+    setSelectionMode(false);
     await loadData(true);
     setStatusMsg(`Assigned ${ok} order(s).`);
     setLoading(false);
+  }
+
+  // ── Assign sheet open / close ─────────────────────────────────────────────
+  function openAssignSheet(orderIds: string[]) {
+    if (!orderIds.length) return;
+    setAssignSheetOrderIds(orderIds);
+  }
+
+  function closeAssignSheet() {
+    setAssignSheetOrderIds(null);
+    setPreviewState(null);
+    previewReqRef.current++;  // invalidate any in-flight OSRM request
+  }
+
+  // Tap-to-preview: fetch driver → pickup polyline and show on map.
+  async function startPreview(driverId: string | null) {
+    if (!driverId) {
+      setPreviewState(null);
+      return;
+    }
+    const driver = drivers.find((d) => d.driver_id === driverId);
+    const firstOrderId = assignSheetOrderIds?.[0];
+    const order = firstOrderId ? orders.find((o) => o.id === firstOrderId) : null;
+    const pickup = order ? getPickupCoord(order) : null;
+    if (!driver || !pickup) return;
+
+    const reqId = ++previewReqRef.current;
+    // Show straight-line preview immediately while OSRM is in flight.
+    setPreviewState({
+      driverId,
+      pickupCoord: pickup,
+      route: [
+        { latitude: driver.lat, longitude: driver.lng },
+        { latitude: pickup.lat, longitude: pickup.lng },
+      ],
+    });
+    const result = await fetchOsrmRoute(driver.lat, driver.lng, pickup.lat, pickup.lng);
+    if (previewReqRef.current !== reqId) return; // superseded
+    setPreviewState({
+      driverId,
+      pickupCoord: pickup,
+      route:
+        result?.coords && result.coords.length > 1
+          ? result.coords
+          : [
+              { latitude: driver.lat, longitude: driver.lng },
+              { latitude: pickup.lat, longitude: pickup.lng },
+            ],
+    });
+  }
+
+  function showAssignToast(message: string) {
+    setToastMsg(message);
+    toastAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(toastAnim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.delay(2200),
+      Animated.timing(toastAnim, {
+        toValue: 0,
+        duration: 280,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(() => setToastMsg(null));
+  }
+
+  async function handleSheetAssign(driverId: string) {
+    const ids = assignSheetOrderIds || [];
+    const driverName = deriveDriverName(driverId);
+    const firstOrder = orders.find((o) => o.id === ids[0]);
+    const orderLabel =
+      ids.length === 1 && firstOrder
+        ? firstOrder.customer_name
+        : `${ids.length} orders`;
+    closeAssignSheet();
+    if (ids.length === 1) {
+      await assignOrderToDriver(ids[0], driverId);
+    } else {
+      await bulkAssignToDriver(ids, driverId);
+    }
+    showAssignToast(`✓ Assigned ${orderLabel} to ${driverName}`);
   }
 
   // ── Create order ───────────────────────────────────────────────────────────
@@ -579,18 +764,63 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                 onRegionChangeComplete={setMapRegion}
                 showsUserLocation={false}
               >
-                {drivers.map((driver) => (
-                  <Marker
-                    key={`drv-${driver.driver_id}`}
-                    coordinate={{ latitude: driver.lat, longitude: driver.lng }}
-                    pinColor={driver.driver_id === selectedDriverId ? "#C8973A" : "#0e7aa6"}
-                    title={driver.driver_id}
-                    description={formatTime(driver.timestamp)}
-                    onPress={() => focusDriver(driver)}
-                  />
-                ))}
+                {drivers.map((driver) => {
+                  const isSelected = driver.driver_id === selectedDriverId;
+                  const displayName = deriveDriverName(driver.driver_id);
+                  const driverOrderCount = orders.filter((o) => o.assigned_to === driver.driver_id).length;
+                  return (
+                    <Marker
+                      key={`drv-${driver.driver_id}`}
+                      coordinate={{ latitude: driver.lat, longitude: driver.lng }}
+                      title={displayName}
+                      onPress={() => focusDriver(driver)}
+                      // @ts-expect-error - pinKind/label/popupRows are web-shim props (react-native-maps.web.js)
+                      pinKind={isSelected ? "driver_selected" : "driver"}
+                      label={displayName}
+                      popupRows={[
+                        {
+                          label: "Status",
+                          value: driverOrderCount > 0 ? "On delivery" : "Available",
+                          accent: true,
+                        },
+                        { label: "Assigned", value: `${driverOrderCount} order${driverOrderCount === 1 ? "" : "s"}` },
+                        { label: "Last update", value: formatTime(driver.timestamp) },
+                      ]}
+                    />
+                  );
+                })}
+                {unassignedOrders.map((order) => {
+                  const coord = getPickupCoord(order);
+                  if (!coord) return null;
+                  const pickup = pickupAddress(order) || "Unknown pickup";
+                  const delivery = deliveryAddress(order) || "Unknown delivery";
+                  return (
+                    <Marker
+                      key={`pickup-${order.id}`}
+                      coordinate={{ latitude: coord.lat, longitude: coord.lng }}
+                      title={order.customer_name}
+                      onPress={() => openAssignSheet([order.id])}
+                      // @ts-expect-error - pinKind/popupRows/onAction/actionLabel are web-shim props
+                      pinKind="unassigned"
+                      popupRows={[
+                        { label: "Status", value: "Unassigned", accent: true },
+                        { label: "Pickup", value: pickup },
+                        { label: "Delivery", value: delivery },
+                      ]}
+                      onAction={() => openAssignSheet([order.id])}
+                      actionLabel="⚡ Assign Driver"
+                    />
+                  );
+                })}
                 {routePoints.length > 1 ? (
                   <Polyline coordinates={routePoints} strokeColor="#C8973A" strokeWidth={3} />
+                ) : null}
+                {previewState?.route && previewState.route.length > 1 ? (
+                  <Polyline
+                    coordinates={previewState.route}
+                    strokeColor="#9D6FC8"
+                    strokeWidth={5}
+                  />
                 ) : null}
               </MapView>
 
@@ -642,11 +872,11 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                   drivers={drivers}
                   selectedOrderIds={selectedOrderIds}
                   setSelectedOrderIds={setSelectedOrderIds}
-                  onAssign={assignOrder}
+                  selectionMode={selectionMode}
+                  setSelectionMode={setSelectionMode}
                   onUnassign={unassignOrder}
-                  onBulkAssign={bulkAssign}
+                  onOpenAssignSheet={openAssignSheet}
                   onSelectDriver={focusDriver}
-                  onOptimise={optimiseRoute}
                   routePlan={routePlan}
                   orders={orders}
                 />
@@ -912,6 +1142,41 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
         </>
       ) : null}
 
+      {/* ── Assign sheet ───────────────────────────────────────── */}
+      <AssignSheet
+        orderIds={assignSheetOrderIds}
+        orders={orders}
+        drivers={drivers}
+        getPickupCoord={getPickupCoord}
+        previewDriverId={previewState?.driverId || null}
+        onPreview={startPreview}
+        onConfirm={handleSheetAssign}
+        onClose={closeAssignSheet}
+      />
+
+      {/* ── Assignment toast ───────────────────────────────────── */}
+      {toastMsg ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.assignToast,
+            {
+              opacity: toastAnim,
+              transform: [
+                {
+                  translateY: toastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-20, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Text style={styles.assignToastText}>{toastMsg}</Text>
+        </Animated.View>
+      ) : null}
+
       {/* ── Create order modal ──────────────────────────────────── */}
       <Modal visible={createVisible} animationType="slide" transparent onRequestClose={() => setCreateVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -996,11 +1261,11 @@ type DispatchTabProps = {
   drivers: DriverLocationRecord[];
   selectedOrderIds: Set<string>;
   setSelectedOrderIds: (fn: (prev: Set<string>) => Set<string>) => void;
-  onAssign: (id: string) => void;
+  selectionMode: boolean;
+  setSelectionMode: (next: boolean) => void;
   onUnassign: (id: string) => void;
-  onBulkAssign: () => void;
+  onOpenAssignSheet: (orderIds: string[]) => void;
   onSelectDriver: (d: DriverLocationRecord) => void;
-  onOptimise: () => void;
   routePlan: RouteOptimizeResponse | null;
   orders: OrderRecord[];
 };
@@ -1012,11 +1277,11 @@ function DispatchTab({
   drivers,
   selectedOrderIds,
   setSelectedOrderIds,
-  onAssign,
+  selectionMode,
+  setSelectionMode,
   onUnassign,
-  onBulkAssign,
+  onOpenAssignSheet,
   onSelectDriver,
-  onOptimise,
   routePlan,
   orders,
 }: DispatchTabProps) {
@@ -1025,8 +1290,29 @@ function DispatchTab({
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      // Auto-exit selection mode if nothing is selected.
+      if (next.size === 0) setSelectionMode(false);
       return next;
     });
+  }
+
+  function handleCardPress(id: string) {
+    if (selectionMode) toggleSelect(id);
+    else onOpenAssignSheet([id]);
+  }
+
+  function handleCardLongPress(id: string) {
+    if (!selectionMode) setSelectionMode(true);
+    setSelectedOrderIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }
+
+  function exitSelection() {
+    setSelectedOrderIds(() => new Set());
+    setSelectionMode(false);
   }
 
   return (
@@ -1040,6 +1326,7 @@ function DispatchTab({
           {drivers.map((driver) => {
             const isSelected = driver.driver_id === selectedDriverId;
             const driverOrderCount = orders.filter((o) => o.assigned_to === driver.driver_id).length;
+            const displayName = deriveDriverName(driver.driver_id);
             return (
               <Pressable
                 key={driver.driver_id}
@@ -1049,7 +1336,7 @@ function DispatchTab({
                 <View style={[styles.driverDot, { backgroundColor: isSelected ? "#C8973A" : "#0e7aa6" }]} />
                 <View>
                   <Text style={[styles.driverPillName, isSelected && { color: "#C8973A" }]} numberOfLines={1}>
-                    {driver.driver_id}
+                    {displayName}
                   </Text>
                   <Text style={styles.metaText}>{driverOrderCount} order{driverOrderCount !== 1 ? "s" : ""}</Text>
                 </View>
@@ -1062,12 +1349,7 @@ function DispatchTab({
       {/* Selected driver detail */}
       {selectedDriverId ? (
         <View style={styles.sectionCard}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <Text style={styles.sectionTitle} numberOfLines={1}>{selectedDriverId}</Text>
-            <Pressable style={[styles.btn, styles.btnGhost, { paddingHorizontal: 10, paddingVertical: 5 }]} onPress={onOptimise}>
-              <Text style={styles.btnGhostText}>⚡ Optimise</Text>
-            </Pressable>
-          </View>
+          <Text style={styles.sectionTitle} numberOfLines={1}>{deriveDriverName(selectedDriverId)}</Text>
           {routePlan ? (
             <>
               <Text style={styles.metaText}>
@@ -1085,62 +1367,66 @@ function DispatchTab({
         </View>
       ) : null}
 
-      {/* Bulk assign */}
-      {selectedOrderIds.size > 0 ? (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionSubtitle}>Bulk Assign ({selectedOrderIds.size} selected)</Text>
-          {selectedDriverId ? (
-            <Text style={styles.metaText}>Assign to: {selectedDriverId}</Text>
-          ) : (
-            <Text style={[styles.metaText, { color: "#C8973A" }]}>Tap a driver above to select them first</Text>
-          )}
-          <View style={styles.row}>
+      {/* Unassigned queue header + selection toolbar */}
+      <View style={styles.unassignedHeader}>
+        <Text style={styles.sectionSubtitle}>
+          {selectionMode
+            ? `${selectedOrderIds.size} selected`
+            : `Unassigned (${unassignedOrders.length})`}
+        </Text>
+        {selectionMode ? (
+          <View style={{ flexDirection: "row", gap: 6 }}>
             <Pressable
-              style={[styles.btn, styles.btnPrimary, !selectedDriverId && { opacity: 0.4 }]}
-              onPress={onBulkAssign}
-              disabled={!selectedDriverId}
+              style={[styles.btn, styles.btnPrimary, { paddingHorizontal: 12, paddingVertical: 6 }, !selectedOrderIds.size && { opacity: 0.4 }]}
+              onPress={() => onOpenAssignSheet(Array.from(selectedOrderIds))}
+              disabled={!selectedOrderIds.size}
             >
-              <Text style={styles.btnText}>Assign Selected</Text>
+              <Text style={styles.btnText}>Assign {selectedOrderIds.size}</Text>
             </Pressable>
-            <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setSelectedOrderIds(() => new Set())}>
-              <Text style={styles.btnGhostText}>Clear</Text>
+            <Pressable
+              style={[styles.btn, styles.btnGhost, { paddingHorizontal: 12, paddingVertical: 6 }]}
+              onPress={exitSelection}
+            >
+              <Text style={styles.btnGhostText}>Cancel</Text>
             </Pressable>
           </View>
-        </View>
-      ) : null}
-
-      {/* Unassigned queue */}
-      <Text style={styles.sectionSubtitle}>Unassigned ({unassignedOrders.length})</Text>
+        ) : null}
+      </View>
       {unassignedOrders.length === 0 ? (
         <Text style={styles.metaText}>All orders assigned ✓</Text>
       ) : null}
-      {unassignedOrders.map((order) => (
-        <View key={order.id} style={[styles.orderCard, selectedOrderIds.has(order.id) && styles.orderCardSelected]}>
-          <Pressable onPress={() => toggleSelect(order.id)} style={styles.orderCheckRow}>
-            <View style={[styles.checkbox, selectedOrderIds.has(order.id) && styles.checkboxChecked]}>
-              {selectedOrderIds.has(order.id) ? <Text style={styles.checkboxMark}>✓</Text> : null}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.orderTitle}>{order.customer_name}</Text>
-              <Text style={styles.orderMeta}>#{orderReference(order)} · {order.status}</Text>
-              <Text style={styles.orderMeta} numberOfLines={1}>Pick up: {pickupAddress(order) || "-"}</Text>
-              <Text style={styles.orderMeta} numberOfLines={1}>Deliver: {deliveryAddress(order) || "-"}</Text>
-              {order.time_window_end ? (
-                <Text style={styles.orderMeta}>Due: {formatTime(order.time_window_end)}</Text>
+      {unassignedOrders.map((order) => {
+        const isSelected = selectedOrderIds.has(order.id);
+        return (
+          <Pressable
+            key={order.id}
+            onPress={() => handleCardPress(order.id)}
+            onLongPress={() => handleCardLongPress(order.id)}
+            delayLongPress={350}
+            style={[styles.orderCard, isSelected && styles.orderCardSelected]}
+          >
+            <View style={styles.orderCheckRow}>
+              {selectionMode ? (
+                <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
+                  {isSelected ? <Text style={styles.checkboxMark}>✓</Text> : null}
+                </View>
+              ) : null}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.orderTitle}>{order.customer_name}</Text>
+                <Text style={styles.orderMeta}>#{orderReference(order)} · {order.status}</Text>
+                <Text style={styles.orderMeta} numberOfLines={1}>Pick up: {pickupAddress(order) || "-"}</Text>
+                <Text style={styles.orderMeta} numberOfLines={1}>Deliver: {deliveryAddress(order) || "-"}</Text>
+                {order.time_window_end ? (
+                  <Text style={styles.orderMeta}>Due: {formatTime(order.time_window_end)}</Text>
+                ) : null}
+              </View>
+              {!selectionMode ? (
+                <Text style={styles.orderChevron}>›</Text>
               ) : null}
             </View>
           </Pressable>
-          <Pressable
-            style={[styles.btn, styles.btnPrimary, { marginTop: 8 }, !selectedDriverId && { opacity: 0.4 }]}
-            onPress={() => onAssign(order.id)}
-            disabled={!selectedDriverId}
-          >
-            <Text style={styles.btnText}>
-              {selectedDriverId ? `Assign to ${selectedDriverId}` : "Select a driver first"}
-            </Text>
-          </Pressable>
-        </View>
-      ))}
+        );
+      })}
 
       {/* Assigned orders for selected driver */}
       {selectedDriverId && assignedOrders.length > 0 ? (
@@ -1161,6 +1447,162 @@ function DispatchTab({
         </>
       ) : null}
     </>
+  );
+}
+
+// ── Assign sheet ─────────────────────────────────────────────────────────────
+
+type AssignSheetProps = {
+  orderIds: string[] | null;
+  orders: OrderRecord[];
+  drivers: DriverLocationRecord[];
+  getPickupCoord: (order: OrderRecord) => { lat: number; lng: number } | null;
+  previewDriverId: string | null;
+  onPreview: (driverId: string | null) => void;
+  onConfirm: (driverId: string) => void;
+  onClose: () => void;
+};
+
+function AssignSheet({
+  orderIds,
+  orders,
+  drivers,
+  getPickupCoord,
+  previewDriverId,
+  onPreview,
+  onConfirm,
+  onClose,
+}: AssignSheetProps) {
+  const visible = !!orderIds && orderIds.length > 0;
+
+  const refOrder = useMemo(() => {
+    if (!orderIds?.length) return null;
+    return orders.find((o) => o.id === orderIds[0]) || null;
+  }, [orderIds, orders]);
+
+  const pickupCoord = refOrder ? getPickupCoord(refOrder) : null;
+  const isMulti = (orderIds?.length || 0) > 1;
+
+  const rankedDrivers = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const o of orders) {
+      if (o.assigned_to) counts.set(o.assigned_to, (counts.get(o.assigned_to) || 0) + 1);
+    }
+    const enriched = drivers.map((d) => {
+      const distance =
+        pickupCoord && !isMulti
+          ? haversineDistance(pickupCoord.lat, pickupCoord.lng, d.lat, d.lng)
+          : null;
+      return { driver: d, distance, load: counts.get(d.driver_id) || 0 };
+    });
+    enriched.sort((a, b) => {
+      if (isMulti || !pickupCoord) {
+        if (a.load !== b.load) return a.load - b.load;
+        return a.driver.driver_id.localeCompare(b.driver.driver_id);
+      }
+      if (a.distance == null && b.distance == null) return a.load - b.load;
+      if (a.distance == null) return 1;
+      if (b.distance == null) return -1;
+      return a.distance - b.distance;
+    });
+    return enriched;
+  }, [drivers, orders, pickupCoord, isMulti]);
+
+  const headerLabel = isMulti
+    ? `Assign ${orderIds!.length} orders`
+    : refOrder
+      ? `Assign · ${refOrder.customer_name}`
+      : "Assign";
+
+  const previewedDriver =
+    previewDriverId && !isMulti
+      ? rankedDrivers.find((r) => r.driver.driver_id === previewDriverId)
+      : null;
+  const previewedDriverName = previewedDriver
+    ? deriveDriverName(previewedDriver.driver.driver_id)
+    : null;
+
+  function handleRowPress(driverId: string) {
+    if (isMulti) {
+      // Bulk-assign: skip preview, confirm immediately.
+      onConfirm(driverId);
+    } else {
+      // Toggle preview: tapping the already-selected driver clears it.
+      onPreview(previewDriverId === driverId ? null : driverId);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => undefined}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle} numberOfLines={1}>{headerLabel}</Text>
+            <Pressable onPress={onClose}>
+              <Text style={styles.modalClose}>✕</Text>
+            </Pressable>
+          </View>
+          {!isMulti && refOrder ? (
+            <Text style={styles.metaText} numberOfLines={1}>
+              Pick up: {pickupAddress(refOrder) || "-"}
+            </Text>
+          ) : null}
+          {!isMulti && !pickupCoord ? (
+            <Text style={[styles.metaText, { color: "#8A7AA8" }]}>
+              Locating pickup… drivers sorted by load.
+            </Text>
+          ) : null}
+          {!isMulti && previewedDriverName ? (
+            <Text style={[styles.metaText, { color: "#9D6FC8", fontWeight: "700" }]}>
+              Previewing route for {previewedDriverName}
+            </Text>
+          ) : !isMulti && pickupCoord ? (
+            <Text style={[styles.metaText, { color: "#8A7AA8" }]}>
+              Tap a driver to preview their route to pickup.
+            </Text>
+          ) : null}
+          {drivers.length === 0 ? (
+            <Text style={[styles.metaText, { paddingVertical: 16, textAlign: "center" }]}>
+              No active drivers. Drivers must share location to appear here.
+            </Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 320 }}>
+              {rankedDrivers.map(({ driver, distance, load }) => {
+                const isPreviewed = previewDriverId === driver.driver_id;
+                const displayName = deriveDriverName(driver.driver_id);
+                return (
+                  <Pressable
+                    key={driver.driver_id}
+                    style={[styles.driverRow, isPreviewed && styles.driverRowSelected]}
+                    onPress={() => handleRowPress(driver.driver_id)}
+                  >
+                    <View style={[styles.driverDot, { backgroundColor: isPreviewed ? "#9D6FC8" : "#0e7aa6" }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.driverRowName} numberOfLines={1}>{displayName}</Text>
+                      <Text style={styles.metaText}>
+                        {distance != null ? `${formatDistanceMiles(distance)} away · ` : ""}
+                        {load} order{load !== 1 ? "s" : ""}
+                      </Text>
+                    </View>
+                    <Text style={[styles.driverRowAction, isPreviewed && { color: "#9D6FC8" }]}>
+                      {isMulti ? "Assign ›" : isPreviewed ? "● Preview" : "Preview ›"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+          {!isMulti && previewDriverId && previewedDriverName ? (
+            <Pressable
+              style={[styles.btn, styles.btnPrimary, { marginTop: 8 }]}
+              onPress={() => onConfirm(previewDriverId)}
+            >
+              <Text style={styles.btnText}>✓ Assign to {previewedDriverName}</Text>
+            </Pressable>
+          ) : null}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1481,6 +1923,50 @@ const styles = StyleSheet.create({
   },
   checkboxChecked: { backgroundColor: "#C8973A", borderColor: "#C8973A" },
   checkboxMark: { color: "#0B0910", fontWeight: "800", fontSize: 12 },
+  orderChevron: { color: "#6B5F80", fontSize: 22, lineHeight: 22, marginLeft: 6 },
+  unassignedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
+  driverRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#241A33",
+  },
+  driverRowName: { color: "#EDE0C4", fontSize: 14, fontWeight: "700" },
+  driverRowAction: { color: "#C8973A", fontSize: 13, fontWeight: "700" },
+  driverRowSelected: {
+    backgroundColor: "#1F1730",
+    borderBottomColor: "#9D6FC8",
+  },
+  assignToast: {
+    position: "absolute",
+    top: 64,
+    alignSelf: "center",
+    backgroundColor: "#1C1628",
+    borderColor: "#C8973A",
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  assignToastText: {
+    color: "#F5D98B",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
   editBtn: {
     borderWidth: 1,
     borderColor: "#3A2F50",

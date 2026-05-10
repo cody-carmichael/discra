@@ -208,6 +208,34 @@ export function extractTokenGroups(token: string): string[] {
   return [];
 }
 
+/**
+ * Derive a human-readable display name from a driver_id.
+ * - `sim-alex-rivera-78c98b` → "Alex Rivera"
+ * - real driver IDs → returned as-is (caller can swap in roster lookup later)
+ */
+export function deriveDriverName(driverId: string): string {
+  if (!driverId) return "";
+  if (!driverId.startsWith("sim-")) return driverId;
+  const inner = driverId.slice(4);
+  const lastDash = inner.lastIndexOf("-");
+  const slug = lastDash > 0 ? inner.slice(0, lastDash) : inner;
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(" ");
+}
+
+export function extractUsername(token: string): string {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return "";
+  const username = payload["cognito:username"] ?? payload.username ?? payload.preferred_username;
+  if (username) return String(username).toLowerCase();
+  const email = payload.email;
+  if (email && typeof email === "string") return email.toLowerCase().split("@")[0];
+  return "";
+}
+
 // ─── API ─────────────────────────────────────────────────────────────────────
 
 export function normalizeApiBase(url: string): string {
@@ -325,6 +353,47 @@ function _buildOsrmInstruction(maneuver: {
   else parts.push(`${mtype} ${mod}`.trim());
   if (name) parts.push(`onto ${name}`);
   return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
+/** Multi-waypoint OSRM driving route. Returns the full road polyline + total
+ *  distance/duration. Use for optimised driver routes (driver → stop1 → … → stopN).
+ *  Falls back to a straight-line connecting all waypoints on failure. */
+export async function fetchOsrmRouteMulti(
+  waypoints: Array<{ lat: number; lng: number }>
+): Promise<OsrmResult | null> {
+  if (waypoints.length < 2) return null;
+  const fallback: OsrmResult = {
+    coords: waypoints.map((p) => ({ latitude: p.lat, longitude: p.lng })),
+    steps: [],
+    distance_meters: 0,
+    duration_seconds: 0,
+  };
+  try {
+    const coordStr = waypoints.map((p) => `${p.lng},${p.lat}`).join(";");
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+    const resp = await fetch(url);
+    const data = (await resp.json()) as {
+      code?: string;
+      routes?: Array<{
+        distance: number;
+        duration: number;
+        geometry: { coordinates: Array<[number, number]> };
+      }>;
+    };
+    if (data.code !== "Ok" || !data.routes?.length) return fallback;
+    const route = data.routes[0];
+    return {
+      coords: route.geometry.coordinates.map(([lng, lat]) => ({
+        latitude: lat,
+        longitude: lng,
+      })),
+      steps: [],
+      distance_meters: route.distance,
+      duration_seconds: route.duration,
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 export async function fetchOsrmRoute(

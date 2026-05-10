@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+import requests
+
 try:
     import boto3
 except ImportError:  # pragma: no cover - boto3 available in Lambda
@@ -128,20 +130,73 @@ class AmazonLocationAddressGeocoder(AddressGeocoder):
         return GeocodePoint(lat=lat, lng=lng, source="amazon-location")
 
 
+class PhotonAddressGeocoder(AddressGeocoder):
+    """Free, public Photon (Komoot) geocoder. No auth required.
+
+    Used as the local-dev fallback when Amazon Location Service isn't
+    configured — replaces the previous hash-based dev geocoder which mapped
+    any address to a random-looking continental US lat/lng.
+    """
+
+    _ENDPOINT = "https://photon.komoot.io/api/"
+    # Photon blocks the default python-requests UA with 403; identify ourselves.
+    _USER_AGENT = "Discra/0.1 (dev geocoder)"
+
+    def __init__(self, timeout_s: float = 5.0):
+        self.timeout_s = timeout_s
+
+    def geocode(self, address: str) -> Optional[GeocodePoint]:
+        if not address or not address.strip():
+            return None
+        inline = _parse_inline_lat_lng(address)
+        if inline:
+            return inline
+        try:
+            r = requests.get(
+                self._ENDPOINT,
+                params={"q": address, "limit": 1},
+                timeout=self.timeout_s,
+                headers={"User-Agent": self._USER_AGENT},
+            )
+            r.raise_for_status()
+            data = r.json()
+            features = data.get("features") or []
+            if not features:
+                return None
+            coords = features[0].get("geometry", {}).get("coordinates", [])
+            if len(coords) != 2:
+                return None
+            lng, lat = float(coords[0]), float(coords[1])
+            if not _is_valid_lat_lng(lat, lng):
+                return None
+            return GeocodePoint(lat=lat, lng=lng, source="photon")
+        except Exception:
+            return None
+
+
 _IN_MEMORY_ADDRESS_GEOCODER = InMemoryAddressGeocoder()
+_PHOTON_ADDRESS_GEOCODER = PhotonAddressGeocoder()
 
 
 def get_address_geocoder() -> AddressGeocoder:
+    # Tests can opt into the deterministic in-memory geocoder explicitly.
     force_memory = _as_bool(os.environ.get("USE_IN_MEMORY_GEOCODER"), default=False)
     if force_memory:
         return _IN_MEMORY_ADDRESS_GEOCODER
 
+    # Production prefers AWS Location Service.
     place_index_name = (os.environ.get("LOCATION_PLACE_INDEX_NAME") or "").strip()
     if place_index_name:
         try:
             return AmazonLocationAddressGeocoder(place_index_name=place_index_name)
         except Exception:
-            return _IN_MEMORY_ADDRESS_GEOCODER
+            pass  # fall through
+
+    # Default for local dev: Photon. Set DISABLE_PHOTON_GEOCODER=true to fall
+    # back to the in-memory hash geocoder (e.g. for offline test runs).
+    if not _as_bool(os.environ.get("DISABLE_PHOTON_GEOCODER"), default=False):
+        return _PHOTON_ADDRESS_GEOCODER
+
     return _IN_MEMORY_ADDRESS_GEOCODER
 
 

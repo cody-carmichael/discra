@@ -95,6 +95,10 @@
         <div class="sim-label">Update interval (seconds)</div>
         <input id="update-interval" class="sim-input" type="number" value="5" min="2" max="60">
       </div>
+      <div style="margin-bottom:8px;">
+        <div class="sim-label">Speed (mph)</div>
+        <input id="speed-mph" class="sim-input" type="number" value="30" min="1" max="120">
+      </div>
       <div class="sim-row">
         <button id="btn-spawn" class="sim-btn sim-btn-accent">Spawn Drivers</button>
         <button id="btn-stop" class="sim-btn sim-btn-red" disabled>Stop All</button>
@@ -150,10 +154,19 @@
   var updateCount = 0;
   var devAuthCookie = null;
 
+  // Dispatch behaviour constants
+  var ARRIVAL_THRESHOLD_M = 10;
+  var DEFAULT_SPEED_MPH = 30;
+  var MPH_TO_MPS = 0.44704;
+
+  // Caches
+  var geocodeCache = new Map(); // lower(addr) -> {lat,lng} | null
+
   // DOM
   var elDriverCount = document.getElementById("driver-count");
   var elArea = document.getElementById("sim-area");
   var elInterval = document.getElementById("update-interval");
+  var elSpeedMph = document.getElementById("speed-mph");
   var elSpawn = document.getElementById("btn-spawn");
   var elStop = document.getElementById("btn-stop");
   var elClear = document.getElementById("btn-clear");
@@ -196,21 +209,111 @@
     return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
   }
 
-  function moveToward(driver, speed) {
-    var dlat = driver.dest.lat - driver.lat;
-    var dlng = driver.dest.lng - driver.lng;
-    var dist = Math.sqrt(dlat*dlat + dlng*dlng);
-    if (dist < 0.001) {
-      // Arrived — pick new destination
-      var area = AREAS[elArea.value] || AREAS.fortworth;
-      driver.dest = randomDestInArea(area);
+  function haversineMeters(lat1, lng1, lat2, lng2) {
+    var R = 6371000;
+    var p1 = lat1 * Math.PI / 180;
+    var p2 = lat2 * Math.PI / 180;
+    var dp = (lat2 - lat1) * Math.PI / 180;
+    var dl = (lng2 - lng1) * Math.PI / 180;
+    var a = Math.sin(dp/2)*Math.sin(dp/2) + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2);
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function pickupAddrFromOrder(o) {
+    var s = [o.pick_up_street, o.pick_up_city, o.pick_up_state, o.pick_up_zip].filter(Boolean).join(", ");
+    return s || o.pick_up_address || "";
+  }
+  function deliveryAddrFromOrder(o) {
+    var s = [o.delivery_street, o.delivery_city, o.delivery_state, o.delivery_zip].filter(Boolean).join(", ");
+    return s || o.delivery || "";
+  }
+  function refLabel(o) {
+    return "#" + (o.reference_id || (o.reference_number != null ? String(o.reference_number) : o.id.slice(0, 8)));
+  }
+
+  async function geocode(address) {
+    var key = (address || "").trim().toLowerCase();
+    if (!key) return null;
+    if (geocodeCache.has(key)) return geocodeCache.get(key);
+    try {
+      var r = await fetch("https://photon.komoot.io/api/?q=" + encodeURIComponent(address) + "&limit=1");
+      var data = await r.json();
+      if (!data.features || !data.features.length) {
+        geocodeCache.set(key, null);
+        return null;
+      }
+      var c = data.features[0].geometry.coordinates;
+      var result = { lat: c[1], lng: c[0] };
+      geocodeCache.set(key, result);
+      return result;
+    } catch(e) {
+      geocodeCache.set(key, null);
+      return null;
+    }
+  }
+
+  async function fetchOsrmRoute(fromLat, fromLng, toLat, toLng) {
+    try {
+      var url = "https://router.project-osrm.org/route/v1/driving/" +
+        fromLng + "," + fromLat + ";" + toLng + "," + toLat +
+        "?overview=full&geometries=geojson";
+      var r = await fetch(url);
+      var data = await r.json();
+      if (data.code !== "Ok" || !data.routes || !data.routes.length) {
+        return [{ lat: fromLat, lng: fromLng }, { lat: toLat, lng: toLng }];
+      }
+      return data.routes[0].geometry.coordinates.map(function(c) {
+        return { lat: c[1], lng: c[0] };
+      });
+    } catch(e) {
+      return [{ lat: fromLat, lng: fromLng }, { lat: toLat, lng: toLng }];
+    }
+  }
+
+  // Walk along driver.route by stepM meters, advancing routeIndex segments.
+  function advanceAlongRoute(driver, stepM) {
+    var route = driver.route;
+    if (!route || route.length < 2) return;
+    var remaining = stepM;
+    while (remaining > 0 && driver.routeIndex < route.length - 1) {
+      var b = route[driver.routeIndex + 1];
+      var segDist = haversineMeters(driver.lat, driver.lng, b.lat, b.lng);
+      if (segDist < 0.1) {
+        driver.routeIndex++;
+        continue;
+      }
+      if (remaining >= segDist) {
+        driver.heading = bearing(driver.lat, driver.lng, b.lat, b.lng);
+        driver.lat = b.lat;
+        driver.lng = b.lng;
+        driver.routeIndex++;
+        remaining -= segDist;
+      } else {
+        var ratio = remaining / segDist;
+        var newLat = driver.lat + (b.lat - driver.lat) * ratio;
+        var newLng = driver.lng + (b.lng - driver.lng) * ratio;
+        driver.heading = bearing(driver.lat, driver.lng, b.lat, b.lng);
+        driver.lat = newLat;
+        driver.lng = newLng;
+        remaining = 0;
+      }
+    }
+  }
+
+  function moveTowardRoam(driver, stepM) {
+    var area = AREAS[elArea.value] || AREAS.fortworth;
+    if (!driver.roamDest) driver.roamDest = randomDestInArea(area);
+    var dist = haversineMeters(driver.lat, driver.lng, driver.roamDest.lat, driver.roamDest.lng);
+    if (dist < stepM) {
+      driver.lat = driver.roamDest.lat;
+      driver.lng = driver.roamDest.lng;
+      driver.roamDest = randomDestInArea(area);
       return;
     }
-    var step = speed + (Math.random() - 0.5) * speed * 0.3; // slight randomness
-    var ratio = Math.min(step / dist, 1);
-    driver.lat += dlat * ratio;
-    driver.lng += dlng * ratio;
-    driver.heading = bearing(driver.lat, driver.lng, driver.dest.lat, driver.dest.lng);
+    var ratio = stepM / dist;
+    driver.heading = bearing(driver.lat, driver.lng, driver.roamDest.lat, driver.roamDest.lng);
+    driver.lat += (driver.roamDest.lat - driver.lat) * ratio;
+    driver.lng += (driver.roamDest.lng - driver.lng) * ratio;
   }
 
   async function loginAsDriver(driverId, orgId) {
@@ -228,10 +331,8 @@
     }
   }
 
-  async function sendLocation(driver) {
+  async function sendLocationOnly(driver) {
     try {
-      // Login as this driver first (sets cookie)
-      await loginAsDriver(driver.id, "org-pilot-1");
       await C.requestJson(apiBase, "/drivers/location", {
         method: "POST",
         json: { lat: driver.lat, lng: driver.lng, heading: driver.heading },
@@ -242,6 +343,92 @@
     } catch(e) {
       log("Location failed for " + driver.name + ": " + e.message);
       return false;
+    }
+  }
+
+  async function fetchInbox() {
+    try {
+      return await C.requestJson(apiBase, "/orders/driver/inbox", { method: "GET" });
+    } catch(e) {
+      return [];
+    }
+  }
+
+  async function postStatus(orderId, status) {
+    try {
+      await C.requestJson(apiBase, "/orders/" + orderId + "/status", {
+        method: "POST",
+        json: { status: status },
+      });
+      return true;
+    } catch(e) {
+      log("Status update failed: " + e.message);
+      return false;
+    }
+  }
+
+  async function planRoute(driver, address) {
+    var coord = await geocode(address);
+    if (!coord) return false;
+    var route = await fetchOsrmRoute(driver.lat, driver.lng, coord.lat, coord.lng);
+    driver.route = route;
+    driver.routeIndex = 0;
+    driver.target = coord;
+    return true;
+  }
+
+  // Read driver's inbox (already authenticated) and progress dispatch state machine.
+  async function processDispatch(driver) {
+    var inbox = await fetchInbox();
+    var active = inbox.filter(function(o) {
+      return o.status !== "Delivered" && o.status !== "Failed";
+    });
+    var order = active.length ? active[0] : null;
+
+    if (!order) {
+      if (driver.state !== "roaming") {
+        driver.state = "roaming";
+        driver.activeOrderId = null;
+        driver.route = null;
+        driver.target = null;
+        log(driver.name + " → roaming");
+      }
+      return;
+    }
+
+    var pickupAddr = pickupAddrFromOrder(order);
+    var deliveryAddr = deliveryAddrFromOrder(order);
+
+    if (order.status === "Assigned") {
+      if (driver.state !== "to_pickup" || driver.activeOrderId !== order.id) {
+        var ok = await planRoute(driver, pickupAddr);
+        if (!ok) { log(driver.name + ": couldn't geocode pickup '" + pickupAddr + "'"); return; }
+        driver.state = "to_pickup";
+        driver.activeOrderId = order.id;
+        log(driver.name + " → pickup for " + refLabel(order));
+      }
+      if (driver.target && haversineMeters(driver.lat, driver.lng, driver.target.lat, driver.target.lng) < ARRIVAL_THRESHOLD_M) {
+        await postStatus(order.id, "PickedUp");
+        log(driver.name + " ↑ PickedUp " + refLabel(order));
+        var ok2 = await planRoute(driver, deliveryAddr);
+        if (!ok2) { log(driver.name + ": couldn't geocode delivery '" + deliveryAddr + "'"); return; }
+        driver.state = "to_delivery";
+      }
+    } else if (order.status === "PickedUp" || order.status === "EnRoute") {
+      if (driver.state !== "to_delivery" || driver.activeOrderId !== order.id) {
+        var ok3 = await planRoute(driver, deliveryAddr);
+        if (!ok3) return;
+        driver.state = "to_delivery";
+        driver.activeOrderId = order.id;
+      }
+      if (driver.target && haversineMeters(driver.lat, driver.lng, driver.target.lat, driver.target.lng) < ARRIVAL_THRESHOLD_M) {
+        await postStatus(order.id, "Delivered");
+        log(driver.name + " ✓ Delivered " + refLabel(order));
+        driver.state = "roaming";
+        driver.activeOrderId = null;
+        driver.route = null;
+        driver.target = null;
+      }
     }
   }
 
@@ -274,9 +461,14 @@
         color: color,
         lat: pos.lat,
         lng: pos.lng,
-        dest: dest,
+        roamDest: dest,
         heading: 0,
         marker: marker,
+        state: "roaming",
+        activeOrderId: null,
+        route: null,
+        routeIndex: 0,
+        target: null,
         active: true,
       });
 
@@ -288,28 +480,50 @@
     startSimulation();
   }
 
+  function stateLabel(d) {
+    if (d.state === "to_pickup") return "→ Pickup";
+    if (d.state === "to_delivery") return "→ Delivery";
+    return "Roaming";
+  }
+
   function renderDriverCards() {
     if (!simDrivers.length) {
       elDriverList.innerHTML = '<div style="color:var(--text-muted);font-size:.8rem;">No drivers spawned.</div>';
       return;
     }
     elDriverList.innerHTML = simDrivers.map(function(d) {
+      var statusLine = d.active
+        ? stateLabel(d) + " · " + d.lat.toFixed(4) + ", " + d.lng.toFixed(4)
+        : "Stopped";
       return '<div class="sim-driver-card' + (d.active ? ' active' : '') + '">' +
         '<div class="sim-driver-dot' + (d.active ? ' online' : '') + '" style="' + (d.active ? 'background:'+d.color : '') + '"></div>' +
         '<div class="sim-driver-info"><div class="sim-driver-name">' + d.name + '</div>' +
-        '<div class="sim-driver-status">' + (d.active ? d.lat.toFixed(4) + ', ' + d.lng.toFixed(4) : 'Stopped') + '</div></div>' +
+        '<div class="sim-driver-status">' + statusLine + '</div></div>' +
         '</div>';
     }).join("");
   }
 
   async function tickAll() {
-    var speed = 0.002; // ~200m per tick
+    var speedMph = parseFloat(elSpeedMph.value) || DEFAULT_SPEED_MPH;
+    var intervalSec = parseInt(elInterval.value) || 5;
+    var stepM = speedMph * MPH_TO_MPS * intervalSec;
+
     var active = simDrivers.filter(function(d) { return d.active; });
     for (var i = 0; i < active.length; i++) {
       var d = active[i];
-      moveToward(d, speed);
+      var authed = await loginAsDriver(d.id, "org-pilot-1");
+      if (!authed) continue;
+
+      await processDispatch(d);
+
+      if (d.state === "roaming" || !d.route) {
+        moveTowardRoam(d, stepM);
+      } else {
+        advanceAlongRoute(d, stepM);
+      }
+
       d.marker.setLngLat([d.lng, d.lat]);
-      await sendLocation(d);
+      await sendLocationOnly(d);
     }
     renderDriverCards();
   }

@@ -59,6 +59,7 @@ try:
         push_router,
         reports_router,
         routes_router,
+        simulator_router,
     )
 except ModuleNotFoundError:  # local run from backend/ directory
     from auth import (  # type: ignore
@@ -88,6 +89,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
         push_router,
         reports_router,
         routes_router,
+        simulator_router,
     )
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -745,6 +747,7 @@ def create_app() -> FastAPI:
     app.include_router(onboarding_router)
     app.include_router(push_router)
     app.include_router(email_router)
+    app.include_router(simulator_router)
     app.include_router(identity_router, prefix="/backend")
     app.include_router(orders_router, prefix="/backend")
     app.include_router(drivers_router, prefix="/backend")
@@ -755,6 +758,7 @@ def create_app() -> FastAPI:
     app.include_router(onboarding_router, prefix="/backend")
     app.include_router(push_router, prefix="/backend")
     app.include_router(email_router, prefix="/backend")
+    app.include_router(simulator_router, prefix="/backend")
     app.include_router(identity_router, prefix="/dev/backend")
     app.include_router(orders_router, prefix="/dev/backend")
     app.include_router(drivers_router, prefix="/dev/backend")
@@ -765,6 +769,7 @@ def create_app() -> FastAPI:
     app.include_router(onboarding_router, prefix="/dev/backend")
     app.include_router(push_router, prefix="/dev/backend")
     app.include_router(email_router, prefix="/dev/backend")
+    app.include_router(simulator_router, prefix="/dev/backend")
 
     return app
 

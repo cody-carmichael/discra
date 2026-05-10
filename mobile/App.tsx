@@ -19,7 +19,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { decodeJwtPayload, extractTokenGroups, normalizeApiBase } from "./lib";
+import { apiRequest, decodeJwtPayload, extractTokenGroups, extractUsername, normalizeApiBase } from "./lib";
 import AdminScreen from "./screens/AdminScreen";
 import DriverScreen from "./screens/DriverScreen";
 
@@ -27,7 +27,15 @@ import DriverScreen from "./screens/DriverScreen";
 
 const STORAGE_KEY = "discra_mobile_config_v4";
 const STORAGE_PKCE_KEY = "discra_mobile_pkce_v1";
-const DEFAULT_API_BASE = "https://m50fjhgrn7.execute-api.us-east-1.amazonaws.com/dev/backend";
+// When running the web preview locally (expo start --web on localhost), point
+// at the local FastAPI backend so dev-only endpoints (e.g. /admin/simulator/*)
+// are reachable. All other contexts use the deployed dev API.
+const DEFAULT_API_BASE =
+  Platform.OS === "web" &&
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "http://127.0.0.1:8000/dev/backend"
+    : "https://m50fjhgrn7.execute-api.us-east-1.amazonaws.com/dev/backend";
 const DEFAULT_COGNITO_USER_POOL_ID = "us-east-1_vMav7IRF7";
 const DEFAULT_COGNITO_CLIENT_ID = "4gq64lj8ndo8pltt6hj5ritqi";
 
@@ -121,6 +129,8 @@ export default function App() {
   const tokenGroups = useMemo(() => extractTokenGroups(token), [token]);
   const isDriver = tokenGroups.includes("Driver");
   const isAdmin = tokenGroups.includes("Admin") || tokenGroups.includes("Dispatcher");
+  const username = useMemo(() => extractUsername(token), [token]);
+  const simulatorEnabled = username === "cody.carmichael";
 
   // Auto-select workspace based on groups when token changes
   useEffect(() => {
@@ -387,44 +397,31 @@ export default function App() {
               </>
             ) : null}
           </View>
-          <Pressable style={styles.settingsGearBtn} onPress={() => setSettingsOpen(true)}>
-            <Text style={styles.settingsGearText}>⚙</Text>
-          </Pressable>
+          {simulatorEnabled ? (
+            <Pressable style={styles.settingsGearBtn} onPress={() => setSettingsOpen(true)}>
+              <Text style={styles.settingsGearText}>⚙</Text>
+            </Pressable>
+          ) : null}
         </View>
         {renderScreen()}
 
-        {/* Settings modal — opened via ⚙ in the top banner */}
-        <Modal visible={settingsOpen} animationType="slide" transparent onRequestClose={() => setSettingsOpen(false)}>
-          <View style={styles.settingsBackdrop}>
-            <SafeAreaView>
-              <View style={styles.settingsCard}>
-                <Text style={styles.loginHeading}>Settings</Text>
-                <Text style={styles.label}>API Base URL</Text>
-                <TextInput
-                  style={styles.input}
-                  value={apiBase}
-                  onChangeText={setApiBase}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholderTextColor="#4A3F60"
-                />
-                <Text style={styles.label}>Cognito Domain (Hosted UI)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={cognitoDomain}
-                  onChangeText={setCognitoDomain}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholderTextColor="#4A3F60"
-                  placeholder="auth.example.com"
-                />
-                <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setSettingsOpen(false)}>
-                  <Text style={styles.btnGhostText}>Done</Text>
-                </Pressable>
-              </View>
-            </SafeAreaView>
-          </View>
-        </Modal>
+        {/* Settings modal — simulator controls (cody.carmichael only) */}
+        {simulatorEnabled ? (
+          <Modal visible={settingsOpen} animationType="slide" transparent onRequestClose={() => setSettingsOpen(false)}>
+            <View style={styles.settingsBackdrop}>
+              <SafeAreaView style={{ width: "100%" }}>
+                <View style={styles.settingsCard}>
+                  <SimulatorPanel
+                    apiBase={apiBase}
+                    token={token}
+                    open={settingsOpen}
+                    onClose={() => setSettingsOpen(false)}
+                  />
+                </View>
+              </SafeAreaView>
+            </View>
+          </Modal>
+        ) : null}
       </View>
     );
   }
@@ -486,6 +483,270 @@ export default function App() {
         </View>
       </View>
     </SafeAreaView>
+  );
+}
+
+// ─── Simulator Panel ──────────────────────────────────────────────────────────
+
+const SIM_AREAS: Array<{ key: string; label: string }> = [
+  { key: "fortworth", label: "Fort Worth, TX" },
+  { key: "dallas", label: "Dallas, TX" },
+  { key: "austin", label: "Austin, TX" },
+  { key: "houston", label: "Houston, TX" },
+  { key: "nyc", label: "New York City" },
+  { key: "la", label: "Los Angeles" },
+];
+
+type SimDriver = {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  heading: number;
+  state: string;
+  active_order_id: string | null;
+};
+
+type SimStatus = {
+  running: boolean;
+  update_count: number;
+  config: { area: string; interval_sec: number; speed_mph: number } | null;
+  drivers: SimDriver[];
+};
+
+function SimulatorPanel({
+  apiBase,
+  token,
+  open,
+  onClose,
+}: {
+  apiBase: string;
+  token: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [count, setCount] = useState("5");
+  const [areaKey, setAreaKey] = useState("fortworth");
+  const [intervalSec, setIntervalSec] = useState("5");
+  const [speedMph, setSpeedMph] = useState("30");
+  const [seedCount, setSeedCount] = useState("5");
+  const [status, setStatus] = useState<SimStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  // Initial fetch + poll while open
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    async function refresh() {
+      try {
+        const s = await apiRequest<SimStatus>(apiBase, "/admin/simulator/status", { token });
+        if (!cancelled) setStatus(s);
+      } catch (e) {
+        if (!cancelled) setMsg(e instanceof Error ? e.message : "Status failed.");
+      }
+    }
+    refresh();
+    const id = setInterval(refresh, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [open, apiBase, token]);
+
+  // Pre-fill form from current config when status loads
+  useEffect(() => {
+    if (status?.config) {
+      setAreaKey(status.config.area);
+      setIntervalSec(String(status.config.interval_sec));
+      setSpeedMph(String(status.config.speed_mph));
+    }
+  }, [status?.config?.area, status?.config?.interval_sec, status?.config?.speed_mph]);
+
+  async function spawn() {
+    setBusy(true);
+    setMsg("");
+    try {
+      const next = await apiRequest<SimStatus>(apiBase, "/admin/simulator/spawn", {
+        method: "POST",
+        token,
+        json: {
+          count: parseInt(count, 10) || 5,
+          area: areaKey,
+          interval_sec: parseFloat(intervalSec) || 5,
+          speed_mph: parseFloat(speedMph) || 30,
+        },
+      });
+      setStatus(next);
+      setMsg(`Spawned ${next.drivers.length} driver(s).`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Spawn failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stop() {
+    setBusy(true);
+    setMsg("");
+    try {
+      const next = await apiRequest<SimStatus>(apiBase, "/admin/simulator/stop", {
+        method: "POST",
+        token,
+      });
+      setStatus(next);
+      setMsg("Simulator stopped.");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Stop failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function seedOrders() {
+    setBusy(true);
+    setMsg("");
+    try {
+      const resp = await apiRequest<{ created: number; order_ids: string[] }>(
+        apiBase,
+        "/admin/simulator/seed-orders",
+        {
+          method: "POST",
+          token,
+          json: { count: parseInt(seedCount, 10) || 5, area: areaKey },
+        }
+      );
+      setMsg(`Seeded ${resp.created} order(s). Refresh the dispatch tab to see them.`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Seed failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const stateLabel = (s: string) =>
+    s === "to_pickup" ? "→ Pickup" : s === "to_delivery" ? "→ Delivery" : "Roaming";
+
+  return (
+    <View style={{ gap: 10 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        <Text style={styles.loginHeading}>Driver Simulator</Text>
+        <Pressable onPress={onClose}>
+          <Text style={{ color: "#968AA8", fontSize: 18 }}>✕</Text>
+        </Pressable>
+      </View>
+
+      {/* Configuration */}
+      <Text style={styles.label}>Number of drivers (1–20)</Text>
+      <TextInput
+        style={styles.input}
+        value={count}
+        onChangeText={setCount}
+        keyboardType="number-pad"
+        placeholderTextColor="#4A3F60"
+      />
+
+      <Text style={styles.label}>Area</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+        {SIM_AREAS.map((a) => (
+          <Pressable
+            key={a.key}
+            onPress={() => setAreaKey(a.key)}
+            style={[
+              styles.simChip,
+              areaKey === a.key && styles.simChipActive,
+            ]}
+          >
+            <Text style={[styles.simChipText, areaKey === a.key && styles.simChipTextActive]}>
+              {a.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>Interval (sec)</Text>
+          <TextInput
+            style={styles.input}
+            value={intervalSec}
+            onChangeText={setIntervalSec}
+            keyboardType="number-pad"
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>Speed (mph)</Text>
+          <TextInput
+            style={styles.input}
+            value={speedMph}
+            onChangeText={setSpeedMph}
+            keyboardType="number-pad"
+          />
+        </View>
+      </View>
+
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <Pressable
+          style={[styles.btn, styles.btnPrimary, busy && { opacity: 0.5 }]}
+          onPress={spawn}
+          disabled={busy}
+        >
+          <Text style={styles.btnPrimaryText}>{status?.running ? "Respawn" : "Spawn"}</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.btn, styles.btnGhost, (!status?.running || busy) && { opacity: 0.4 }]}
+          onPress={stop}
+          disabled={!status?.running || busy}
+        >
+          <Text style={styles.btnGhostText}>Stop</Text>
+        </Pressable>
+      </View>
+
+      {/* Status */}
+      <View style={styles.simStatusBar}>
+        <Text style={styles.simStatusText}>
+          {status?.running ? "● Running" : "○ Stopped"} · {status?.drivers.length ?? 0} drivers · {status?.update_count ?? 0} updates
+        </Text>
+      </View>
+
+      {/* Seed test orders */}
+      <View style={{ height: 1, backgroundColor: "#241A33", marginVertical: 4 }} />
+      <Text style={styles.label}>Seed test orders ({areaKey})</Text>
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
+        <View style={{ flex: 1 }}>
+          <TextInput
+            style={styles.input}
+            value={seedCount}
+            onChangeText={setSeedCount}
+            keyboardType="number-pad"
+            placeholder="5"
+            placeholderTextColor="#4A3F60"
+          />
+        </View>
+        <Pressable
+          style={[styles.btn, styles.btnPrimary, busy && { opacity: 0.5 }]}
+          onPress={seedOrders}
+          disabled={busy}
+        >
+          <Text style={styles.btnPrimaryText}>+ Seed Orders</Text>
+        </Pressable>
+      </View>
+
+      {msg ? <Text style={{ color: "#C8973A", fontSize: 12 }}>{msg}</Text> : null}
+
+      {/* Driver list */}
+      {status && status.drivers.length > 0 ? (
+        <View style={{ gap: 4, maxHeight: 220 }}>
+          <Text style={styles.label}>Drivers</Text>
+          {status.drivers.slice(0, 20).map((d) => (
+            <View key={d.id} style={styles.simDriverRow}>
+              <Text style={styles.simDriverName} numberOfLines={1}>{d.name}</Text>
+              <Text style={styles.simDriverState}>{stateLabel(d.state)}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -706,5 +967,37 @@ const styles = StyleSheet.create({
     borderColor: "#3A2F50",
     padding: 20,
     gap: 10,
+    maxHeight: "92%",
   },
+  // Simulator panel
+  simChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#3A2F50",
+    backgroundColor: "#0F0C16",
+  },
+  simChipActive: { borderColor: "#C8973A", backgroundColor: "#2A1E10" },
+  simChipText: { color: "#968AA8", fontSize: 12, fontWeight: "600" },
+  simChipTextActive: { color: "#C8973A" },
+  simStatusBar: {
+    backgroundColor: "#0F0C16",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#3A2F50",
+    padding: 8,
+  },
+  simStatusText: { color: "#EDE0C4", fontSize: 12, fontWeight: "600" },
+  simDriverRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#241A33",
+  },
+  simDriverName: { color: "#EDE0C4", fontSize: 13, fontWeight: "600", flex: 1 },
+  simDriverState: { color: "#C8973A", fontSize: 12, fontWeight: "700" },
 });

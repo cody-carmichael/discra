@@ -21,6 +21,7 @@ router = APIRouter(prefix="/drivers", tags=["drivers"])
 class DriverRosterEntry(BaseModel):
     user_id: str
     username: Optional[str] = None
+    name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     photo_url: Optional[str] = None
@@ -90,6 +91,7 @@ async def list_driver_roster(
         entry = DriverRosterEntry(
             user_id=u.user_id,
             username=u.username,
+            name=u.name,
             email=u.email,
             phone=getattr(u, "phone", None),
             photo_url=getattr(u, "photo_url", None),

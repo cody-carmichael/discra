@@ -2417,7 +2417,7 @@
       html += "<li class=\"dispatch-driver-section-label\">Online (" + driverLocations.length + ")</li>";
       html += driverLocations.map(function (item) {
         var rosterEntry = roster.find(function (r) { return r.user_id === item.driver_id; });
-        var displayName = (rosterEntry && rosterEntry.username) || item.driver_id;
+        var displayName = (rosterEntry && (rosterEntry.name || rosterEntry.username)) || item.driver_id;
         var photoUrl = rosterEntry && rosterEntry.photo_url;
         var selectedClass = item.driver_id === selectedDriverId ? " is-selected" : "";
         var avatarHtml = photoUrl
@@ -2440,7 +2440,7 @@
     if (offlineDrivers.length) {
       html += "<li class=\"dispatch-driver-section-label\">Offline (" + offlineDrivers.length + ")</li>";
       html += offlineDrivers.map(function (d) {
-        var displayName = d.username || d.user_id;
+        var displayName = d.name || d.username || d.user_id;
         var photoUrl = d.photo_url;
         var selectedClass = d.user_id === selectedDriverId ? " is-selected" : "";
         var avatarHtml = photoUrl
@@ -2471,10 +2471,12 @@
     if (!driverId) return "Unassigned";
     var roster = lastDriverRoster || [];
     var match = roster.find(function (r) { return r.user_id === driverId; });
+    if (match && match.name) return match.name;
     if (match && match.username) return match.username;
     var loc = (lastDriverLocations || []).find(function (d) { return d.driver_id === driverId; });
     if (loc && loc.username) return loc.username;
     var assignable = assignableDriverList.find(function (u) { return u.user_id === driverId; });
+    if (assignable && assignable.name) return assignable.name;
     if (assignable && assignable.username) return assignable.username;
     return driverId.length > 12 ? driverId.substring(0, 8) + "\u2026" : driverId;
   }
@@ -2542,9 +2544,9 @@
         return;
       }
       seen.add(userId);
-      const username = user && user.username ? String(user.username).trim() : "";
+      const displayName = (user && (user.name || user.username)) ? String(user.name || user.username).trim() : "";
       const email = user && user.email ? String(user.email).trim() : "";
-      const label = [username, email].filter(Boolean).join(" | ");
+      const label = [displayName, email].filter(Boolean).join(" | ");
       options.push(
         "<option value=\"" +
         C.escapeHtml(userId) +

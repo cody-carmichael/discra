@@ -314,7 +314,7 @@
       if (isUnassigned) {
         assignBtnHtml = "<button class=\"dispatch-card-assign-btn\" type=\"button\" data-queue-action=\"assign-selected\" data-order-id=\"" +
           C.escapeHtml(order.id) + "\"" + (selectedDriverId ? "" : " disabled") + ">Assign" +
-          (selectedDriverId ? " to " + C.escapeHtml(selectedDriverId) : " (select driver)") + "</button>";
+          (selectedDriverId ? " to " + C.escapeHtml(_driverDisplayName(selectedDriverId)) : " (select driver)") + "</button>";
       } else if (order.status !== "Delivered" && order.status !== "Failed") {
         assignBtnHtml = "<button class=\"dispatch-card-unassign-btn\" type=\"button\" data-queue-action=\"unassign\" data-order-id=\"" +
           C.escapeHtml(order.id) + "\">Unassign</button>";

@@ -170,6 +170,7 @@ class UserRecord(BaseModel):
     org_id: str
     user_id: str
     username: Optional[str] = None
+    name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     photo_url: Optional[str] = None

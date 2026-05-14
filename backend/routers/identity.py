@@ -85,6 +85,7 @@ def _sync_user(user, repo) -> UserRecord:
         user_id=user["sub"],
         # Fields sourced from the JWT / Cognito — always overwrite.
         username=user.get("username"),
+        name=user.get("name") or (existing_user.name if existing_user else None),
         email=user.get("email"),
         roles=user.get("groups", []),
         is_active=True,

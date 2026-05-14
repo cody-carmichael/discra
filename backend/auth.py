@@ -357,9 +357,14 @@ def _claims_to_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
     if not sub:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing sub claim")
 
+    given = claims.get("given_name", "").strip()
+    family = claims.get("family_name", "").strip()
+    full_name = claims.get("name", "").strip() or " ".join(filter(None, [given, family])) or None
+
     return {
         "sub": sub,
         "username": claims.get("cognito:username") or claims.get("username"),
+        "name": full_name,
         "email": claims.get("email"),
         "org_id": _extract_org_id(claims),
         "groups": groups,

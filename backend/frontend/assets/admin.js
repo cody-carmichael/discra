@@ -2529,16 +2529,11 @@
 
   function renderDriverOptions(users) {
     assignableDriverList = Array.isArray(users) ? users : [];
-    if (!el.driverOptions) {
-      return;
-    }
-    if (!users || !users.length) {
-      el.driverOptions.innerHTML = "";
-      return;
-    }
     const seen = new Set();
-    const options = [];
-    users.forEach(function (user) {
+    const datalistOpts = [];
+    const filterOpts = ["<option value=\"\">Any driver</option>"];
+
+    assignableDriverList.forEach(function (user) {
       const userId = (user && user.user_id ? String(user.user_id) : "").trim();
       if (!userId || seen.has(userId)) {
         return;
@@ -2547,15 +2542,26 @@
       const displayName = (user && (user.name || user.username)) ? String(user.name || user.username).trim() : "";
       const email = user && user.email ? String(user.email).trim() : "";
       const label = [displayName, email].filter(Boolean).join(" | ");
-      options.push(
+      datalistOpts.push(
         "<option value=\"" +
         C.escapeHtml(userId) +
         "\"" +
         (label ? " label=\"" + C.escapeHtml(label) + "\"" : "") +
         "></option>"
       );
+      filterOpts.push(
+        "<option value=\"" + C.escapeHtml(userId) + "\">" + C.escapeHtml(displayName || userId) + "</option>"
+      );
     });
-    el.driverOptions.innerHTML = options.join("");
+
+    if (el.driverOptions) {
+      el.driverOptions.innerHTML = datalistOpts.join("");
+    }
+    if (el.ordersAssignedFilter) {
+      const currentValue = el.ordersAssignedFilter.value;
+      el.ordersAssignedFilter.innerHTML = filterOpts.join("");
+      el.ordersAssignedFilter.value = currentValue;
+    }
   }
 
   async function refreshAssignableDrivers() {

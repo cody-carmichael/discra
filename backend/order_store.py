@@ -1,6 +1,8 @@
+import json
 import os
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple
+from decimal import Decimal
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import boto3
@@ -8,6 +10,17 @@ try:
 except ImportError:  # pragma: no cover - boto3 available in Lambda
     boto3 = None
     Key = None
+
+
+def _floats_to_decimal(item: Any) -> Any:
+    """Recursively convert Python floats to Decimal for DynamoDB compatibility.
+
+    boto3's high-level Table resource serializer rejects Python floats and
+    requires Decimal. `Order.model_dump(mode="json")` produces JSON-compatible
+    types where Decimal becomes float — we round-trip through JSON with
+    `parse_float=Decimal` to flip them back without touching int / bool / str.
+    """
+    return json.loads(json.dumps(item), parse_float=Decimal)
 
 try:
     from backend.schemas import Order, OrderStatus
@@ -165,7 +178,9 @@ class DynamoOrderStore(OrderStore):
         else:
             item.pop(_EXTERNAL_LOOKUP_ATTR, None)
 
-        self._table.put_item(Item=item)
+        # boto3 Table resource serializer rejects Python floats; flip floats to
+        # Decimal so numeric fields like `weight` persist correctly.
+        self._table.put_item(Item=_floats_to_decimal(item))
         return order
 
     def _query_orders(self, **query_kwargs) -> List[Order]:

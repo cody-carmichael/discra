@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
 from backend.order_store import DynamoOrderStore
@@ -187,3 +188,44 @@ def test_upsert_order_writes_derived_index_keys():
     assert first["source_external_order_id"] == "shopify#ext-1"
     assert "assigned_driver_id" not in second
     assert "source_external_order_id" not in second
+
+
+def test_upsert_order_serializes_weight_as_decimal_not_float():
+    """Regression: boto3 Table.put_item rejects Python floats — must be Decimal.
+
+    Previously `order.model_dump(mode="json")` produced a `float` for `weight`,
+    which caused HTTP 500 on POST /orders/ whenever weight was supplied.
+    """
+    table = _FakeTable()
+    store = _store_with_table(table)
+    now = datetime.now(timezone.utc)
+
+    store.upsert_order(
+        Order(
+            id="ord-weight",
+            customer_name="Alice",
+            reference_id="200",
+            pick_up_street="Warehouse 1",
+            pick_up_city="Test City",
+            pick_up_state="TS",
+            pick_up_zip="00000",
+            delivery_street="123 Main St",
+            delivery_city="Dest City",
+            delivery_state="DS",
+            delivery_zip="99999",
+            weight=4.5,
+            num_packages=1,
+            status=OrderStatus.CREATED,
+            created_at=now,
+            org_id="org-1",
+        )
+    )
+
+    item = table.put_calls[0]
+    assert isinstance(item["weight"], Decimal), (
+        f"weight must be Decimal for DynamoDB; got {type(item['weight']).__name__}"
+    )
+    assert item["weight"] == Decimal("4.5")
+    # Integer-shaped fields must stay int so they don't become Decimal("1") and
+    # confuse strict consumers.
+    assert isinstance(item["num_packages"], int)

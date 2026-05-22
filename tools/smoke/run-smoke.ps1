@@ -22,42 +22,48 @@ function Is-Present {
     return -not [string]::IsNullOrWhiteSpace($Value)
 }
 
+# Use Invoke-RestMethod rather than Invoke-WebRequest. On Windows PowerShell
+# 5.1 (still the default on most Windows installs), Invoke-WebRequest throws
+# `NullReferenceException` from inside the cmdlet itself before any HTTP
+# call is made, regardless of strict mode or splat shape. Invoke-RestMethod
+# is unaffected and is sufficient here because the script only needs the
+# parsed body. We treat "no exception" as HTTP 200; any non-2xx response
+# from Invoke-RestMethod throws and is caught by the script's $ErrorActionPreference.
 function Invoke-SmokeRequest {
     param(
         [string]$Method,
         [string]$Path,
-        [hashtable]$Headers = @{},
+        [hashtable]$Headers = $null,
         [string]$Body = ""
     )
 
     $uri = "$script:BaseUrl$Path"
-    $request = @{
+    Write-Host "Checking $Method $uri"
+
+    $invokeArgs = @{
         Uri         = $uri
         Method      = $Method
-        Headers     = $Headers
         TimeoutSec  = $script:TimeoutSeconds
         ErrorAction = "Stop"
     }
-
+    if ($Headers -and $Headers.Count -gt 0) {
+        $invokeArgs.Headers = $Headers
+    }
     if (Is-Present $Body) {
-        $request.Body = $Body
-        $request.ContentType = "application/json"
+        $invokeArgs.Body = $Body
+        $invokeArgs.ContentType = "application/json"
     }
 
-    Write-Host "Checking $Method $uri"
-    return Invoke-WebRequest @request
-}
+    $parsed = Invoke-RestMethod @invokeArgs
 
-function Read-JsonOrNull {
-    param([string]$RawText)
-    if (-not (Is-Present $RawText)) {
-        return $null
-    }
-    try {
-        return $RawText | ConvertFrom-Json -Depth 20
-    }
-    catch {
-        return $null
+    # Synthesize a response-like object so callers can use $resp.StatusCode
+    # and treat $resp.Content as a JSON string when needed. If we reach this
+    # line Invoke-RestMethod did not throw, so HTTP status was 2xx.
+    $rawContent = if ($null -eq $parsed) { "" } else { ConvertTo-Json -InputObject $parsed -Depth 20 -Compress }
+    return [pscustomobject]@{
+        StatusCode = 200
+        Content    = $rawContent
+        Parsed     = $parsed
     }
 }
 
@@ -107,11 +113,11 @@ function Add-Result {
     }
 }
 
-$BaseUrl = Normalize-BaseUrl -Value $ApiBaseUrl
-$TimeoutSeconds = $TimeoutSeconds
-$Results = @()
+$script:BaseUrl = Normalize-BaseUrl -Value $ApiBaseUrl
+$script:TimeoutSeconds = $TimeoutSeconds
+$script:Results = @()
 
-Write-Host "Smoke target: $BaseUrl"
+Write-Host "Smoke target: $script:BaseUrl"
 
 $backendHealth = Invoke-SmokeRequest -Method "GET" -Path "/backend/health"
 Assert-Status -Name "Backend /backend/health" -Response $backendHealth
@@ -132,9 +138,15 @@ if (Is-Present $OrdersWebhookToken) {
             [ordered]@{
                 external_order_id = $externalId
                 customer_name     = "Smoke Test Order"
-                reference_number  = 100001
-                pick_up_address   = "1 Market St, San Francisco, CA"
-                delivery          = "1 Ferry Building, San Francisco, CA"
+                reference_id      = "SMOKE-$($now.ToUnixTimeSeconds())"
+                pick_up_street    = "1 Market St"
+                pick_up_city      = "San Francisco"
+                pick_up_state     = "CA"
+                pick_up_zip       = "94105"
+                delivery_street   = "1 Ferry Building"
+                delivery_city     = "San Francisco"
+                delivery_state    = "CA"
+                delivery_zip      = "94111"
                 dimensions        = "10x10x10 in"
                 weight            = 2.5
                 notes             = "Created by smoke check"
@@ -156,7 +168,7 @@ if (Is-Present $OrdersWebhookToken) {
     $webhookResponse = Invoke-SmokeRequest -Method "POST" -Path "/backend/webhooks/orders" -Headers $webhookHeaders -Body $rawPayload
     Assert-Status -Name "POST /backend/webhooks/orders" -Response $webhookResponse
 
-    $webhookBody = Read-JsonOrNull -RawText $webhookResponse.Content
+    $webhookBody = $webhookResponse.Parsed
     if ($null -eq $webhookBody) {
         throw "POST /backend/webhooks/orders returned non-JSON body."
     }
@@ -173,6 +185,6 @@ else {
 
 Write-Host ""
 Write-Host "Smoke check summary:"
-$Results | Format-Table -AutoSize
+$script:Results | Format-Table -AutoSize
 Write-Host ""
 Write-Host "All required smoke checks passed."

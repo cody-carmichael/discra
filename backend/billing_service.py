@@ -20,6 +20,7 @@ except ImportError:  # pragma: no cover - installed via requirements
     stripe = None
 
 try:
+    from backend.dynamo_serialization import model_to_dynamo_item
     from backend.schemas import (
         BillingInvitationRecord,
         BillingSeatState,
@@ -29,6 +30,7 @@ try:
         SeatSubscriptionRecord,
     )
 except ModuleNotFoundError:  # local run from backend/ directory
+    from dynamo_serialization import model_to_dynamo_item
     from schemas import (
         BillingInvitationRecord,
         BillingSeatState,
@@ -180,7 +182,7 @@ class DynamoBillingStore(BillingStore):
         return SeatSubscriptionRecord.model_validate(item)
 
     def upsert_subscription(self, subscription: SeatSubscriptionRecord) -> SeatSubscriptionRecord:
-        self._subscriptions_table.put_item(Item=subscription.model_dump(mode="json"))
+        self._subscriptions_table.put_item(Item=model_to_dynamo_item(subscription))
         return subscription
 
     def get_invitation(self, org_id: str, invitation_id: str) -> Optional[BillingInvitationRecord]:
@@ -190,7 +192,7 @@ class DynamoBillingStore(BillingStore):
         return BillingInvitationRecord.model_validate(item)
 
     def upsert_invitation(self, invitation: BillingInvitationRecord) -> BillingInvitationRecord:
-        self._invitations_table.put_item(Item=invitation.model_dump(mode="json"))
+        self._invitations_table.put_item(Item=model_to_dynamo_item(invitation))
         return invitation
 
     def list_invitations(

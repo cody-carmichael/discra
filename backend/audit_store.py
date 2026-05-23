@@ -11,8 +11,10 @@ except ImportError:  # pragma: no cover - boto3 available in Lambda
     Key = None
 
 try:
+    from backend.dynamo_serialization import model_to_dynamo_item
     from backend.schemas import AuditLogRecord
 except ModuleNotFoundError:  # local run from backend/ directory
+    from dynamo_serialization import model_to_dynamo_item
     from schemas import AuditLogRecord
 
 
@@ -66,7 +68,7 @@ class DynamoAuditLogStore(AuditLogStore):
         self._table = boto3.resource("dynamodb").Table(table_name)
 
     def put_event(self, event: AuditLogRecord) -> AuditLogRecord:
-        self._table.put_item(Item=event.model_dump(mode="json"))
+        self._table.put_item(Item=model_to_dynamo_item(event))
         return event
 
     def list_events(

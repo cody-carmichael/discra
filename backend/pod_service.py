@@ -11,12 +11,14 @@ except ImportError:  # pragma: no cover - boto3 available in Lambda
     boto3 = None
 
 try:
+    from backend.dynamo_serialization import model_to_dynamo_item
     from backend.schemas import (
         PodArtifactType,
         PodMetadataRecord,
         PodPresignArtifactRequest,
     )
 except ModuleNotFoundError:  # local run from backend/ directory
+    from dynamo_serialization import model_to_dynamo_item
     from schemas import PodArtifactType, PodMetadataRecord, PodPresignArtifactRequest
 
 MAX_UPLOAD_EXPIRY_SECONDS = 900
@@ -170,7 +172,9 @@ class DynamoS3PodDataStore(PodDataStore):
         )
 
     def put_metadata(self, metadata: PodMetadataRecord) -> PodMetadataRecord:
-        self.table.put_item(Item=metadata.model_dump(mode="json"))
+        # PodLocation.lat / .lng are floats; route through float→Decimal
+        # so boto3's high-level Table serializer accepts them.
+        self.table.put_item(Item=model_to_dynamo_item(metadata))
         return metadata
 
     def list_by_order_id(self, org_id: str, order_id: str) -> List[PodMetadataRecord]:

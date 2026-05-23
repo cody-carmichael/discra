@@ -2,8 +2,14 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
+from backend.dynamo_serialization import floats_to_decimal
 from backend.order_store import DynamoOrderStore
 from backend.schemas import Order, OrderStatus
+
+# Confirm the helper used by DynamoOrderStore is the shared module's
+# floats_to_decimal — guards against accidental forks of the float→Decimal
+# logic. (PR migrating to shared module: extends #154.)
+assert floats_to_decimal({"x": 1.5})["x"] == Decimal("1.5")
 
 
 class _FakeTable:

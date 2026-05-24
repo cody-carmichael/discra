@@ -1111,9 +1111,10 @@
   // Login screen button
   if (el.loginScreenBtn) {
     el.loginScreenBtn.addEventListener("click", function () {
-      launchHostedLogin().catch(function (e) {
-        if (el.loginScreenMessage) C.showMessage(el.loginScreenMessage, e.message, "error");
-      });
+      // Stage C: route to the in-app SRP login page, not the Cognito Hosted
+      // UI. Pass `?next=` so login.js redirects us back to the driver app.
+      var next = window.location.pathname + (window.location.search || "");
+      window.location.assign(apiBase + "/ui/login?next=" + encodeURIComponent(next));
     });
   }
   var loginCreateAccount = document.getElementById("login-create-account");

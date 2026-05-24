@@ -64,7 +64,7 @@ def test_ui_assets_and_service_worker_are_served():
     assert "DiscraCommon" in common_js.text
     assert "startHostedLogin" in common_js.text
     assert "consumeHostedLoginCallback" in common_js.text
-    assert "resolveAdminPath" in login_js.text
+    assert "resolvePostLoginPath" in login_js.text
     assert "IntersectionObserver" in landing_js.text
     assert "DiscraAdmin" in admin_manifest.text
     assert "DiscraDriver" in driver_manifest.text

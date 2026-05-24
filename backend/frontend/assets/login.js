@@ -39,7 +39,18 @@
     });
   }
 
-  function resolveAdminPath() {
+  function resolvePostLoginPath() {
+    // Honor an explicit ?next=<same-origin path> if the caller (admin.js /
+    // driver.js Sign In buttons) handed us one. Strictly validate that it
+    // begins with "/" and contains no scheme/host so we can't be coerced into
+    // redirecting off-domain.
+    try {
+      var params = new URLSearchParams(window.location.search || "");
+      var next = (params.get("next") || "").trim();
+      if (next && next.charAt(0) === "/" && next.indexOf("//") !== 0 && next.indexOf(":") === -1) {
+        return next;
+      }
+    } catch (_) {}
     if (_adminPath.trim()) return _adminPath.trim();
     var p = window.location.pathname;
     return p.endsWith("/login") ? p.slice(0, -"/login".length) + "/admin" : "/ui/admin";
@@ -84,7 +95,7 @@
         return;
       }
       await setSessionCookie(result.idToken);
-      window.location.assign(resolveAdminPath());
+      window.location.assign(resolvePostLoginPath());
     } catch (err) {
       C.showMessage(el.message, friendlyError(err), "error");
       el.submit.disabled = false;
@@ -101,7 +112,7 @@
     try {
       var result = await DiscraAuth.completeNewPassword(_pendingChallengeUser, newPw);
       await setSessionCookie(result.idToken);
-      window.location.assign(resolveAdminPath());
+      window.location.assign(resolvePostLoginPath());
     } catch (err) {
       C.showMessage(el.newPasswordMessage, friendlyError(err), "error");
       el.newPasswordSubmit.disabled = false;
@@ -161,7 +172,7 @@
     try {
       var session = await C.getAuthSession(apiBase);
       if (session && session.active) {
-        window.location.assign(resolveAdminPath());
+        window.location.assign(resolvePostLoginPath());
         return;
       }
     } catch (_) {}

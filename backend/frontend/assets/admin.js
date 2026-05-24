@@ -3757,11 +3757,18 @@
   // Human-readable labels for each internal parser key.
   // Descriptions focus on the email format/layout, not the company name,
   // so any business can identify the right option regardless of carrier.
+  // Legacy keys (email-marken / email-airspace / email-cap) point at the same
+  // labels as their format-named successors so any rule rows that haven't
+  // been migrated yet still render correctly.
   var _PARSER_LABELS = {
+    "email-html-table":      "Table layout — order details appear in an HTML table with columns for pickup, delivery, and timing",
+    "email-labeled-fields":  "Labeled sections — each field is on its own line: PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP BY / DELIVER BY",
+    "email-pdf-attachment":  "PDF attachment — the email body has little detail; the full order is inside an attached PDF",
+    "email-ai":              "Let AI read it — works with any email format (we'll figure it out automatically)",
+    // Legacy aliases — same labels for any pre-rename rule rows still in DDB.
     "email-marken":   "Table layout — order details appear in an HTML table with columns for pickup, delivery, and timing",
     "email-airspace": "Labeled sections — each field is on its own line: PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP BY / DELIVER BY",
     "email-cap":      "PDF attachment — the email body has little detail; the full order is inside an attached PDF",
-    "email-ai":       "Let AI read it — works with any email format (we'll figure it out automatically)",
   };
 
   function _parserLabel(key) {

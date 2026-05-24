@@ -1,7 +1,12 @@
 """Email classification: determines whether an email is an order dispatch.
 
-Uses a sender allowlist + subject regex approach. Inspects forwarded email
-headers since all emails arrive as forwards from the dispatch inbox.
+All classification rules are per-org config (see `/email/rules` CRUD). The
+classifier matches forwarded-email headers against each org's configured
+sender/subject patterns. There are no built-in, company-specific rules — any
+new org configures their own vendors via the Admin console.
+
+Inspects forwarded email headers since dispatch emails typically arrive as
+forwards from a relay inbox.
 """
 
 import re
@@ -13,12 +18,6 @@ from typing import Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-class EmailSource(str, Enum):
-    MARKEN = "email-marken"
-    AIRSPACE = "email-airspace"
-    CAP_LOGISTICS = "email-cap"
-
-
 class SkipReason(str, Enum):
     NO_SENDER_MATCH = "no_sender_match"
     NO_SUBJECT_MATCH = "no_subject_match"
@@ -28,32 +27,11 @@ class SkipReason(str, Enum):
 @dataclass
 class ClassificationResult:
     is_order: bool
-    # Parser key as a plain string. For built-in rules it equals an
-    # EmailSource value; for custom rules it is the rule's parser_type.
+    # Parser key as a plain string, equal to the matched rule's parser_type.
     source: Optional[str] = None
     skip_reason: Optional[SkipReason] = None
     original_sender: str = ""
     original_subject: str = ""
-
-
-# Sender patterns mapped to (source, subject_regex)
-_SENDER_RULES = [
-    {
-        "sender_pattern": re.compile(r"no-reply@marken\.com", re.IGNORECASE),
-        "subject_pattern": re.compile(r"PICKUP\s+ALERT\s+#\d+", re.IGNORECASE),
-        "source": EmailSource.MARKEN,
-    },
-    {
-        "sender_pattern": re.compile(r"ops@airspace\.com|dispatch@vellogistix\.com", re.IGNORECASE),
-        "subject_pattern": re.compile(r"Tracking\s+ID:.*Order\s+#:.*(Pickup|Delivery)\s+Dispatch", re.IGNORECASE),
-        "source": EmailSource.AIRSPACE,
-    },
-    {
-        "sender_pattern": re.compile(r"vendors@caplogistics\.com", re.IGNORECASE),
-        "subject_pattern": re.compile(r"Agent\s+Alert\s+\w+", re.IGNORECASE),
-        "source": EmailSource.CAP_LOGISTICS,
-    },
-]
 
 # Pattern to extract forwarded email headers from the HTML body
 _FWD_FROM_PATTERN = re.compile(
@@ -150,81 +128,60 @@ def classify_email(
     if fwd_subject.lower().startswith("fwd:"):
         fwd_subject = fwd_subject[4:].strip()
 
-    # Check org-level custom rules first (highest priority). Rules with a
-    # specific subject_pattern are tried before empty-subject catch-alls so a
-    # catch-all can't shadow more specific parsers regardless of saved order.
-    if custom_rules:
-        ordered_rules = sorted(
-            custom_rules,
-            key=lambda r: not r.get("subject_pattern", "").strip(),
+    # All classification comes from per-org config. Rules with a specific
+    # subject_pattern are tried before empty-subject catch-alls so a catch-all
+    # can't shadow more specific parsers regardless of saved order.
+    if not custom_rules:
+        logger.debug("Unknown sender: %s (no rules configured)", original_sender)
+        return ClassificationResult(
+            is_order=False,
+            skip_reason=SkipReason.NO_SENDER_MATCH,
+            original_sender=original_sender,
+            original_subject=original_subject,
         )
-        sender_matched = False
-        for rule in ordered_rules:
-            if not rule.get("enabled", True):
-                continue
-            sp = rule.get("sender_pattern", "").lower()
-            if not sp or sp not in original_sender.lower():
-                continue
-            sender_matched = True
-            subj_pat = rule.get("subject_pattern", "").lower()
-            if (
-                not subj_pat
-                or subj_pat in original_subject.lower()
-                or subj_pat in fwd_subject.lower()
-            ):
-                logger.info(
-                    "Custom rule '%s' matched sender %s",
-                    rule.get("name", ""),
-                    original_sender,
-                )
-                return ClassificationResult(
-                    is_order=True,
-                    source=rule.get("parser_type", ""),
-                    original_sender=original_sender,
-                    original_subject=original_subject,
-                )
-        if sender_matched:
+
+    ordered_rules = sorted(
+        custom_rules,
+        key=lambda r: not r.get("subject_pattern", "").strip(),
+    )
+    sender_matched = False
+    for rule in ordered_rules:
+        if not rule.get("enabled", True):
+            continue
+        sp = rule.get("sender_pattern", "").lower()
+        if not sp or sp not in original_sender.lower():
+            continue
+        sender_matched = True
+        subj_pat = rule.get("subject_pattern", "").lower()
+        if (
+            not subj_pat
+            or subj_pat in original_subject.lower()
+            or subj_pat in fwd_subject.lower()
+        ):
             logger.info(
-                "Custom rules matched sender %s but no subject_pattern accepted %r",
+                "Rule '%s' matched sender %s",
+                rule.get("name", ""),
                 original_sender,
-                original_subject,
             )
             return ClassificationResult(
-                is_order=False,
-                skip_reason=SkipReason.NO_SUBJECT_MATCH,
+                is_order=True,
+                source=rule.get("parser_type", ""),
                 original_sender=original_sender,
                 original_subject=original_subject,
             )
+    if sender_matched:
+        logger.info(
+            "Rules matched sender %s but no subject_pattern accepted %r",
+            original_sender,
+            original_subject,
+        )
+        return ClassificationResult(
+            is_order=False,
+            skip_reason=SkipReason.NO_SUBJECT_MATCH,
+            original_sender=original_sender,
+            original_subject=original_subject,
+        )
 
-    # Fall back to built-in sender rules
-    for rule in _SENDER_RULES:
-        sender_match = rule["sender_pattern"].search(original_sender)
-        if sender_match:
-            # Known sender -- check subject
-            subject_match = rule["subject_pattern"].search(original_subject) or rule["subject_pattern"].search(
-                fwd_subject
-            )
-            if subject_match:
-                return ClassificationResult(
-                    is_order=True,
-                    source=rule["source"].value,
-                    original_sender=original_sender,
-                    original_subject=original_subject,
-                )
-            else:
-                logger.info(
-                    "Known sender %s but subject does not match order pattern: %s",
-                    original_sender,
-                    original_subject,
-                )
-                return ClassificationResult(
-                    is_order=False,
-                    skip_reason=SkipReason.NO_SUBJECT_MATCH,
-                    original_sender=original_sender,
-                    original_subject=original_subject,
-                )
-
-    # Unknown sender
     logger.debug("Unknown sender: %s (subject: %s)", original_sender, original_subject)
     return ClassificationResult(
         is_order=False,

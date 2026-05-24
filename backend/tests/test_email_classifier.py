@@ -1,8 +1,14 @@
+"""Tests for the per-org email classifier.
+
+All classification is driven by `custom_rules` (per-org config). Built-in
+carrier-specific rules were removed in the 2026 rename — see
+`backend/email_classifier.py` for the current contract.
+"""
+
 import os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from backend.email_classifier import (
-    EmailSource,
     SkipReason,
     classify_email,
     _extract_forwarded_headers,
@@ -13,28 +19,28 @@ from backend.email_classifier import (
 
 def test_extract_forwarded_headers_html():
     html = (
-        '<div><b>From:</b> Ops &lt;no-reply@marken.com&gt;</b> <br>'
+        '<div><b>From:</b> Ops &lt;ops@somecarrier.com&gt;</b> <br>'
         '<b>Subject:</b> PICKUP ALERT #12345<br>'
     )
     sender, subject = _extract_forwarded_headers(html, "")
-    assert sender == "no-reply@marken.com"
+    assert sender == "ops@somecarrier.com"
     assert subject == "PICKUP ALERT #12345"
 
 
 def test_extract_forwarded_headers_plain_text():
-    text = "From: no-reply@marken.com\nSubject: PICKUP ALERT #99999\n"
+    text = "From: ops@somecarrier.com\nSubject: PICKUP ALERT #99999\n"
     sender, subject = _extract_forwarded_headers("", text)
-    assert sender == "no-reply@marken.com"
+    assert sender == "ops@somecarrier.com"
     assert subject == "PICKUP ALERT #99999"
 
 
 def test_extract_forwarded_headers_html_entities():
     html = (
-        '<b>From:</b> &lt;ops@airspace.com&gt; <br>'
+        '<b>From:</b> &lt;ops@somecarrier.com&gt; <br>'
         '<b>Subject:</b> Tracking ID: ABC &amp; Order #: 123<br>'
     )
     sender, subject = _extract_forwarded_headers(html, "")
-    assert sender == "ops@airspace.com"
+    assert sender == "ops@somecarrier.com"
     assert "Tracking ID: ABC & Order #: 123" == subject
 
 
@@ -44,106 +50,45 @@ def test_extract_no_headers():
     assert subject == ""
 
 
-# --- classify_email: Marken ---
+# --- classify_email: no rules configured ---
 
-def test_classify_marken_order():
-    html = '<b>From:</b> &lt;no-reply@marken.com&gt; <br><b>Subject:</b> PICKUP ALERT #12413656<br>'
+def test_classify_with_no_rules_returns_no_sender_match():
+    """With no custom rules and no built-ins, every email is unknown."""
     result = classify_email(
-        subject="Fwd: PICKUP ALERT #12413656",
-        sender="dispatch@vellogistix.com",
-        html_body=html,
-    )
-    assert result.is_order is True
-    assert result.source == EmailSource.MARKEN
-    assert result.original_sender == "no-reply@marken.com"
-
-
-def test_classify_marken_non_order_subject():
-    html = '<b>From:</b> &lt;no-reply@marken.com&gt; <br><b>Subject:</b> Re: Shipment Confirmation<br>'
-    result = classify_email(
-        subject="Fwd: Re: Shipment Confirmation",
-        sender="dispatch@vellogistix.com",
-        html_body=html,
-    )
-    assert result.is_order is False
-    assert result.skip_reason == SkipReason.NO_SUBJECT_MATCH
-
-
-# --- classify_email: Airspace ---
-
-def test_classify_airspace_order():
-    html = (
-        '<b>From:</b> &lt;ops@airspace.com&gt; <br>'
-        '<b>Subject:</b> Tracking ID: ATDRW32YW7, Order #: 3541972 - Pickup Dispatch<br>'
-    )
-    result = classify_email(
-        subject="Fwd: Tracking ID: ATDRW32YW7, Order #: 3541972 - Pickup Dispatch",
-        sender="dispatch@vellogistix.com",
-        html_body=html,
-    )
-    assert result.is_order is True
-    assert result.source == EmailSource.AIRSPACE
-
-
-# --- classify_email: CAP Logistics ---
-
-def test_classify_cap_logistics_order():
-    html = '<b>From:</b> &lt;vendors@caplogistics.com&gt; <br><b>Subject:</b> Agent Alert 2603A7308<br>'
-    result = classify_email(
-        subject="Fwd: Agent Alert 2603A7308",
-        sender="dispatch@vellogistix.com",
-        html_body=html,
-    )
-    assert result.is_order is True
-    assert result.source == EmailSource.CAP_LOGISTICS
-
-
-# --- classify_email: Unknown sender ---
-
-def test_classify_unknown_sender():
-    result = classify_email(
-        subject="Hello there",
-        sender="random@gmail.com",
+        subject="Some Dispatch",
+        sender="ops@somecarrier.com",
     )
     assert result.is_order is False
     assert result.skip_reason == SkipReason.NO_SENDER_MATCH
 
 
-# --- Envelope fallback ---
-
-def test_classify_uses_envelope_when_no_forwarded_headers():
+def test_classify_unknown_sender_with_unrelated_rules():
+    """A custom rule for a different sender doesn't match an unrelated email."""
+    rule = {
+        "rule_id": "rule-1",
+        "name": "Test rule",
+        "sender_pattern": "carrierA.com",
+        "subject_pattern": "",
+        "parser_type": "email-html-table",
+        "enabled": True,
+    }
     result = classify_email(
-        subject="PICKUP ALERT #99999",
-        sender="no-reply@marken.com",
-        html_body="<p>Simple body with no forwarded headers</p>",
+        subject="Hello there",
+        sender="random@gmail.com",
+        custom_rules=[rule],
     )
-    assert result.is_order is True
-    assert result.source == EmailSource.MARKEN
-    assert result.original_sender == "no-reply@marken.com"
+    assert result.is_order is False
+    assert result.skip_reason == SkipReason.NO_SENDER_MATCH
 
 
-# --- Fwd: prefix stripping for subject fallback ---
+# --- classify_email: with custom rules ---
 
-def test_classify_strips_fwd_from_envelope_subject():
-    """When forwarded headers aren't found, the classifier should strip Fwd: from envelope subject."""
-    result = classify_email(
-        subject="Fwd: Agent Alert ABC123",
-        sender="vendors@caplogistics.com",
-        html_body="",
-        text_body="",
-    )
-    assert result.is_order is True
-    assert result.source == EmailSource.CAP_LOGISTICS
-
-
-# --- Custom rules ---
-
-_VELLOGISTIX_RULE = {
+_CARRIER_A_RULE = {
     "rule_id": "rule-1",
-    "name": "Vel Logistix Airspace",
-    "sender_pattern": "vellogistix.com",
+    "name": "Carrier A → table",
+    "sender_pattern": "carriera.com",
     "subject_pattern": "",
-    "parser_type": "email-airspace",
+    "parser_type": "email-html-table",
     "enabled": True,
 }
 
@@ -151,87 +96,77 @@ _VELLOGISTIX_RULE = {
 def test_custom_rule_matches_sender():
     result = classify_email(
         subject="Fwd: some dispatch",
-        sender="dispatch@vellogistix.com",
-        custom_rules=[_VELLOGISTIX_RULE],
+        sender="ops@carriera.com",
+        custom_rules=[_CARRIER_A_RULE],
     )
     assert result.is_order is True
-    assert result.source == "email-airspace"
-    assert result.original_sender == "dispatch@vellogistix.com"
+    assert result.source == "email-html-table"
+    assert result.original_sender == "ops@carriera.com"
 
 
-def test_custom_rule_with_subject_filter():
-    rule = {**_VELLOGISTIX_RULE, "subject_pattern": "dispatch"}
+def test_custom_rule_with_subject_filter_matches():
+    rule = {**_CARRIER_A_RULE, "subject_pattern": "dispatch"}
     result = classify_email(
-        subject="Fwd: Airspace Dispatch Order",
-        sender="dispatch@vellogistix.com",
+        subject="Fwd: Dispatch Order #555",
+        sender="ops@carriera.com",
         custom_rules=[rule],
     )
     assert result.is_order is True
 
 
 def test_custom_rule_subject_mismatch():
-    rule = {**_VELLOGISTIX_RULE, "subject_pattern": "dispatch"}
+    rule = {**_CARRIER_A_RULE, "subject_pattern": "dispatch"}
     result = classify_email(
         subject="Fwd: Weekly Summary",
-        sender="dispatch@vellogistix.com",
+        sender="ops@carriera.com",
         custom_rules=[rule],
     )
     assert result.is_order is False
     assert result.skip_reason == SkipReason.NO_SUBJECT_MATCH
 
 
-def test_custom_rule_priority_over_builtin():
-    """A custom rule matching a built-in sender should be used instead of the built-in rule."""
-    # Custom rule overrides the Marken built-in rule to route to a different parser
-    override_rule = {
-        "rule_id": "rule-override",
-        "name": "Override Marken",
-        "sender_pattern": "marken.com",
-        "subject_pattern": "",
-        "parser_type": "email-cap",
-        "enabled": True,
-    }
-    html = '<b>From:</b> &lt;no-reply@marken.com&gt; <br><b>Subject:</b> PICKUP ALERT #12345<br>'
+def test_classify_uses_envelope_when_no_forwarded_headers():
+    """Without forwarded headers, the envelope sender + subject are used directly."""
     result = classify_email(
-        subject="Fwd: PICKUP ALERT #12345",
-        sender="dispatch@vellogistix.com",
-        html_body=html,
-        custom_rules=[override_rule],
+        subject="PICKUP ALERT #99999",
+        sender="ops@carriera.com",
+        html_body="<p>Simple body with no forwarded headers</p>",
+        custom_rules=[_CARRIER_A_RULE],
     )
     assert result.is_order is True
-    assert result.source == "email-cap"
+    assert result.source == "email-html-table"
+    assert result.original_sender == "ops@carriera.com"
+
+
+def test_classify_strips_fwd_from_envelope_subject():
+    rule = {**_CARRIER_A_RULE, "subject_pattern": "Pickup Alert"}
+    result = classify_email(
+        subject="Fwd: Pickup Alert 2603A7308",
+        sender="ops@carriera.com",
+        html_body="",
+        text_body="",
+        custom_rules=[rule],
+    )
+    assert result.is_order is True
 
 
 def test_disabled_custom_rule_skipped():
-    disabled_rule = {**_VELLOGISTIX_RULE, "sender_pattern": "unknown-carrier.com", "enabled": False}
+    disabled_rule = {**_CARRIER_A_RULE, "enabled": False}
     result = classify_email(
         subject="Fwd: some dispatch",
-        sender="ops@unknown-carrier.com",
+        sender="ops@carriera.com",
         custom_rules=[disabled_rule],
     )
-    # Falls through to built-in rules; unknown-carrier.com is not in built-ins → NO_SENDER_MATCH
+    # No other rules, no built-ins → NO_SENDER_MATCH
     assert result.is_order is False
     assert result.skip_reason == SkipReason.NO_SENDER_MATCH
 
 
-def test_no_custom_rules_unchanged():
-    """Passing custom_rules=None should produce same result as before."""
-    html = '<b>From:</b> &lt;no-reply@marken.com&gt; <br><b>Subject:</b> PICKUP ALERT #12345<br>'
-    result = classify_email(
-        subject="Fwd: PICKUP ALERT #12345",
-        sender="dispatch@vellogistix.com",
-        html_body=html,
-        custom_rules=None,
-    )
-    assert result.is_order is True
-    assert result.source == EmailSource.MARKEN
-
-
 def test_custom_rule_case_insensitive():
-    rule = {**_VELLOGISTIX_RULE, "sender_pattern": "VelLogistix.COM"}
+    rule = {**_CARRIER_A_RULE, "sender_pattern": "CarrierA.COM"}
     result = classify_email(
         subject="Fwd: dispatch",
-        sender="Dispatch@VelLogistix.com",
+        sender="Dispatch@CarrierA.com",
         custom_rules=[rule],
     )
     assert result.is_order is True
@@ -239,10 +174,10 @@ def test_custom_rule_case_insensitive():
 
 def test_custom_rule_domain_only_pattern():
     """Domain without @ should still match as a substring."""
-    rule = {**_VELLOGISTIX_RULE, "sender_pattern": "vellogistix.com"}
+    rule = {**_CARRIER_A_RULE, "sender_pattern": "carriera.com"}
     result = classify_email(
         subject="Fwd: dispatch",
-        sender="ops@vellogistix.com",
+        sender="ops@carriera.com",
         custom_rules=[rule],
     )
     assert result.is_order is True
@@ -250,10 +185,10 @@ def test_custom_rule_domain_only_pattern():
 
 def test_custom_rule_subject_checked_against_fwd_subject():
     """Subject pattern should also match against the Fwd-stripped envelope subject."""
-    rule = {**_VELLOGISTIX_RULE, "subject_pattern": "airspace dispatch"}
+    rule = {**_CARRIER_A_RULE, "subject_pattern": "labeled dispatch"}
     result = classify_email(
-        subject="Fwd: Airspace Dispatch",
-        sender="ops@vellogistix.com",
+        subject="Fwd: Labeled Dispatch",
+        sender="ops@carriera.com",
         # No HTML body — original_subject will fall back to envelope subject (after Fwd: strip)
         html_body="",
         text_body="",
@@ -264,7 +199,7 @@ def test_custom_rule_subject_checked_against_fwd_subject():
 
 # --- Multi-rule iteration ---
 
-def _rule(name, sender, subject_pattern, parser_type="email-airspace", enabled=True):
+def _rule(name, sender, subject_pattern, parser_type="email-labeled-fields", enabled=True):
     return {
         "rule_id": f"rule-{name}",
         "name": name,
@@ -278,72 +213,59 @@ def _rule(name, sender, subject_pattern, parser_type="email-airspace", enabled=T
 def test_multiple_rules_same_sender_first_fails_second_matches():
     """When rule A (subject 'PICKUP ALERT') fails, rule B (subject 'Agent Alert') should still be evaluated."""
     rules = [
-        _rule("vel ai", "vellogistix.com", "PICKUP ALERT", parser_type="email-airspace"),
-        _rule("vel table", "vellogistix.com", "Agent Alert", parser_type="email-cap"),
+        _rule("rule-table", "carriera.com", "PICKUP ALERT", parser_type="email-html-table"),
+        _rule("rule-pdf", "carriera.com", "Agent Alert", parser_type="email-pdf-attachment"),
     ]
     result = classify_email(
         subject="Agent Alert 2604A5414",
-        sender="dispatch@vellogistix.com",
+        sender="dispatch@carriera.com",
         custom_rules=rules,
     )
     assert result.is_order is True
-    assert result.source == "email-cap"
+    assert result.source == "email-pdf-attachment"
 
 
 def test_catchall_rule_after_specific_rules():
     """With an empty-subject catch-all at the end, any sender-matching email should classify as an order."""
     rules = [
-        _rule("vel ai", "vellogistix.com", "PICKUP ALERT", parser_type="email-airspace"),
-        _rule("vel table", "vellogistix.com", "Agent Alert", parser_type="email-cap"),
-        _rule("Marken", "vellogistix.com", "Marken", parser_type="email-marken"),
-        _rule("Ai No Subject", "vellogistix.com", "", parser_type="email-airspace"),
+        _rule("specific-table", "carriera.com", "PICKUP ALERT", parser_type="email-html-table"),
+        _rule("specific-pdf", "carriera.com", "Agent Alert", parser_type="email-pdf-attachment"),
+        _rule("catchall-ai", "carriera.com", "", parser_type="email-ai"),
     ]
     result = classify_email(
         subject="Tracking ID: AT4YC6GGW9, Order #: 3607991 - Delivery Dispatch",
-        sender="dispatch@vellogistix.com",
+        sender="dispatch@carriera.com",
         custom_rules=rules,
     )
     assert result.is_order is True
-    assert result.source == "email-airspace"
+    assert result.source == "email-ai"
 
 
 def test_catchall_rule_sorted_last_even_if_saved_first():
     """A catch-all placed first in saved order must not shadow a more specific rule below it."""
     rules = [
-        _rule("Ai No Subject", "vellogistix.com", "", parser_type="email-airspace"),
-        _rule("vel table", "vellogistix.com", "Agent Alert", parser_type="email-cap"),
+        _rule("catchall-ai", "carriera.com", "", parser_type="email-ai"),
+        _rule("specific-pdf", "carriera.com", "Agent Alert", parser_type="email-pdf-attachment"),
     ]
     result = classify_email(
         subject="Agent Alert 2604A5414",
-        sender="dispatch@vellogistix.com",
+        sender="dispatch@carriera.com",
         custom_rules=rules,
     )
     assert result.is_order is True
-    assert result.source == "email-cap"
+    assert result.source == "email-pdf-attachment"
 
 
 def test_all_matching_sender_rules_fail_subject():
     """If every sender-matching rule has a subject filter that fails, return NO_SUBJECT_MATCH."""
     rules = [
-        _rule("vel ai", "vellogistix.com", "PICKUP ALERT"),
-        _rule("vel table", "vellogistix.com", "Agent Alert"),
+        _rule("rule-a", "carriera.com", "PICKUP ALERT"),
+        _rule("rule-b", "carriera.com", "Agent Alert"),
     ]
     result = classify_email(
         subject="Weekly Summary",
-        sender="dispatch@vellogistix.com",
+        sender="dispatch@carriera.com",
         custom_rules=rules,
     )
     assert result.is_order is False
     assert result.skip_reason == SkipReason.NO_SUBJECT_MATCH
-
-
-def test_no_custom_rule_sender_match_falls_through_to_builtin():
-    """If no custom rule's sender matches, built-in rules should still run."""
-    unrelated_rule = _rule("other", "otherdomain.com", "anything", parser_type="email-cap")
-    result = classify_email(
-        subject="PICKUP ALERT #55555",
-        sender="no-reply@marken.com",
-        custom_rules=[unrelated_rule],
-    )
-    assert result.is_order is True
-    assert result.source == EmailSource.MARKEN

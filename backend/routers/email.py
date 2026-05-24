@@ -391,14 +391,14 @@ async def delete_email_rule(
 
 _DETECT_PROMPT = """You are an email format classifier for a logistics dispatch system. Classify the email into one of these formats based on its layout and content structure:
 
-- "email-marken": The email body contains an HTML table with columns showing order number, pickup address, delivery address, pieces, weight, and timing fields arranged side by side. Fields like PCS/WT, DIMS, PICKUP START, PICKUP END, DELIVER BY. Contains a "PICKUP FROM:" section.
-- "email-airspace": The email body uses labeled sections — each field is on its own line: PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP BY / PICKUP TIME, TENDER BY TIME / DELIVER BY, PICKUP CONTACT / DELIVERY CONTACT, TOTAL PIECES, TOTAL WEIGHT, AIR WAYBILLS, FLIGHT INFO.
-- "email-cap": The email body has minimal order detail and references a PDF attachment that contains the full order.
-- "email-ai": None of the above formats match, or the content is ambiguous — use this when the email layout doesn't clearly fit the three formats above.
+- "email-html-table": The email body contains an HTML <table> with columns showing order number, pickup address, delivery address, pieces, weight, and timing fields arranged side by side. Typical fields include PCS/WT, DIMS, PICKUP START, PICKUP END, DELIVER BY. May contain a "PICKUP FROM:" section.
+- "email-labeled-fields": The email body uses labeled sections — each field is on its own line as "LABEL: value". Typical labels include PICKUP ADDRESS, DELIVERY ADDRESS, PICKUP BY / PICKUP TIME, TENDER BY TIME / DELIVER BY, PICKUP CONTACT / DELIVERY CONTACT, TOTAL PIECES, TOTAL WEIGHT, AIR WAYBILLS, FLIGHT INFO.
+- "email-pdf-attachment": The email body has minimal order detail and the full order lives in an attached PDF.
+- "email-ai": None of the above layouts match, or the content is ambiguous — use this when the email doesn't clearly fit the three layouts above.
 
 Respond with JSON only — no explanation, no markdown, just the object:
 {
-  "parser_type": "email-marken" | "email-airspace" | "email-cap" | "email-ai",
+  "parser_type": "email-html-table" | "email-labeled-fields" | "email-pdf-attachment" | "email-ai",
   "confidence": "high" | "medium" | "low",
   "reason": "one sentence explaining what you found that led to this choice"
 }"""

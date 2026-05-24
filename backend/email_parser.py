@@ -1,7 +1,17 @@
 """Email parsers for extracting order data from dispatch emails.
 
-Each parser handles a specific email format (Marken, Airspace, CAP Logistics)
-and extracts structured order fields from HTML bodies or PDF attachments.
+Each parser handles a specific email layout — not a specific vendor — so any
+org can pick the parser that matches the shape of dispatch emails they
+receive. The available formats are:
+
+  * `email-html-table`      — order details in an HTML <table>
+  * `email-labeled-fields`  — labeled `KEY: value` sections in the body
+  * `email-pdf-attachment`  — minimal body, order data lives in an attached PDF
+  * `email-ai`              — universal fallback that uses Claude to read any layout
+
+Legacy parser_type values from earlier releases (`email-marken`,
+`email-airspace`, `email-cap`) are accepted by `get_parser()` for backward
+compatibility but new code and stored config should use the format names.
 """
 
 import io
@@ -137,26 +147,30 @@ def _parse_address_line(addr_str: str) -> Dict[str, str]:
     return result
 
 
-class MarkenEmailParser(EmailParser):
-    """Parser for Marken PICKUP ALERT emails.
+class HtmlTableEmailParser(EmailParser):
+    """Parser for dispatch emails whose payload is an HTML <table>.
 
-    These emails contain HTML tables with order details including:
-    - ORDER# in the first data row
-    - Pickup and delivery addresses in bold text blocks
-    - Shipment details (pieces, weight, dimensions) in table cells
-    - Routing info (airline, flights)
+    Expects a layout with these characteristics:
+    - A top-level data table with an `ORDER#` header column
+    - Pickup and delivery addresses in bold text blocks or labeled sections
+    - Shipment details (pieces, weight, dimensions) in adjacent table cells
+    - Optional routing info (airline, flights) in a separate column
+
+    Origin note: this layout was first observed from a pharma-logistics
+    carrier; the parser is now generic and works with any dispatch email
+    that follows the same table shape.
     """
 
     def parse(self, message: GmailMessage) -> Optional[ParsedOrder]:
         try:
             return self._parse_inner(message)
         except Exception as e:
-            logger.error("MarkenEmailParser failed for message %s: %s", message.message_id, e)
+            logger.error("HtmlTableEmailParser failed for message %s: %s", message.message_id, e)
             return None
 
     def _parse_inner(self, message: GmailMessage) -> Optional[ParsedOrder]:
         soup = BeautifulSoup(message.html_body, "html.parser")
-        order = ParsedOrder(source="email-marken")
+        order = ParsedOrder(source="email-html-table")
 
         # Extract ORDER# from the data table
         # The table has headers: ORDER# | INFO | DELIVER TO | ROUTING
@@ -205,7 +219,7 @@ class MarkenEmailParser(EmailParser):
                 order.notes = f"AWB: {awb_info}"
 
         if not order.customer_name:
-            order.customer_name = "Marken Pickup"
+            order.customer_name = "Table-format pickup"
 
         return order if order.reference_id else None
 
@@ -283,26 +297,32 @@ class MarkenEmailParser(EmailParser):
             order.pickup_deadline = _parse_datetime_flexible(end_match.group(1))
 
 
-class AirspaceEmailParser(EmailParser):
-    """Parser for Airspace Pickup/Delivery Dispatch emails.
+class LabeledFieldsEmailParser(EmailParser):
+    """Parser for dispatch emails that present fields as labeled sections.
 
-    These emails have a well-structured HTML layout with labeled sections:
-    ORDER REFERENCES, PICKUP ADDRESS, PICKUP/DELIVERY CONTACT, DELIVERY ADDRESS,
-    FLIGHT INFO, VEHICLE TYPE, DANGEROUS GOODS, TOTAL PIECES, TOTAL WEIGHT.
+    Expects each piece of order data on its own line as `LABEL: value`, e.g.:
+    `ORDER REFERENCES`, `PICKUP ADDRESS`, `PICKUP/DELIVERY CONTACT`,
+    `DELIVERY ADDRESS`, `FLIGHT INFO`, `VEHICLE TYPE`, `DANGEROUS GOODS`,
+    `TOTAL PIECES`, `TOTAL WEIGHT`.
+
     Handles both "Pickup Dispatch" (PICKUP BY / TENDER BY TIME / PICKUP CONTACT)
-    and "Delivery Dispatch" (PICKUP TIME / DELIVER BY / DELIVERY CONTACT) formats.
+    and "Delivery Dispatch" (PICKUP TIME / DELIVER BY / DELIVERY CONTACT) shapes.
+
+    Origin note: this layout was first observed from an air-freight broker;
+    the parser is now generic and works with any dispatch email that uses
+    labeled field sections.
     """
 
     def parse(self, message: GmailMessage) -> Optional[ParsedOrder]:
         try:
             return self._parse_inner(message)
         except Exception as e:
-            logger.error("AirspaceEmailParser failed for message %s: %s", message.message_id, e)
+            logger.error("LabeledFieldsEmailParser failed for message %s: %s", message.message_id, e)
             return None
 
     def _parse_inner(self, message: GmailMessage) -> Optional[ParsedOrder]:
         soup = BeautifulSoup(message.html_body, "html.parser")
-        order = ParsedOrder(source="email-airspace")
+        order = ParsedOrder(source="email-labeled-fields")
         body_text = soup.get_text(separator="\n")
 
         # Extract Order # from subject or body
@@ -385,7 +405,7 @@ class AirspaceEmailParser(EmailParser):
         order.notes = " | ".join(notes_parts)
 
         if not order.customer_name:
-            order.customer_name = "Airspace Dispatch"
+            order.customer_name = "Labeled-fields dispatch"
 
         return order if order.reference_id else None
 
@@ -432,18 +452,24 @@ class AirspaceEmailParser(EmailParser):
                         break
 
 
-class CapLogisticsEmailParser(EmailParser):
-    """Parser for CAP Logistics Agent Alert emails.
+class PdfAttachmentEmailParser(EmailParser):
+    """Parser for dispatch emails whose order data lives in an attached PDF.
 
-    Order data is in a PDF attachment, not the email body.
-    Uses pdfplumber to extract text from the PDF.
+    Expects the email body to be a brief notification; the actual order
+    details (addresses, pieces, weight, references) are extracted from the
+    first PDF attachment via pdfplumber. The reference id is taken from
+    either the PDF text or a recognisable subject pattern.
+
+    Origin note: this layout was first observed from a freight broker that
+    sends "Agent Alert" notifications; the parser is now generic and works
+    with any dispatch email that ships its order in a PDF.
     """
 
     def parse(self, message: GmailMessage) -> Optional[ParsedOrder]:
         try:
             return self._parse_inner(message)
         except Exception as e:
-            logger.error("CapLogisticsEmailParser failed for message %s: %s", message.message_id, e)
+            logger.error("PdfAttachmentEmailParser failed for message %s: %s", message.message_id, e)
             return None
 
     def _parse_inner(self, message: GmailMessage) -> Optional[ParsedOrder]:
@@ -455,28 +481,30 @@ class CapLogisticsEmailParser(EmailParser):
                 break
 
         if not pdf_attachment:
-            logger.warning("CapLogisticsEmailParser: no PDF attachment found for message %s", message.message_id)
+            logger.warning("PdfAttachmentEmailParser: no PDF attachment found for message %s", message.message_id)
             return None
 
         # Extract text from PDF
         pdf_text = self._extract_pdf_text(pdf_attachment.data)
         if not pdf_text:
-            logger.warning("CapLogisticsEmailParser: could not extract text from PDF for message %s", message.message_id)
+            logger.warning("PdfAttachmentEmailParser: could not extract text from PDF for message %s", message.message_id)
             return None
 
-        order = ParsedOrder(source="email-cap")
+        order = ParsedOrder(source="email-pdf-attachment")
 
-        # Extract alert/order reference from subject or PDF
-        alert_match = re.search(r"Agent\s+Alert\s+(\w+)", message.subject)
-        if alert_match:
-            order.reference_id = alert_match.group(1)
+        # Extract alert/order reference from subject or PDF.
+        # Subject pattern is generic enough to catch most "Alert <id>" and
+        # "Reference <id>" style subjects.
+        ref_match = re.search(r"(?:Alert|Reference|Ref|Order)\s+(?:#\s*)?([A-Z0-9-]+)", message.subject, re.IGNORECASE)
+        if ref_match:
+            order.reference_id = ref_match.group(1)
             order.external_order_id = order.reference_id
 
         # Parse PDF text for order fields
         self._parse_pdf_text(order, pdf_text)
 
         if not order.customer_name:
-            order.customer_name = f"CAP Logistics Alert {order.reference_id}"
+            order.customer_name = f"PDF-attachment dispatch {order.reference_id}"
 
         return order if order.reference_id else None
 
@@ -500,7 +528,7 @@ class CapLogisticsEmailParser(EmailParser):
             return ""
 
     def _parse_pdf_text(self, order: ParsedOrder, pdf_text: str):
-        """Parse structured fields from CAP Logistics PDF text."""
+        """Parse structured fields from a dispatch PDF text dump."""
         # Common patterns in logistics dispatch PDFs
         # Pickup address
         pickup_match = re.search(
@@ -696,15 +724,34 @@ class AiEmailParser(EmailParser):
         )
 
 
-# Parser registry
+# Parser registry — keyed by format-descriptive parser_type identifier.
 PARSERS = {
-    "email-marken": MarkenEmailParser(),
-    "email-airspace": AirspaceEmailParser(),
-    "email-cap": CapLogisticsEmailParser(),
+    "email-html-table": HtmlTableEmailParser(),
+    "email-labeled-fields": LabeledFieldsEmailParser(),
+    "email-pdf-attachment": PdfAttachmentEmailParser(),
     "email-ai": AiEmailParser(),
 }
 
 
+# Legacy → current parser_type names. The 2026 rename moved away from
+# company-specific names (Marken / Airspace / Cap) toward format-descriptive
+# ones. `tools/migrations/rename_email_parser_types.py` backfills DDB rows;
+# this map is the runtime safety net so any leftover legacy value still
+# resolves to the right parser.
+LEGACY_PARSER_TYPE_MAP = {
+    "email-marken": "email-html-table",
+    "email-airspace": "email-labeled-fields",
+    "email-cap": "email-pdf-attachment",
+}
+
+
+def normalize_parser_type(source: Optional[str]) -> str:
+    """Translate legacy parser_type strings to their current names."""
+    if not source:
+        return ""
+    return LEGACY_PARSER_TYPE_MAP.get(source, source)
+
+
 def get_parser(source: str) -> Optional[EmailParser]:
-    """Get the appropriate parser for an email source."""
-    return PARSERS.get(source)
+    """Get the appropriate parser for an email source. Accepts legacy names."""
+    return PARSERS.get(normalize_parser_type(source))

@@ -76,10 +76,10 @@ def test_list_rules_returns_existing_rules():
     _seed_connected_config()
     # Create a rule first
     client.post("/email/rules", headers=AUTH, json={
-        "name": "Vel Logistix",
-        "sender_pattern": "vellogistix.com",
+        "name": "Carrier A",
+        "sender_pattern": "carriera.com",
         "subject_pattern": "",
-        "parser_type": "email-airspace",
+        "parser_type": "email-labeled-fields",
     })
     resp = client.get("/email/rules", headers=AUTH)
     assert resp.status_code == 200
@@ -96,17 +96,17 @@ def test_list_rules_requires_admin():
 def test_create_rule_success():
     _seed_connected_config()
     resp = client.post("/email/rules", headers=AUTH, json={
-        "name": "Vel Logistix Airspace",
-        "sender_pattern": "vellogistix.com",
+        "name": "Carrier A labeled-fields",
+        "sender_pattern": "carriera.com",
         "subject_pattern": "dispatch",
-        "parser_type": "email-airspace",
+        "parser_type": "email-labeled-fields",
         "enabled": True,
     })
     assert resp.status_code == 201
     data = resp.json()
-    assert data["name"] == "Vel Logistix Airspace"
-    assert data["sender_pattern"] == "vellogistix.com"
-    assert data["parser_type"] == "email-airspace"
+    assert data["name"] == "Carrier A labeled-fields"
+    assert data["sender_pattern"] == "carriera.com"
+    assert data["parser_type"] == "email-labeled-fields"
     assert data["enabled"] is True
     assert "rule_id" in data
     assert "created_at" in data
@@ -117,7 +117,7 @@ def test_create_rule_no_email_config():
     resp = client.post("/email/rules", headers=AUTH, json={
         "name": "Test",
         "sender_pattern": "example.com",
-        "parser_type": "email-airspace",
+        "parser_type": "email-labeled-fields",
     })
     assert resp.status_code == 404
 
@@ -138,7 +138,7 @@ def test_create_rule_invalid_sender_pattern():
     resp = client.post("/email/rules", headers=AUTH, json={
         "name": "Bad Sender",
         "sender_pattern": "nodotnoat",
-        "parser_type": "email-airspace",
+        "parser_type": "email-labeled-fields",
     })
     assert resp.status_code == 400
 
@@ -147,7 +147,7 @@ def test_create_rule_requires_admin():
     resp = client.post("/email/rules", headers=AUTH_DISP, json={
         "name": "Test",
         "sender_pattern": "example.com",
-        "parser_type": "email-airspace",
+        "parser_type": "email-labeled-fields",
     })
     assert resp.status_code == 403
 
@@ -159,7 +159,7 @@ def test_create_rule_tenant_isolation():
     client.post("/email/rules", headers=AUTH, json={
         "name": "Org A Rule",
         "sender_pattern": "example.com",
-        "parser_type": "email-airspace",
+        "parser_type": "email-labeled-fields",
     })
     resp = client.get("/email/rules", headers=AUTH_B)
     assert resp.status_code == 200
@@ -168,7 +168,7 @@ def test_create_rule_tenant_isolation():
 
 # --- PUT /email/rules/{rule_id} ---
 
-def _create_rule(name="Test Rule", sender="example.com", parser="email-airspace"):
+def _create_rule(name="Test Rule", sender="example.com", parser="email-labeled-fields"):
     _seed_connected_config()
     resp = client.post("/email/rules", headers=AUTH, json={
         "name": name,
@@ -249,7 +249,7 @@ def test_full_crud_lifecycle():
         "name": "Lifecycle Rule",
         "sender_pattern": "lifecycle.com",
         "subject_pattern": "order",
-        "parser_type": "email-airspace",
+        "parser_type": "email-labeled-fields",
         "enabled": True,
     })
     assert create_resp.status_code == 201

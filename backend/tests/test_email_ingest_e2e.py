@@ -8,20 +8,26 @@ Twenty hand-crafted emails are used:
   - 16 junk emails (newsletters, calendar invites, autoresponders, replies,
     marketing, shipping notifications, etc.) — must NOT classify as orders.
   - 4 dispatch emails, one per parser type:
-      * email-marken    — Marken pickup alert with HTML table
-      * email-airspace  — Airspace dispatch with labeled-section HTML body
-      * email-cap       — Cap Logistics agent alert (classification only;
-                          parser needs a PDF attachment which is outside this
-                          test's scope)
-      * email-ai        — generic dispatch body matched by a custom rule
-                          (classification only; parser uses Anthropic API)
+      * email-html-table       — order data inside an HTML <table>
+      * email-labeled-fields   — labeled KEY: value sections
+      * email-pdf-attachment   — order data in an attached PDF
+                                 (classification only; parser needs a real PDF)
+      * email-ai               — generic dispatch body matched by a custom rule
+                                 (classification only; parser uses Anthropic API)
+
+All classification is per-org config — the classifier has no built-in
+carrier-specific rules. Each dispatch email is paired with the matching
+custom rule the test installs.
 
 Validates:
-  1. Built-in classifier routes known senders to the correct parser_type.
-  2. Custom rules take precedence over built-in rules.
-  3. Junk emails are skipped with the correct SkipReason.
-  4. Deterministic parsers (Marken, Airspace) extract correct Order fields
-     including reference_id, num_packages, weight, customer_name, notes.
+  1. Each parser_type routes correctly when its matching custom rule is set.
+  2. Specific subject_pattern rules beat empty-subject catch-alls regardless
+     of saved order.
+  3. Disabled rules are bypassed.
+  4. Junk emails (and dispatch emails with no matching rule) are skipped
+     with `NO_SENDER_MATCH` or `NO_SUBJECT_MATCH`.
+  5. Deterministic parsers (HtmlTable, LabeledFields) extract correct
+     Order fields: reference_id, num_packages, weight, customer_name, notes.
 """
 
 import os
@@ -33,11 +39,45 @@ import pytest
 
 from backend.email_classifier import SkipReason, classify_email
 from backend.email_parser import (
-    AirspaceEmailParser,
-    MarkenEmailParser,
+    HtmlTableEmailParser,
+    LabeledFieldsEmailParser,
     get_parser,
 )
 from backend.gmail_client import GmailMessage
+
+
+# Rules that map each dispatch sender to the right parser. Real orgs would
+# configure these via /email/rules; the tests install them inline.
+RULES_ALL = [
+    {
+        "name": "Carrier A HTML-table",
+        "sender_pattern": "carriera.com",
+        "subject_pattern": "PICKUP ALERT",
+        "parser_type": "email-html-table",
+        "enabled": True,
+    },
+    {
+        "name": "Carrier B labeled-fields",
+        "sender_pattern": "carrierb.com",
+        "subject_pattern": "Order #",
+        "parser_type": "email-labeled-fields",
+        "enabled": True,
+    },
+    {
+        "name": "Carrier C PDF",
+        "sender_pattern": "carrierc.com",
+        "subject_pattern": "Agent Alert",
+        "parser_type": "email-pdf-attachment",
+        "enabled": True,
+    },
+    {
+        "name": "Carrier D AI catch-all",
+        "sender_pattern": "carrierd.com",
+        "subject_pattern": "",
+        "parser_type": "email-ai",
+        "enabled": True,
+    },
+]
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +95,7 @@ def _forward(original_from: str, original_subject: str, body: str) -> str:
 </body></html>"""
 
 
-# 1. Marken pickup alert (built-in rule + HTML table parser)
+# 1. HTML-table dispatch (custom rule routes to HtmlTableEmailParser)
 MARKEN_BODY = """
 <table>
   <tr><td>ORDER#</td><td>INFO</td><td>DELIVER TO</td><td>ROUTING</td></tr>
@@ -70,21 +110,21 @@ MARKEN_BODY = """
 <p>BioStorage Tech\n1500 Research Blvd\nDALLAS,TX 75201 US\nPHONE: 214-555-1234\nPICKUP START: Tue Apr-15-2026 09:00\nPICKUP END: Tue Apr-15-2026 11:00</p>
 """
 
-EMAIL_MARKEN = {
-    "label": "[email-marken] Marken pickup alert",
+EMAIL_HTML_TABLE = {
+    "label": "[email-html-table] HTML-table dispatch",
     "subject": "Fwd: PICKUP ALERT #87654321 - ACME Corp",
     "sender": "ops-relay@discra-pilot.com",
     "html_body": _forward(
-        "no-reply@marken.com",
+        "dispatch@carriera.com",
         "PICKUP ALERT #87654321 - ACME Corp",
         MARKEN_BODY,
     ),
     "text_body": "",
     "expect_is_order": True,
-    "expect_source": "email-marken",
+    "expect_source": "email-html-table",
 }
 
-# 2. Airspace dispatch (built-in rule + labeled-section HTML parser)
+# 2. Labeled-fields dispatch (custom rule routes to LabeledFieldsEmailParser)
 AIRSPACE_BODY = """
 <p>Order #5021987</p>
 <p>PICKUP BY:\nApr 16, 2026 09:00</p>
@@ -96,33 +136,33 @@ AIRSPACE_BODY = """
 <p>AIR WAYBILLS: 220-99887766</p>
 """
 
-EMAIL_AIRSPACE = {
-    "label": "[email-airspace] Airspace dispatch",
+EMAIL_LABELED_FIELDS = {
+    "label": "[email-labeled-fields] Labeled-fields dispatch",
     "subject": "Fwd: Tracking ID: AXSP7T2W9Q, Order #: 5021987 - Pickup Dispatch",
     "sender": "ops-relay@discra-pilot.com",
     "html_body": _forward(
-        "ops@airspace.com",
+        "dispatch@carrierb.com",
         "Tracking ID: AXSP7T2W9Q, Order #: 5021987 - Pickup Dispatch",
         AIRSPACE_BODY,
     ),
     "text_body": "",
     "expect_is_order": True,
-    "expect_source": "email-airspace",
+    "expect_source": "email-labeled-fields",
 }
 
-# 3. Cap Logistics agent alert (built-in rule; PDF parsing not exercised here)
-EMAIL_CAP = {
-    "label": "[email-cap] Cap Logistics agent alert",
+# 3. PDF-attachment dispatch (custom rule; PDF parsing not exercised here)
+EMAIL_PDF = {
+    "label": "[email-pdf-attachment] PDF-attachment dispatch",
     "subject": "Fwd: Agent Alert XYZ789 - Pickup Required",
     "sender": "ops-relay@discra-pilot.com",
     "html_body": _forward(
-        "vendors@caplogistics.com",
+        "vendors@carrierc.com",
         "Agent Alert XYZ789",
         "<p>See attached dispatch PDF for full order details.</p>",
     ),
     "text_body": "",
     "expect_is_order": True,
-    "expect_source": "email-cap",
+    "expect_source": "email-pdf-attachment",
 }
 
 # 4. Generic dispatch matched by custom AI rule (catch-all for the org)
@@ -131,7 +171,7 @@ EMAIL_AI = {
     "subject": "Fwd: Dispatch confirmation #DSP-9912 — same-day pickup",
     "sender": "ops-relay@discra-pilot.com",
     "html_body": _forward(
-        "dispatch@vellogistix.com",
+        "dispatch@carrierd.com",
         "Dispatch confirmation #DSP-9912 — same-day pickup",
         "<p>Pickup: 200 Main St, Chicago IL 60601</p><p>Delivery: 800 Elm St, Milwaukee WI 53202</p><p>Weight: 35 lbs</p><p>Time: 14:00 today</p>",
     ),
@@ -140,7 +180,7 @@ EMAIL_AI = {
     "expect_source": "email-ai",
 }
 
-DISPATCH_EMAILS = [EMAIL_MARKEN, EMAIL_AIRSPACE, EMAIL_CAP, EMAIL_AI]
+DISPATCH_EMAILS = [EMAIL_HTML_TABLE, EMAIL_LABELED_FIELDS, EMAIL_PDF, EMAIL_AI]
 
 
 # 16 junk emails — each represents a different category of non-order email we
@@ -236,33 +276,35 @@ JUNK_EMAILS = [
         "text_body": "",
     },
     {
-        "label": "Phishing attempt — fake dispatch sender",
+        "label": "Phishing attempt — lookalike sender domain",
         "subject": "Fwd: URGENT: Update your dispatch credentials NOW",
         "sender": "ops-relay@discra-pilot.com",
         "html_body": _forward(
-            "ops@airspace.com.evil-phish.net",
+            # Substring of carriera.com inside a malicious domain — verifies the
+            # classifier doesn't treat lookalike domains as the real carrier.
+            "ops@carriera.com.evil-phish.net",
             "URGENT: Update your dispatch credentials NOW",
             "<p>Click here to verify your account...</p>",
         ),
         "text_body": "",
     },
     {
-        "label": "Known sender but wrong subject (Marken, no PICKUP ALERT)",
+        "label": "Survey from a configured carrier (wrong subject)",
         "subject": "Fwd: Year-end customer survey — your feedback matters",
         "sender": "ops-relay@discra-pilot.com",
         "html_body": _forward(
-            "no-reply@marken.com",
+            "no-reply@carriera.com",
             "Year-end customer survey — your feedback matters",
             "<p>Please rate our service this year.</p>",
         ),
         "text_body": "",
     },
     {
-        "label": "Known sender but wrong subject (Airspace, no Dispatch)",
+        "label": "Maintenance notice from a configured carrier (wrong subject)",
         "subject": "Fwd: System maintenance window scheduled",
         "sender": "ops-relay@discra-pilot.com",
         "html_body": _forward(
-            "ops@airspace.com",
+            "ops@carrierb.com",
             "System maintenance window scheduled",
             "<p>Maintenance Apr 20 from 02:00-04:00 UTC.</p>",
         ),
@@ -330,14 +372,15 @@ JUNK_EMAILS = [
 # Tests
 # ---------------------------------------------------------------------------
 
-def test_dispatch_emails_route_to_correct_built_in_parser():
-    """Marken, Airspace, Cap dispatch emails classified by built-in rules."""
-    for email in [EMAIL_MARKEN, EMAIL_AIRSPACE, EMAIL_CAP]:
+def test_dispatch_emails_route_to_correct_parser_with_rules():
+    """Each dispatch email routes to its parser when the matching org rule is set."""
+    for email in [EMAIL_HTML_TABLE, EMAIL_LABELED_FIELDS, EMAIL_PDF, EMAIL_AI]:
         result = classify_email(
             subject=email["subject"],
             sender=email["sender"],
             html_body=email["html_body"],
             text_body=email["text_body"],
+            custom_rules=RULES_ALL,
         )
         assert result.is_order, f"{email['label']} should classify as order, got skip={result.skip_reason}"
         assert (
@@ -345,78 +388,70 @@ def test_dispatch_emails_route_to_correct_built_in_parser():
         ), f"{email['label']} should route to {email['expect_source']}, got {result.source}"
 
 
-def test_ai_email_routes_via_custom_rule_only():
-    """Generic vellogistix dispatch is unknown to built-in rules; needs a custom rule."""
-    # Without custom rules, the AI email matches Airspace's built-in rule via
-    # the vellogistix.com sender + dispatch keyword. The catch-all AI rule is
-    # only reached when no built-in rule matches.
-    custom_rules = [
+def test_dispatch_emails_skipped_without_any_rule():
+    """With no rules configured, every email is unknown — even a well-formed dispatch."""
+    for email in [EMAIL_HTML_TABLE, EMAIL_LABELED_FIELDS, EMAIL_PDF, EMAIL_AI]:
+        result = classify_email(
+            subject=email["subject"],
+            sender=email["sender"],
+            html_body=email["html_body"],
+            text_body=email["text_body"],
+        )
+        assert not result.is_order
+        assert result.skip_reason == SkipReason.NO_SENDER_MATCH
+
+
+def test_specific_subject_rule_beats_catchall():
+    """A specific subject_pattern rule should fire even when a catch-all
+    rule for the same sender exists."""
+    rules = [
         {
-            "name": "Vel AI catch-all",
-            "sender_pattern": "vellogistix.com",
-            "subject_pattern": "",  # catch-all
+            "name": "Catch-all",
+            "sender_pattern": "carriera.com",
+            "subject_pattern": "",
             "parser_type": "email-ai",
             "enabled": True,
         },
-    ]
-    result = classify_email(
-        subject=EMAIL_AI["subject"],
-        sender=EMAIL_AI["sender"],
-        html_body=EMAIL_AI["html_body"],
-        text_body=EMAIL_AI["text_body"],
-        custom_rules=custom_rules,
-    )
-    assert result.is_order, "AI email should classify as order via custom rule"
-    assert result.source == "email-ai", f"Expected email-ai parser, got {result.source}"
-
-
-def test_custom_rule_takes_precedence_over_built_in():
-    """A custom rule for vellogistix.com should fire even when the built-in
-    Airspace rule would also match."""
-    custom_rules = [
         {
-            "name": "Vel custom Airspace override",
-            "sender_pattern": "vellogistix.com",
-            "subject_pattern": "Dispatch",
-            "parser_type": "email-airspace",  # explicit override
+            "name": "Specific PICKUP ALERT",
+            "sender_pattern": "carriera.com",
+            "subject_pattern": "PICKUP ALERT",
+            "parser_type": "email-html-table",
             "enabled": True,
         },
     ]
     result = classify_email(
-        subject=EMAIL_AI["subject"],
-        sender=EMAIL_AI["sender"],
-        html_body=EMAIL_AI["html_body"],
-        text_body=EMAIL_AI["text_body"],
-        custom_rules=custom_rules,
+        subject=EMAIL_HTML_TABLE["subject"],
+        sender=EMAIL_HTML_TABLE["sender"],
+        html_body=EMAIL_HTML_TABLE["html_body"],
+        text_body=EMAIL_HTML_TABLE["text_body"],
+        custom_rules=rules,
     )
     assert result.is_order
-    assert result.source == "email-airspace", "Custom rule should take precedence"
+    assert result.source == "email-html-table", "Specific subject rule must beat catch-all"
 
 
 def test_disabled_custom_rule_is_skipped():
-    """Disabled custom rules are bypassed entirely. The classifier then falls
-    through to the built-in rules. For an email from `dispatch@vellogistix.com`
-    with a non-Airspace-shaped subject, the built-in Airspace rule recognizes
-    the sender but rejects the subject — the correct outcome is NOT an order,
-    skipped with `NO_SUBJECT_MATCH`."""
-    custom_rules = [
+    """Disabled custom rules are bypassed entirely. With no other rules
+    matching, the email falls through to `NO_SENDER_MATCH`."""
+    rules = [
         {
-            "name": "Disabled rule",
-            "sender_pattern": "vellogistix.com",
-            "subject_pattern": "",
-            "parser_type": "email-ai",
+            "name": "Disabled HTML-table rule",
+            "sender_pattern": "carriera.com",
+            "subject_pattern": "PICKUP ALERT",
+            "parser_type": "email-html-table",
             "enabled": False,
         },
     ]
     result = classify_email(
-        subject=EMAIL_AI["subject"],
-        sender=EMAIL_AI["sender"],
-        html_body=EMAIL_AI["html_body"],
-        text_body=EMAIL_AI["text_body"],
-        custom_rules=custom_rules,
+        subject=EMAIL_HTML_TABLE["subject"],
+        sender=EMAIL_HTML_TABLE["sender"],
+        html_body=EMAIL_HTML_TABLE["html_body"],
+        text_body=EMAIL_HTML_TABLE["text_body"],
+        custom_rules=rules,
     )
-    assert not result.is_order, "Disabled rule should not be used; built-in Airspace rule rejects subject"
-    assert result.skip_reason == SkipReason.NO_SUBJECT_MATCH
+    assert not result.is_order
+    assert result.skip_reason == SkipReason.NO_SENDER_MATCH
 
 
 @pytest.mark.parametrize("email", JUNK_EMAILS, ids=lambda e: e["label"])
@@ -435,19 +470,19 @@ def test_junk_email_does_not_classify_as_order(email):
     ), f"{email['label']} had unexpected skip_reason {result.skip_reason}"
 
 
-def test_marken_parser_extracts_correct_order_fields():
-    """Run the Marken parser on a realistic body, verify Order fields."""
+def test_html_table_parser_extracts_correct_order_fields():
+    """Run the HTML-table parser on a realistic body, verify Order fields."""
     msg = GmailMessage(
-        message_id="m-marken",
-        thread_id="t-marken",
-        subject=EMAIL_MARKEN["subject"],
-        html_body=EMAIL_MARKEN["html_body"],
+        message_id="m-table",
+        thread_id="t-table",
+        subject=EMAIL_HTML_TABLE["subject"],
+        html_body=EMAIL_HTML_TABLE["html_body"],
     )
-    parser = MarkenEmailParser()
+    parser = HtmlTableEmailParser()
     result = parser.parse(msg)
 
-    assert result is not None, "Marken parser returned None"
-    assert result.source == "email-marken"
+    assert result is not None, "HtmlTableEmailParser returned None"
+    assert result.source == "email-html-table"
     assert result.reference_id == "87654321"
     assert result.num_packages == 4
     assert result.weight == 180.0
@@ -456,19 +491,19 @@ def test_marken_parser_extracts_correct_order_fields():
     )
 
 
-def test_airspace_parser_extracts_correct_order_fields():
-    """Run the Airspace parser on a realistic body, verify Order fields."""
+def test_labeled_fields_parser_extracts_correct_order_fields():
+    """Run the labeled-fields parser on a realistic body, verify Order fields."""
     msg = GmailMessage(
-        message_id="m-airspace",
-        thread_id="t-airspace",
-        subject=EMAIL_AIRSPACE["subject"],
-        html_body=EMAIL_AIRSPACE["html_body"],
+        message_id="m-fields",
+        thread_id="t-fields",
+        subject=EMAIL_LABELED_FIELDS["subject"],
+        html_body=EMAIL_LABELED_FIELDS["html_body"],
     )
-    parser = AirspaceEmailParser()
+    parser = LabeledFieldsEmailParser()
     result = parser.parse(msg)
 
-    assert result is not None, "Airspace parser returned None"
-    assert result.source == "email-airspace"
+    assert result is not None, "LabeledFieldsEmailParser returned None"
+    assert result.source == "email-labeled-fields"
     assert result.reference_id == "5021987"
     assert result.num_packages == 8
     assert result.weight == 95.5
@@ -477,15 +512,15 @@ def test_airspace_parser_extracts_correct_order_fields():
 
 
 def test_parser_registry_returns_expected_classes():
-    """get_parser() resolves the canonical parser_type strings to the right class."""
-    assert isinstance(get_parser("email-marken"), MarkenEmailParser)
-    assert isinstance(get_parser("email-airspace"), AirspaceEmailParser)
-    # email-cap exists in the registry but parser needs PDF; just confirm presence
+    """get_parser() resolves both current and legacy parser_type strings."""
+    assert isinstance(get_parser("email-html-table"), HtmlTableEmailParser)
+    assert isinstance(get_parser("email-labeled-fields"), LabeledFieldsEmailParser)
+    # email-pdf-attachment exists in the registry; parser needs a real PDF
+    assert get_parser("email-pdf-attachment") is not None
+    # Legacy aliases still resolve (via normalize_parser_type)
+    assert isinstance(get_parser("email-marken"), HtmlTableEmailParser)
+    assert isinstance(get_parser("email-airspace"), LabeledFieldsEmailParser)
     assert get_parser("email-cap") is not None
-    # email-ai may or may not be in the deterministic registry — it's the
-    # catch-all handled by the AI parser via Anthropic. Either way, the
-    # classifier returning "email-ai" is the contract; the parser is wired
-    # separately by the poller.
 
 
 # ---------------------------------------------------------------------------
@@ -509,14 +544,7 @@ def test_print_coverage_matrix(capsys):
             sender=email["sender"],
             html_body=email["html_body"],
             text_body=email["text_body"],
-            # For email-ai we need the custom rule to be in the loop
-            custom_rules=[{
-                "name": "Vel AI",
-                "sender_pattern": "vellogistix.com",
-                "subject_pattern": "",
-                "parser_type": "email-ai",
-                "enabled": True,
-            }] if email["expect_source"] == "email-ai" else None,
+            custom_rules=RULES_ALL,
         )
         ok = "PASS" if r.is_order and r.source == email["expect_source"] else "FAIL"
         lines.append(f"{email['label']:<55} {ok:<5} ->{r.source}")

@@ -119,7 +119,9 @@ def _process_org(org_config):
                     )
                     continue
 
-                # Parse the order (source may be an EmailSource enum or a plain string from a custom rule)
+                # Parse the order. result.source is the parser_type string
+                # from the matched rule; get_parser() normalizes legacy values.
+                # getattr handles any stray enum-typed source from older code.
                 source_key = getattr(result.source, "value", result.source)
                 parser = get_parser(source_key)
                 if not parser:

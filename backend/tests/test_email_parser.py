@@ -2,10 +2,11 @@ import os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from backend.email_parser import (
-    MarkenEmailParser,
-    AirspaceEmailParser,
-    CapLogisticsEmailParser,
+    HtmlTableEmailParser,
+    LabeledFieldsEmailParser,
+    PdfAttachmentEmailParser,
     get_parser,
+    normalize_parser_type,
     _clean_text,
     _extract_weight,
     _parse_address_line,
@@ -55,16 +56,36 @@ def test_parse_datetime_flexible():
 
 # --- Parser registry ---
 
-def test_get_parser():
-    assert isinstance(get_parser("email-marken"), MarkenEmailParser)
-    assert isinstance(get_parser("email-airspace"), AirspaceEmailParser)
-    assert isinstance(get_parser("email-cap"), CapLogisticsEmailParser)
+def test_get_parser_by_current_name():
+    assert isinstance(get_parser("email-html-table"), HtmlTableEmailParser)
+    assert isinstance(get_parser("email-labeled-fields"), LabeledFieldsEmailParser)
+    assert isinstance(get_parser("email-pdf-attachment"), PdfAttachmentEmailParser)
     assert get_parser("unknown") is None
 
 
-# --- MarkenEmailParser ---
+def test_get_parser_accepts_legacy_aliases():
+    """Backward-compat: pre-rename parser_type strings still resolve to the
+    right parser via normalize_parser_type. Removed once all stored rules
+    have been backfilled by tools/migrations/rename_email_parser_types.py."""
+    assert isinstance(get_parser("email-marken"), HtmlTableEmailParser)
+    assert isinstance(get_parser("email-airspace"), LabeledFieldsEmailParser)
+    assert isinstance(get_parser("email-cap"), PdfAttachmentEmailParser)
 
-def test_marken_parser_basic():
+
+def test_normalize_parser_type():
+    assert normalize_parser_type("email-marken") == "email-html-table"
+    assert normalize_parser_type("email-airspace") == "email-labeled-fields"
+    assert normalize_parser_type("email-cap") == "email-pdf-attachment"
+    assert normalize_parser_type("email-ai") == "email-ai"
+    assert normalize_parser_type("email-html-table") == "email-html-table"
+    assert normalize_parser_type("unknown") == "unknown"
+    assert normalize_parser_type("") == ""
+    assert normalize_parser_type(None) == ""
+
+
+# --- HtmlTableEmailParser ---
+
+def test_html_table_parser_basic():
     html_body = """
     <html><body>
     <table>
@@ -81,27 +102,27 @@ def test_marken_parser_basic():
     </body></html>
     """
     msg = GmailMessage(message_id="m1", thread_id="t1", html_body=html_body)
-    parser = MarkenEmailParser()
+    parser = HtmlTableEmailParser()
     result = parser.parse(msg)
 
     assert result is not None
     assert result.reference_id == "12413656"
-    assert result.source == "email-marken"
+    assert result.source == "email-html-table"
     assert result.num_packages == 3
     assert result.weight == 225.0
 
 
-def test_marken_parser_returns_none_on_empty():
+def test_html_table_parser_returns_none_on_empty():
     msg = GmailMessage(message_id="m1", thread_id="t1", html_body="<html><body>No tables</body></html>")
-    parser = MarkenEmailParser()
+    parser = HtmlTableEmailParser()
     result = parser.parse(msg)
     # No ORDER# found, should return None
     assert result is None
 
 
-# --- AirspaceEmailParser ---
+# --- LabeledFieldsEmailParser ---
 
-def test_airspace_parser_basic():
+def test_labeled_fields_parser_basic():
     html_body = """
     <html><body>
     <p>Order #3541972</p>
@@ -120,41 +141,41 @@ def test_airspace_parser_basic():
         subject="Tracking ID: ATDRW32YW7, Order #: 3541972 - Pickup Dispatch",
         html_body=html_body,
     )
-    parser = AirspaceEmailParser()
+    parser = LabeledFieldsEmailParser()
     result = parser.parse(msg)
 
     assert result is not None
     assert result.reference_id == "3541972"
-    assert result.source == "email-airspace"
+    assert result.source == "email-labeled-fields"
     assert result.num_packages == 5
     assert result.weight == 40.0
     assert result.customer_name == "John Smith"
     assert "Tracking: ATDRW32YW7" in result.notes
 
 
-def test_airspace_parser_returns_none_without_order_number():
+def test_labeled_fields_parser_returns_none_without_order_number():
     msg = GmailMessage(
         message_id="m2",
         thread_id="t2",
         subject="Random email",
         html_body="<p>No order info</p>",
     )
-    parser = AirspaceEmailParser()
+    parser = LabeledFieldsEmailParser()
     result = parser.parse(msg)
     assert result is None
 
 
-# --- CapLogisticsEmailParser ---
+# --- PdfAttachmentEmailParser ---
 
-def test_cap_logistics_parser_no_pdf():
+def test_pdf_attachment_parser_no_pdf():
     msg = GmailMessage(message_id="m3", thread_id="t3", subject="Agent Alert ABC123")
-    parser = CapLogisticsEmailParser()
+    parser = PdfAttachmentEmailParser()
     result = parser.parse(msg)
     # No PDF attachment
     assert result is None
 
 
-def test_cap_logistics_parser_with_pdf_reference():
+def test_pdf_attachment_parser_with_pdf_reference():
     """Test that the parser extracts reference from subject even if PDF parsing produces minimal results."""
     # Create a minimal PDF-like attachment (won't actually parse with pdfplumber,
     # but tests the exception handling path)
@@ -164,7 +185,7 @@ def test_cap_logistics_parser_with_pdf_reference():
         subject="Agent Alert 2603A7308",
         attachments=[GmailAttachment(filename="dispatch.pdf", mime_type="application/pdf", data=b"not a real pdf")],
     )
-    parser = CapLogisticsEmailParser()
+    parser = PdfAttachmentEmailParser()
     result = parser.parse(msg)
     # The PDF won't parse, so result should be None (no text extracted)
     assert result is None

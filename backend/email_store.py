@@ -15,10 +15,25 @@ except ImportError:  # pragma: no cover - boto3 available in Lambda
 
 try:
     from backend.dynamo_serialization import model_to_dynamo_item
+    from backend.email_parser import normalize_parser_type
     from backend.schemas import EmailConfig, SkippedEmail
 except ModuleNotFoundError:  # local run from backend/ directory
     from dynamo_serialization import model_to_dynamo_item
+    from email_parser import normalize_parser_type
     from schemas import EmailConfig, SkippedEmail
+
+
+def _normalize_config_legacy_parser_types(config: EmailConfig) -> EmailConfig:
+    """Translate legacy parser_type strings on read so callers always see the
+    current names. Runtime safety net for any rule rows that haven't been
+    backfilled by ``tools/migrations/rename_email_parser_types.py`` yet."""
+    if not config.email_rules:
+        return config
+    for rule in config.email_rules:
+        new_value = normalize_parser_type(rule.parser_type)
+        if new_value != rule.parser_type:
+            rule.parser_type = new_value
+    return config
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +128,7 @@ class DynamoEmailConfigStore(EmailConfigStore):
         item = resp.get("Item")
         if not item:
             return None
-        return EmailConfig.model_validate(item)
+        return _normalize_config_legacy_parser_types(EmailConfig.model_validate(item))
 
     def put_config(self, config: EmailConfig) -> EmailConfig:
         self._table.put_item(Item=model_to_dynamo_item(config))
@@ -135,7 +150,7 @@ class DynamoEmailConfigStore(EmailConfigStore):
                 ExclusiveStartKey=resp["LastEvaluatedKey"],
             )
             items.extend(resp.get("Items", []))
-        return [EmailConfig.model_validate(item) for item in items]
+        return [_normalize_config_legacy_parser_types(EmailConfig.model_validate(item)) for item in items]
 
     def update_poll_status(
         self,

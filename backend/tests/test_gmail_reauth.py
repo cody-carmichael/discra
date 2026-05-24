@@ -152,10 +152,10 @@ def test_connect_preserves_email_rules_and_clears_reauth(monkeypatch):
     now = datetime.now(timezone.utc)
     rule = EmailRule(
         rule_id="rule-1",
-        name="Vel Logistix",
-        sender_pattern="vellogistix.com",
+        name="Carrier A",
+        sender_pattern="carriera.com",
         subject_pattern="",
-        parser_type="email-airspace",
+        parser_type="email-labeled-fields",
         enabled=True,
         created_at=now,
         updated_at=now,

@@ -38,10 +38,10 @@ def _seed_with_rule(**rule_overrides) -> EmailConfig:
     now = datetime.now(timezone.utc)
     rule_fields = dict(
         rule_id="rule-1",
-        name="Vel Logistix AI",
-        sender_pattern="vellogistix.com",
+        name="Carrier A AI",
+        sender_pattern="carriera.com",
         subject_pattern="",
-        parser_type="email-airspace",
+        parser_type="email-labeled-fields",
         enabled=True,
         created_at=now,
         updated_at=now,
@@ -72,13 +72,13 @@ def _fake_message(sender: str, subject: str):
 
 def test_process_org_passes_custom_rules_to_classifier():
     """The poller must forward org_config.email_rules to classify_email."""
-    cfg = _seed_with_rule(subject_pattern="Agent Alert", parser_type="email-cap")
+    cfg = _seed_with_rule(subject_pattern="Agent Alert", parser_type="email-pdf-attachment")
 
     fake_gmail = MagicMock()
     fake_gmail.list_new_message_ids.return_value = (["msg-1"], "200")
     fake_gmail.has_label.return_value = False
     fake_gmail.get_message.return_value = _fake_message(
-        sender="dispatch@vellogistix.com",
+        sender="dispatch@carriera.com",
         subject="Agent Alert 2604A5414",
     )
 
@@ -101,9 +101,9 @@ def test_process_org_passes_custom_rules_to_classifier():
     assert "custom_rules" in captured
     rules = captured["custom_rules"]
     assert len(rules) == 1
-    assert rules[0]["sender_pattern"] == "vellogistix.com"
+    assert rules[0]["sender_pattern"] == "carriera.com"
     assert rules[0]["subject_pattern"] == "Agent Alert"
-    assert rules[0]["parser_type"] == "email-cap"
+    assert rules[0]["parser_type"] == "email-pdf-attachment"
     assert rules[0]["enabled"] is True
 
 

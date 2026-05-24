@@ -14,9 +14,11 @@ except ImportError:  # pragma: no cover - boto3 available in Lambda
     Key = None
 
 try:
+    from backend.dynamo_serialization import model_to_dynamo_item
     from backend.email_parser import normalize_parser_type
     from backend.schemas import EmailConfig, SkippedEmail
 except ModuleNotFoundError:  # local run from backend/ directory
+    from dynamo_serialization import model_to_dynamo_item
     from email_parser import normalize_parser_type
     from schemas import EmailConfig, SkippedEmail
 
@@ -129,7 +131,7 @@ class DynamoEmailConfigStore(EmailConfigStore):
         return _normalize_config_legacy_parser_types(EmailConfig.model_validate(item))
 
     def put_config(self, config: EmailConfig) -> EmailConfig:
-        self._table.put_item(Item=config.model_dump(mode="json"))
+        self._table.put_item(Item=model_to_dynamo_item(config))
         return config
 
     def delete_config(self, org_id: str) -> None:
@@ -249,7 +251,7 @@ class DynamoSkippedEmailStore(SkippedEmailStore):
         if not record.expires_at_epoch:
             expires = utc_now() + timedelta(days=SKIPPED_EMAIL_TTL_DAYS)
             record.expires_at_epoch = int(expires.timestamp())
-        self._table.put_item(Item=record.model_dump(mode="json"))
+        self._table.put_item(Item=model_to_dynamo_item(record))
         return record
 
     def list_skipped(self, org_id: str, limit: int = 50) -> List[SkippedEmail]:

@@ -11,8 +11,10 @@ except ImportError:  # pragma: no cover - boto3 is available in Lambda runtime
     Key = None
 
 try:
+    from backend.dynamo_serialization import model_to_dynamo_item
     from backend.schemas import OrganizationRecord, UserRecord
 except ModuleNotFoundError:  # local run from backend/ directory
+    from dynamo_serialization import model_to_dynamo_item
     from schemas import OrganizationRecord, UserRecord
 
 
@@ -91,7 +93,7 @@ class DynamoIdentityRepository(IdentityRepository):
         return OrganizationRecord.model_validate(item)
 
     def upsert_org(self, org: OrganizationRecord) -> OrganizationRecord:
-        self._orgs_table.put_item(Item=org.model_dump(mode="json"))
+        self._orgs_table.put_item(Item=model_to_dynamo_item(org))
         return org
 
     def get_user(self, org_id: str, user_id: str) -> Optional[UserRecord]:
@@ -101,7 +103,7 @@ class DynamoIdentityRepository(IdentityRepository):
         return UserRecord.model_validate(item)
 
     def upsert_user(self, user: UserRecord) -> UserRecord:
-        self._users_table.put_item(Item=user.model_dump(mode="json"))
+        self._users_table.put_item(Item=model_to_dynamo_item(user))
         return user
 
     def list_users(self, org_id: str) -> List[UserRecord]:

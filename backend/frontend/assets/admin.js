@@ -3628,9 +3628,10 @@
   });
   if (el.loginScreenBtn) {
     el.loginScreenBtn.addEventListener("click", function () {
-      launchHostedLogin().catch(function (error) {
-        C.showMessage(el.loginScreenMessage, error.message, "error");
-      });
+      // Stage C: route to the in-app SRP login page, not the Cognito Hosted
+      // UI. Pass `?next=` so login.js redirects us back here after success.
+      var next = window.location.pathname + (window.location.search || "");
+      window.location.assign(apiBase + "/ui/login?next=" + encodeURIComponent(next));
     });
   }
   var loginCreateAccount = document.getElementById("login-create-account");

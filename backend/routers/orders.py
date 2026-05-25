@@ -14,6 +14,7 @@ try:
     )
     from backend.audit_store import get_audit_log_store, new_event_id
     from backend.order_store import get_order_store
+    from backend.pod_service import get_pod_data_store
     from backend.push_service import send_push_notification
     from backend.schemas import (
         AuditLogRecord,
@@ -31,6 +32,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
     from auth import ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER, get_current_user, require_roles
     from audit_store import get_audit_log_store, new_event_id
     from order_store import get_order_store
+    from pod_service import get_pod_data_store
     from push_service import send_push_notification
     from schemas import (
         AuditLogRecord,
@@ -411,6 +413,7 @@ async def update_order_status(
     body: StatusUpdateRequest,
     user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
     order_store=Depends(get_order_store),
+    pod_store=Depends(get_pod_data_store),
 ):
     order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
 
@@ -422,6 +425,20 @@ async def update_order_status(
             )
 
     _validate_transition(order.status, body.status)
+
+    # Delivered status requires proof of delivery — the driver must have
+    # uploaded at least one POD record (photo or signature) for this order
+    # before the order can move to Delivered. Failed has no such requirement
+    # (drivers may need to record failed-attempt orders even when no photo
+    # is feasible).
+    if body.status == OrderStatus.DELIVERED:
+        pod_records = pod_store.list_by_order_id(user["org_id"], order_id)
+        if not pod_records:
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail="Cannot mark order Delivered without proof of delivery. Upload a POD photo or signature first.",
+            )
+
     order.status = body.status
     return order_store.upsert_order(order)
 

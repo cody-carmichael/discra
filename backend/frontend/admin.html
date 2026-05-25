@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/styles.css?v=20260524a">
+  <link rel="stylesheet" href="assets/styles.css?v=20260530a">
 </head>
 <body class="theme-admin">
 
@@ -147,15 +147,23 @@
             </div>
             <p class="panel-help">Spreadsheet-style order management with sorting, filtering, and fast assignment actions.</p>
 
-            <div class="row">
-              <input id="bulk-driver-id" class="compact-input" list="driver-options" placeholder="driver id">
+            <div class="row driver-assign-row">
+              <div id="bulk-driver-select" class="driver-select">
+                <button type="button" id="bulk-driver-trigger" class="driver-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="bulk-driver-trigger-label" class="driver-select-trigger-label">Select driver…</span>
+                  <span class="driver-select-chevron" aria-hidden="true">▾</span>
+                </button>
+                <div id="bulk-driver-panel" class="driver-select-panel" hidden>
+                  <input type="text" id="bulk-driver-search" class="driver-select-search" placeholder="Search drivers…" autocomplete="off">
+                  <ul id="bulk-driver-list" class="driver-select-list" role="listbox"></ul>
+                </div>
+              </div>
+              <input type="hidden" id="bulk-driver-id">
               <button id="bulk-assign-selected" class="btn btn-primary" type="button">Assign Selected</button>
               <button id="bulk-unassign-selected" class="btn btn-ghost" type="button">Unassign</button>
               <button id="clear-selection" class="btn btn-ghost" type="button">Clear</button>
               <span id="selection-count" class="status-pill status-idle">0 selected</span>
             </div>
-
-            <datalist id="driver-options"></datalist>
 
             <form id="orders-filter-form" class="row orders-filters">
               <label class="field">
@@ -259,21 +267,6 @@
               <div class="inflight-empty">No active shipments.</div>
             </div>
             <p id="inflight-message" class="message"></p>
-          </section>
-
-          <section class="panel">
-            <div class="panel-title-row">
-              <h2>Audit Logs</h2>
-              <button id="refresh-audit-logs" class="btn btn-ghost" type="button">Refresh</button>
-            </div>
-            <form id="audit-filter-form" class="form-grid">
-              <label class="field"><span>Action (optional)</span><input id="audit-action-filter" name="action" placeholder="order.assigned"></label>
-              <label class="field"><span>Target Type (optional)</span><input id="audit-target-filter" name="target_type" placeholder="order"></label>
-              <label class="field"><span>Actor ID (optional)</span><input id="audit-actor-filter" name="actor_id" placeholder="admin-123"></label>
-              <label class="field"><span>Limit</span><input id="audit-limit-filter" name="limit" type="number" min="1" max="200" value="50"></label>
-            </form>
-            <div id="audit-logs-view" class="data-surface">No audit logs loaded.</div>
-            <p id="audit-message" class="message"></p>
           </section>
         </div>
       </div>
@@ -593,6 +586,23 @@
           </div>
         </section>
 
+        <!-- Audit Logs -->
+        <section class="panel">
+          <div class="panel-title-row">
+            <h2>Audit Logs</h2>
+            <button id="refresh-audit-logs" class="btn btn-ghost" type="button">Refresh</button>
+          </div>
+          <p class="panel-help">Per-org record of sensitive actions (assignments, status changes, billing, invitations).</p>
+          <form id="audit-filter-form" class="form-grid">
+            <label class="field"><span>Action (optional)</span><input id="audit-action-filter" name="action" placeholder="order.assigned"></label>
+            <label class="field"><span>Target Type (optional)</span><input id="audit-target-filter" name="target_type" placeholder="order"></label>
+            <label class="field"><span>Actor ID (optional)</span><input id="audit-actor-filter" name="actor_id" placeholder="admin-123"></label>
+            <label class="field"><span>Limit</span><input id="audit-limit-filter" name="limit" type="number" min="1" max="200" value="50"></label>
+          </form>
+          <div id="audit-logs-view" class="data-surface">No audit logs loaded.</div>
+          <p id="audit-message" class="message"></p>
+        </section>
+
         <div id="purchase-modal" class="modal-overlay" hidden>
           <div class="modal-dialog">
             <div class="modal-header">
@@ -730,7 +740,7 @@
   </button>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="assets/common.js?v=20260524a"></script>
-  <script src="assets/admin.js?v=20260524a"></script>
+  <script src="assets/common.js?v=20260530a"></script>
+  <script src="assets/admin.js?v=20260530a"></script>
 </body>
 </html>

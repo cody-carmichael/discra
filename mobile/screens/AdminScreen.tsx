@@ -300,8 +300,14 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
     );
   }, [orders, searchQuery]);
 
+  // Dispatch tab is about active work — exclude Delivered/Failed so the
+  // map markers and assignment lists don't show completed orders. Matches
+  // the web behavior introduced in PR #164 for the desktop dispatch list.
   const unassignedOrders = useMemo(
-    () => filteredOrders.filter((o) => !o.assigned_to),
+    () =>
+      filteredOrders.filter(
+        (o) => !o.assigned_to && o.status !== "Delivered" && o.status !== "Failed"
+      ),
     [filteredOrders]
   );
 
@@ -326,11 +332,15 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
     return pickupCacheRef.current.get(addr.trim().toLowerCase()) || null;
   }, []);
 
+  // Active assigned orders only — terminal orders live in Order History.
   const assignedOrders = useMemo(
-    () =>
-      selectedDriverId
-        ? filteredOrders.filter((o) => o.assigned_to === selectedDriverId)
-        : filteredOrders.filter((o) => !!o.assigned_to),
+    () => {
+      const isActive = (o: OrderRecord) =>
+        o.status !== "Delivered" && o.status !== "Failed";
+      return selectedDriverId
+        ? filteredOrders.filter((o) => o.assigned_to === selectedDriverId && isActive(o))
+        : filteredOrders.filter((o) => !!o.assigned_to && isActive(o));
+    },
     [filteredOrders, selectedDriverId]
   );
 

@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from backend.app import app
 from backend.audit_store import get_audit_log_store, reset_in_memory_audit_log_store
 from backend.order_store import reset_in_memory_order_store
+from backend.pod_service import get_pod_data_store, reset_in_memory_pod_store
+from backend.schemas import PodMetadataRecord
 
 client = TestClient(app)
 
@@ -69,8 +71,38 @@ def _test_env(monkeypatch):
     monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
     monkeypatch.setenv("USE_IN_MEMORY_ORDER_STORE", "true")
     monkeypatch.setenv("USE_IN_MEMORY_AUDIT_LOG_STORE", "true")
+    monkeypatch.setenv("USE_IN_MEMORY_POD_STORE", "true")
     reset_in_memory_order_store()
     reset_in_memory_audit_log_store()
+    reset_in_memory_pod_store()
+
+
+def _seed_pod_for_order(org_id: str, order_id: str, driver_id: str) -> None:
+    """Insert a placeholder POD record so an order can be marked Delivered.
+
+    The 2026-05 admin-UI cleanup added a server-side check that requires at
+    least one POD record before a status transition to Delivered. Tests that
+    only care about post-Delivered behavior use this helper to satisfy the
+    precondition without uploading real S3 artifacts.
+    """
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    now = datetime.now(timezone.utc)
+    get_pod_data_store().put_metadata(
+        PodMetadataRecord(
+            org_id=org_id,
+            pod_id=str(uuid4()),
+            order_id=order_id,
+            driver_id=driver_id,
+            created_at=now,
+            captured_at=now,
+            photo_keys=["test-photo-key"],
+            signature_keys=[],
+            notes=None,
+            location=None,
+        )
+    )
 
 
 def test_create_and_list_order_for_tenant():
@@ -249,6 +281,10 @@ def test_unassign_rejects_terminal_order():
         json={"status": "EnRoute"},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
+    # POD is required before a Delivered transition since the 2026-05 admin UI
+    # cleanup. Seed a placeholder POD record so this test can exercise the
+    # unassign-rejects-terminal behavior without uploading real artifacts.
+    _seed_pod_for_order(org_id="org-a", order_id=order_id, driver_id="driver-1")
     delivered = client.post(
         f"/orders/{order_id}/status",
         json={"status": "Delivered"},
@@ -306,6 +342,89 @@ def test_driver_inbox_and_status_update():
         headers={"Authorization": f"Bearer {other_driver_token}"},
     )
     assert forbidden_update.status_code == 403
+
+
+def test_delivered_requires_pod_record():
+    """Regression for the 2026-05 admin UI cleanup: moving an order to
+    Delivered without first uploading proof-of-delivery should return 400.
+    After a POD record exists, the same transition should succeed."""
+    admin_token = make_token("admin-pod", "org-pod", ["Admin"])
+    driver_token = make_token("driver-pod", "org-pod", ["Driver"])
+
+    create = client.post(
+        "/orders/",
+        json=make_order_payload("PodCustomer", "Warehouse PD", "55 POD St", reference_id="POD-1"),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    order_id = create.json()["id"]
+
+    client.post(
+        f"/orders/{order_id}/assign",
+        json={"driver_id": "driver-pod"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "PickedUp"},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "EnRoute"},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+
+    # Without POD: Delivered transition is rejected with 400.
+    no_pod = client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "Delivered"},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    assert no_pod.status_code == 400
+    assert "proof of delivery" in no_pod.json()["detail"].lower()
+
+    # After POD is seeded, the same transition succeeds.
+    _seed_pod_for_order(org_id="org-pod", order_id=order_id, driver_id="driver-pod")
+    delivered = client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "Delivered"},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    assert delivered.status_code == 200
+    assert delivered.json()["status"] == "Delivered"
+
+
+def test_failed_does_not_require_pod():
+    """Failed deliveries don't require POD — drivers may need to record a
+    failed attempt even when no photo is feasible."""
+    admin_token = make_token("admin-fail", "org-fail", ["Admin"])
+    driver_token = make_token("driver-fail", "org-fail", ["Driver"])
+
+    create = client.post(
+        "/orders/",
+        json=make_order_payload("FailCustomer", "Warehouse FL", "99 Fail St", reference_id="FAIL-1"),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    order_id = create.json()["id"]
+
+    client.post(
+        f"/orders/{order_id}/assign",
+        json={"driver_id": "driver-fail"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "PickedUp"},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+
+    failed = client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "Failed"},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    assert failed.status_code == 200
+    assert failed.json()["status"] == "Failed"
 
 
 def test_invalid_status_transition_is_rejected():

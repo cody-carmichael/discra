@@ -61,7 +61,13 @@
     statsUpcomingDue: document.getElementById("stats-upcoming-due"),
     statsUpcomingDueCard: document.getElementById("stats-upcoming-due-card"),
     orderSortButtons: Array.from(document.querySelectorAll("[data-order-sort-field]")),
-    driverOptions: document.getElementById("driver-options"),
+    driverOptions: document.getElementById("driver-options"),  // legacy hidden datalist (kept for back-compat callers)
+    bulkDriverSelect: document.getElementById("bulk-driver-select"),
+    bulkDriverTrigger: document.getElementById("bulk-driver-trigger"),
+    bulkDriverTriggerLabel: document.getElementById("bulk-driver-trigger-label"),
+    bulkDriverPanel: document.getElementById("bulk-driver-panel"),
+    bulkDriverSearch: document.getElementById("bulk-driver-search"),
+    bulkDriverList: document.getElementById("bulk-driver-list"),
     refreshDrivers: document.getElementById("refresh-drivers"),
     driversMessage: document.getElementById("drivers-message"),
     driverList: document.getElementById("driver-list"),
@@ -237,10 +243,15 @@
 
   function _dispatchFilterOrders(orders) {
     var list = Array.isArray(orders) ? orders : [];
-    var nowDate = new Date();
     var search = (dispatchSearchTerm || "").toLowerCase();
 
-    var filtered = list.filter(function (order) {
+    // Always exclude terminal statuses — the left dispatch list shows
+    // active work approaching deadline, not completed/failed orders.
+    var active = list.filter(function (order) {
+      return order.status !== "Delivered" && order.status !== "Failed";
+    });
+
+    var filtered = active.filter(function (order) {
       if (dispatchFilter === "dispatched") {
         return order.status === "Assigned" || order.status === "PickedUp";
       }
@@ -259,16 +270,16 @@
       });
     }
 
-    if (dispatchFilter === "unassigned") {
-      filtered.sort(function (a, b) {
-        var aMs = _closestDeadlineMs(a);
-        var bMs = _closestDeadlineMs(b);
-        if (aMs === Infinity && bMs === Infinity) return 0;
-        if (aMs === Infinity) return 1;
-        if (bMs === Infinity) return -1;
-        return aMs - bMs;
-      });
-    }
+    // Sort by closest-to-deadline first, descending to no-deadline last.
+    // Applied to every filter mode so the list is always deadline-ordered.
+    filtered.sort(function (a, b) {
+      var aMs = _closestDeadlineMs(a);
+      var bMs = _closestDeadlineMs(b);
+      if (aMs === Infinity && bMs === Infinity) return 0;
+      if (aMs === Infinity) return 1;
+      if (bMs === Infinity) return -1;
+      return aMs - bMs;
+    });
 
     return filtered;
   }
@@ -1110,6 +1121,7 @@
     if (el.bulkDriverId) {
       el.bulkDriverId.value = safeDriverId;
     }
+    _syncBulkDriverTriggerLabel();
     renderDriverList(lastDriverLocations, lastDriverRoster);
     renderDriverMarkers(lastDriverLocations, { focusDriverId: safeDriverId, keepCurrentViewport: !!(options && options.keepViewport), roster: lastDriverRoster });
     renderAssignmentQueues(allOrders);
@@ -2537,7 +2549,6 @@
   function renderDriverOptions(users) {
     assignableDriverList = Array.isArray(users) ? users : [];
     const seen = new Set();
-    const datalistOpts = [];
     const filterOpts = ["<option value=\"\">Any driver</option>"];
 
     assignableDriverList.forEach(function (user) {
@@ -2547,28 +2558,96 @@
       }
       seen.add(userId);
       const displayName = (user && (user.name || user.username)) ? String(user.name || user.username).trim() : "";
-      const email = user && user.email ? String(user.email).trim() : "";
-      const label = [displayName, email].filter(Boolean).join(" | ");
-      datalistOpts.push(
-        "<option value=\"" +
-        C.escapeHtml(userId) +
-        "\"" +
-        (label ? " label=\"" + C.escapeHtml(label) + "\"" : "") +
-        "></option>"
-      );
       filterOpts.push(
         "<option value=\"" + C.escapeHtml(userId) + "\">" + C.escapeHtml(displayName || userId) + "</option>"
       );
     });
 
-    if (el.driverOptions) {
-      el.driverOptions.innerHTML = datalistOpts.join("");
-    }
     if (el.ordersAssignedFilter) {
       const currentValue = el.ordersAssignedFilter.value;
       el.ordersAssignedFilter.innerHTML = filterOpts.join("");
       el.ordersAssignedFilter.value = currentValue;
     }
+
+    _renderBulkDriverList((el.bulkDriverSearch && el.bulkDriverSearch.value) || "");
+    _syncBulkDriverTriggerLabel();
+  }
+
+  function _renderBulkDriverList(searchTerm) {
+    if (!el.bulkDriverList) return;
+    const needle = (searchTerm || "").trim().toLowerCase();
+    const seen = new Set();
+    const items = [];
+
+    assignableDriverList.forEach(function (user) {
+      const userId = (user && user.user_id ? String(user.user_id) : "").trim();
+      if (!userId || seen.has(userId)) return;
+      seen.add(userId);
+      const displayName = (user && (user.name || user.username)) ? String(user.name || user.username).trim() : "";
+      const email = user && user.email ? String(user.email).trim() : "";
+      const primary = displayName || userId;
+      const secondary = email || (displayName ? userId : "");
+
+      if (needle) {
+        const haystack = (primary + " " + secondary + " " + userId).toLowerCase();
+        if (haystack.indexOf(needle) === -1) return;
+      }
+
+      items.push(
+        '<li role="option" data-driver-id="' + C.escapeHtml(userId) + '">' +
+          '<span class="driver-name">' + C.escapeHtml(primary) + '</span>' +
+          (secondary ? '<span class="driver-secondary">' + C.escapeHtml(secondary) + '</span>' : '') +
+        '</li>'
+      );
+    });
+
+    if (!items.length) {
+      el.bulkDriverList.innerHTML = '<li class="is-empty">No drivers match.</li>';
+      return;
+    }
+    el.bulkDriverList.innerHTML = items.join("");
+  }
+
+  function _syncBulkDriverTriggerLabel() {
+    if (!el.bulkDriverTriggerLabel) return;
+    const currentId = (el.bulkDriverId && el.bulkDriverId.value) ? String(el.bulkDriverId.value).trim() : "";
+    if (!currentId) {
+      el.bulkDriverTriggerLabel.textContent = "Select driver…";
+      el.bulkDriverTriggerLabel.classList.add("is-placeholder");
+      return;
+    }
+    const match = assignableDriverList.find(function (u) {
+      return u && String(u.user_id || "").trim() === currentId;
+    });
+    const label = match
+      ? (match.name || match.username || currentId)
+      : (typeof _driverDisplayName === "function" ? _driverDisplayName(currentId) : currentId);
+    el.bulkDriverTriggerLabel.textContent = label;
+    el.bulkDriverTriggerLabel.classList.remove("is-placeholder");
+  }
+
+  function _openBulkDriverPanel() {
+    if (!el.bulkDriverPanel || !el.bulkDriverSelect) return;
+    el.bulkDriverPanel.hidden = false;
+    el.bulkDriverSelect.classList.add("is-open");
+    if (el.bulkDriverTrigger) el.bulkDriverTrigger.setAttribute("aria-expanded", "true");
+    _renderBulkDriverList((el.bulkDriverSearch && el.bulkDriverSearch.value) || "");
+    if (el.bulkDriverSearch) {
+      try { el.bulkDriverSearch.focus({ preventScroll: true }); } catch (_) { el.bulkDriverSearch.focus(); }
+    }
+  }
+
+  function _closeBulkDriverPanel() {
+    if (!el.bulkDriverPanel || !el.bulkDriverSelect) return;
+    el.bulkDriverPanel.hidden = true;
+    el.bulkDriverSelect.classList.remove("is-open");
+    if (el.bulkDriverTrigger) el.bulkDriverTrigger.setAttribute("aria-expanded", "false");
+  }
+
+  function _toggleBulkDriverPanel() {
+    if (!el.bulkDriverPanel) return;
+    if (el.bulkDriverPanel.hidden) _openBulkDriverPanel();
+    else _closeBulkDriverPanel();
   }
 
   async function refreshAssignableDrivers() {
@@ -3467,6 +3546,42 @@
     bulkAssignSelectedOrders().catch(function (error) {
       C.showMessage(el.ordersMessage, error.message, "error");
     });
+  });
+
+  // Bulk driver dropdown wiring
+  if (el.bulkDriverTrigger) {
+    el.bulkDriverTrigger.addEventListener("click", function (event) {
+      event.stopPropagation();
+      _toggleBulkDriverPanel();
+    });
+  }
+  if (el.bulkDriverSearch) {
+    el.bulkDriverSearch.addEventListener("input", function () {
+      _renderBulkDriverList(el.bulkDriverSearch.value);
+    });
+    el.bulkDriverSearch.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        _closeBulkDriverPanel();
+        if (el.bulkDriverTrigger) el.bulkDriverTrigger.focus();
+      }
+    });
+  }
+  if (el.bulkDriverList) {
+    el.bulkDriverList.addEventListener("click", function (event) {
+      var li = event.target.closest("li[data-driver-id]");
+      if (!li) return;
+      var driverId = li.getAttribute("data-driver-id") || "";
+      // Use selectDriver so the rest of the dispatch UI stays in sync —
+      // map markers, route, assignment queues, and the trigger label.
+      selectDriver(driverId, { silent: false });
+      _closeBulkDriverPanel();
+    });
+  }
+  // Click outside closes the panel.
+  document.addEventListener("click", function (event) {
+    if (!el.bulkDriverSelect || !el.bulkDriverPanel || el.bulkDriverPanel.hidden) return;
+    if (el.bulkDriverSelect.contains(event.target)) return;
+    _closeBulkDriverPanel();
   });
   el.bulkUnassignSelected.addEventListener("click", function () {
     bulkUnassignSelectedOrders().catch(function (error) {

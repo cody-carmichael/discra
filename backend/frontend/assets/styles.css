@@ -1216,7 +1216,8 @@ td small {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   padding: 0.6rem;
-  background: #fff;
+  background: var(--panel-2);
+  color: var(--text);
 }
 
 .driver-layout {
@@ -3939,4 +3940,141 @@ body.theme-admin .billing-seat-cards .stat-card small {
 @keyframes order-highlight-pulse {
   0%   { background: rgba(200, 151, 58, 0.3); }
   100% { background: transparent; }
+}
+
+/* ─── Driver select dropdown (Orders tab bulk-assign) ───────────────── */
+.driver-assign-row {
+  align-items: stretch;
+}
+
+.driver-select {
+  position: relative;
+  display: inline-block;
+  width: 240px;
+}
+
+.driver-select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-display, inherit);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.driver-select-trigger:hover,
+.driver-select.is-open .driver-select-trigger {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+
+.driver-select-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  flex: 1 1 auto;
+}
+
+.driver-select-trigger-label.is-placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.driver-select-chevron {
+  opacity: 0.6;
+  font-size: 0.9rem;
+  flex: 0 0 auto;
+}
+
+.driver-select-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  min-width: 100%;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.driver-select-search {
+  margin: 8px;
+  padding: 0.45rem 0.6rem;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.driver-select-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.driver-select-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 6px 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.driver-select-list li {
+  padding: 0.55rem 0.85rem;
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+}
+
+.driver-select-list li:hover,
+.driver-select-list li.is-active {
+  background: rgba(200, 151, 58, 0.15);
+  border-top-color: rgba(200, 151, 58, 0.3);
+  border-bottom-color: rgba(200, 151, 58, 0.3);
+}
+
+.driver-select-list li.is-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  cursor: default;
+}
+
+.driver-select-list li.is-empty:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+.driver-select-list .driver-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.driver-select-list .driver-secondary {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }

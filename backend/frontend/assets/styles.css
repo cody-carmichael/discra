@@ -4078,3 +4078,107 @@ body.theme-admin .billing-seat-cards .stat-card small {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* ─── Dispatch map driver markers (photo + always-visible name) ─────── */
+.dispatch-map-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  /* MapLibre anchors at center; the icon sits above the anchor and the
+     label floats just below. Tight gap so they read as one unit. */
+  gap: 4px;
+  /* Help the wrapper sit naturally over the point it's anchored to. */
+  transform: translateY(0);
+}
+
+.dispatch-map-marker-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #130F1A;
+  box-shadow: 0 0 8px rgba(200, 151, 58, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 3px solid var(--gold-dim, #7A5C22);
+  flex: 0 0 auto;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.dispatch-map-marker-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.dispatch-map-marker-initials {
+  background: linear-gradient(180deg, #2a2138, #1c1628);
+  color: var(--text-heading, #F5D98B);
+  font-family: var(--font-display, inherit);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dispatch-map-marker-tsa {
+  width: 42px;
+  height: 42px;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  position: relative;
+}
+
+.dispatch-map-marker-tsa-photo {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #7B4FA6;
+  overflow: hidden;
+  background: #130F1A;
+}
+
+.dispatch-map-marker-tsa-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dispatch-map-marker-label {
+  max-width: 140px;
+  padding: 2px 8px;
+  background: rgba(15, 12, 24, 0.88);
+  color: var(--text-primary, #EDE0C4);
+  font-family: var(--font-display, inherit);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(200, 151, 58, 0.35);
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  /* Stay above other markers' shadows but below popups. */
+  position: relative;
+  pointer-events: none;
+}
+
+.dispatch-map-marker.is-selected .dispatch-map-marker-icon {
+  transform: scale(1.08);
+  box-shadow: 0 0 14px rgba(200, 151, 58, 0.7);
+}
+
+.dispatch-map-marker.is-selected .dispatch-map-marker-label {
+  background: rgba(200, 151, 58, 0.95);
+  color: #1A1208;
+  border-color: var(--gold-primary, #C8973A);
+}

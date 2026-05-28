@@ -1,4 +1,4 @@
-const CACHE_NAME = "discra-admin-v20260530a";
+const CACHE_NAME = "discra-admin-v20260603a";
 const CACHE_PREFIX = "discra-admin-";
 const PRECACHE_URLS = [
   "assets/styles.css?v=20260322e",

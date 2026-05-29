@@ -61,19 +61,14 @@
     statsUpcomingDue: document.getElementById("stats-upcoming-due"),
     statsUpcomingDueCard: document.getElementById("stats-upcoming-due-card"),
     orderSortButtons: Array.from(document.querySelectorAll("[data-order-sort-field]")),
-    driverOptions: document.getElementById("driver-options"),  // legacy hidden datalist (kept for back-compat callers)
     bulkDriverSelect: document.getElementById("bulk-driver-select"),
     bulkDriverTrigger: document.getElementById("bulk-driver-trigger"),
     bulkDriverTriggerLabel: document.getElementById("bulk-driver-trigger-label"),
     bulkDriverPanel: document.getElementById("bulk-driver-panel"),
     bulkDriverSearch: document.getElementById("bulk-driver-search"),
     bulkDriverList: document.getElementById("bulk-driver-list"),
-    refreshDrivers: document.getElementById("refresh-drivers"),
     driversMessage: document.getElementById("drivers-message"),
     driverList: document.getElementById("driver-list"),
-    optimizeForm: document.getElementById("optimize-form"),  // removed from DOM
-    routeResult: document.getElementById("route-result"),    // removed from DOM
-    routeMessage: document.getElementById("route-message"),  // removed from DOM
     inflightList: document.getElementById("inflight-list"),
     inflightCount: document.getElementById("inflight-count"),
     inflightMessage: document.getElementById("inflight-message"),
@@ -736,12 +731,6 @@
         button.disabled = !enabled;
       });
     }
-    if (el.refreshDrivers) el.refreshDrivers.disabled = !enabled;
-    if (el.optimizeForm) {
-      el.optimizeForm.querySelectorAll("input, textarea, button").forEach(function (element) {
-        element.disabled = !enabled;
-      });
-    }
     if (el.refreshInflight) el.refreshInflight.disabled = !enabled;
     if (el.refreshAuditLogs) el.refreshAuditLogs.disabled = !enabled;
     if (el.auditFilterForm) el.auditFilterForm.querySelectorAll("input, button").forEach(function (element) {
@@ -1319,7 +1308,6 @@
       el.billingInvitations.innerHTML = "<li>No invitations found.</li>";
       renderInflight([]);
       el.auditLogsView.innerHTML = "No audit logs loaded.";
-      if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
       return;
     }
     isAuthorizedRole = hasAllowedRole(claims);
@@ -3544,7 +3532,6 @@
       renderBillingInvitations([]);
       renderInflight([]);
       el.auditLogsView.innerHTML = "No audit logs loaded.";
-      if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
     }
     // Initialize email settings and real-time notifications
     initEmailSettings();
@@ -3587,7 +3574,6 @@
         renderDriverMarkers([]);
         renderAssignmentQueues([]);
         renderInflight([]);
-        if (el.routeResult) el.routeResult.innerHTML = "No route computed yet.";
         updateOrderStats([]);
         updateActiveDriverStat(0);
         C.showMessage(el.authMessage, "Session cleared.", "success");
@@ -3725,7 +3711,6 @@
       });
     });
   }
-  if (el.refreshDrivers) el.refreshDrivers.addEventListener("click", refreshDrivers);
   if (el.driverList) {
     el.driverList.addEventListener("click", function (event) {
       onDriverListClick(event).catch(function (error) {
@@ -3746,7 +3731,6 @@
       C.showMessage(el.auditMessage, error.message, "error");
     });
   });
-  if (el.optimizeForm) { el.optimizeForm.addEventListener("submit", function(e) { e.preventDefault(); }); }
   el.refreshBilling.addEventListener("click", refreshBillingSummary);
   el.refreshInvitations.addEventListener("click", refreshBillingInvitations);
   el.billingCheckoutForm.addEventListener("submit", startBillingCheckout);

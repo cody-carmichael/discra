@@ -1061,8 +1061,12 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
               </View>
               {profileMsg ? <Text style={styles.profileMsg}>{profileMsg}</Text> : null}
               <View style={styles.row}>
-                <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => saveProfile().catch(() => undefined)}>
-                  <Text style={styles.btnText}>Save</Text>
+                <Pressable
+                  style={[styles.btn, styles.btnPrimary, loading && { opacity: 0.6 }]}
+                  onPress={() => saveProfile().catch(() => undefined)}
+                  disabled={loading}
+                >
+                  <Text style={styles.btnText}>{loading ? "Saving…" : "Save"}</Text>
                 </Pressable>
                 <Pressable style={[styles.btn, styles.btnGhost]} onPress={onSignOut}>
                   <Text style={styles.btnGhostText}>Sign Out</Text>

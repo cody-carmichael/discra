@@ -273,12 +273,12 @@ def test_unassign_rejects_terminal_order():
     )
     client.post(
         f"/orders/{order_id}/status",
-        json={"status": "PickedUp"},
+        json={"status": "EnRoute"},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     client.post(
         f"/orders/{order_id}/status",
-        json={"status": "EnRoute"},
+        json={"status": "PickedUp"},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     # POD is required before a Delivered transition since the 2026-05 admin UI
@@ -328,17 +328,17 @@ def test_driver_inbox_and_status_update():
     assert len(inbox_response.json()) == 1
     assert inbox_response.json()[0]["id"] == order_id
 
-    pickup_response = client.post(
+    en_route_response = client.post(
         f"/orders/{order_id}/status",
-        json={"status": "PickedUp"},
+        json={"status": "EnRoute"},
         headers={"Authorization": f"Bearer {driver_token}"},
     )
-    assert pickup_response.status_code == 200
-    assert pickup_response.json()["status"] == "PickedUp"
+    assert en_route_response.status_code == 200
+    assert en_route_response.json()["status"] == "EnRoute"
 
     forbidden_update = client.post(
         f"/orders/{order_id}/status",
-        json={"status": "EnRoute"},
+        json={"status": "PickedUp"},
         headers={"Authorization": f"Bearer {other_driver_token}"},
     )
     assert forbidden_update.status_code == 403
@@ -365,12 +365,12 @@ def test_delivered_requires_pod_record():
     )
     client.post(
         f"/orders/{order_id}/status",
-        json={"status": "PickedUp"},
+        json={"status": "EnRoute"},
         headers={"Authorization": f"Bearer {driver_token}"},
     )
     client.post(
         f"/orders/{order_id}/status",
-        json={"status": "EnRoute"},
+        json={"status": "PickedUp"},
         headers={"Authorization": f"Bearer {driver_token}"},
     )
 
@@ -414,7 +414,7 @@ def test_failed_does_not_require_pod():
     )
     client.post(
         f"/orders/{order_id}/status",
-        json={"status": "PickedUp"},
+        json={"status": "EnRoute"},
         headers={"Authorization": f"Bearer {driver_token}"},
     )
 
@@ -604,3 +604,60 @@ def test_bulk_unassign_prevalidates_order_ids_without_partial_updates():
     assert first_order["assigned_to"] == "driver-88"
     assert second_order["status"] == "Assigned"
     assert second_order["assigned_to"] == "driver-88"
+
+
+def test_en_route_reverts_previous_en_route_stop_for_same_driver():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    driver_token = make_token("driver-1", "org-a", ["Driver"])
+
+    order_a = client.post(
+        "/orders/",
+        json=make_order_payload("Alice", "WH A", "1 A St", reference_id="7001"),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["id"]
+    order_b = client.post(
+        "/orders/",
+        json=make_order_payload("Bob", "WH B", "2 B St", reference_id="7002"),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["id"]
+
+    for oid in (order_a, order_b):
+        client.post(f"/orders/{oid}/assign", json={"driver_id": "driver-1"}, headers={"Authorization": f"Bearer {admin_token}"})
+
+    r = client.post(f"/orders/{order_a}/status", json={"status": "EnRoute"}, headers={"Authorization": f"Bearer {driver_token}"})
+    assert r.status_code == 200
+    assert r.json()["status"] == "EnRoute"
+
+    # Set order B to EnRoute — should auto-revert order A to Assigned
+    r = client.post(f"/orders/{order_b}/status", json={"status": "EnRoute"}, headers={"Authorization": f"Bearer {driver_token}"})
+    assert r.status_code == 200
+    assert r.json()["status"] == "EnRoute"
+
+    a_status = client.get(f"/orders/{order_a}", headers={"Authorization": f"Bearer {admin_token}"}).json()["status"]
+    assert a_status == "Assigned"
+
+
+def test_en_route_does_not_affect_other_drivers():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    driver1_token = make_token("driver-1", "org-a", ["Driver"])
+    driver2_token = make_token("driver-2", "org-a", ["Driver"])
+
+    order_a = client.post(
+        "/orders/",
+        json=make_order_payload("Charlie", "WH C", "3 C St", reference_id="7003"),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["id"]
+    order_b = client.post(
+        "/orders/",
+        json=make_order_payload("Dana", "WH D", "4 D St", reference_id="7004"),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["id"]
+
+    client.post(f"/orders/{order_a}/assign", json={"driver_id": "driver-1"}, headers={"Authorization": f"Bearer {admin_token}"})
+    client.post(f"/orders/{order_a}/status", json={"status": "EnRoute"}, headers={"Authorization": f"Bearer {driver1_token}"})
+
+    client.post(f"/orders/{order_b}/assign", json={"driver_id": "driver-2"}, headers={"Authorization": f"Bearer {admin_token}"})
+    client.post(f"/orders/{order_b}/status", json={"status": "EnRoute"}, headers={"Authorization": f"Bearer {driver2_token}"})
+
+    a_status = client.get(f"/orders/{order_a}", headers={"Authorization": f"Bearer {admin_token}"}).json()["status"]
+    assert a_status == "EnRoute"

@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import MapView, { Marker, Polyline, Region } from "react-native-maps";
 import SignatureScreen from "react-native-signature-canvas";
+import DeliveryCelebration from "../components/DeliveryCelebration";
 import {
   OrderRecord,
   OsrmResult,
@@ -102,6 +103,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
   const [profileMsg, setProfileMsg] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
+  // Level-up flourish shown after a POD is submitted and the stop is delivered.
+  const [celebration, setCelebration] = useState<{ reference: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [locationActive, setLocationActive] = useState(false);
   const locationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -488,6 +491,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       setDetailVisible(false);
       setSelectedOrder(null);
       setStatusMsg("POD submitted. Delivery marked complete.");
+      // Reward the driver with a level-up flourish for clearing the stop.
+      setCelebration({ reference: orderReference(order) });
     } finally {
       for (const cleanup of cleanupTasks) {
         try { await cleanup(); } catch { /* ok */ }
@@ -1079,6 +1084,14 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
           </SafeAreaView>
         </View>
       </Modal>
+
+      {/* ── Delivery celebration (level-up flourish) ──────────────────── */}
+      {celebration ? (
+        <DeliveryCelebration
+          reference={celebration.reference}
+          onDone={() => setCelebration(null)}
+        />
+      ) : null}
     </View>
   );
 }

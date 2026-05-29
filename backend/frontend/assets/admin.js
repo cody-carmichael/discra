@@ -1226,7 +1226,7 @@
     if (!("serviceWorker" in navigator)) {
       return;
     }
-    navigator.serviceWorker.register("admin-sw.js?v=20260322e", { scope: "./" }).catch(function () {
+    navigator.serviceWorker.register("admin-sw.js?v=20260529a", { scope: "./" }).catch(function () {
       // Keep dispatch workflow available even if worker registration fails.
     });
   }

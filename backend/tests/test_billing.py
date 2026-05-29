@@ -347,6 +347,58 @@ def test_activation_writes_audit_event_on_success():
     assert any(event.action == "billing.invitation.activated" for event in audit_events)
 
 
+def test_activation_preserves_existing_user_profile():
+    """Activating an invitation for a user who already exists must not wipe the
+    profile fields (name/phone/photo/TSA) they saved via PUT /users/me."""
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    set_limit = client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 5, "driver_seat_limit": 5},
+        headers=_auth_header(admin_token),
+    )
+    assert set_limit.status_code == 200
+
+    # Existing driver who has already filled in their profile.
+    driver_token = make_token("prof-user", "org-1", ["Driver"])
+    assert client.post("/users/me/sync", headers=_auth_header(driver_token)).status_code == 200
+    profile = client.put(
+        "/users/me",
+        json={
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "phone": "(555) 123-4567",
+            "photo_url": "https://example.com/jane.jpg",
+            "tsa_certified": True,
+        },
+        headers=_auth_header(driver_token),
+    )
+    assert profile.status_code == 200
+
+    # Admin invites the same user to a dispatcher seat, then activates it.
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": "prof-user", "email": "prof-user@example.com", "role": "Dispatcher"},
+        headers=_auth_header(admin_token),
+    )
+    assert invite.status_code == 200
+    invitation_id = invite.json()["invitation_id"]
+
+    activate = client.post(
+        f"/billing/invitations/{invitation_id}/activate",
+        headers=_auth_header(admin_token),
+    )
+    assert activate.status_code == 200
+
+    activated_user = activate.json()
+    assert activated_user["first_name"] == "Jane"
+    assert activated_user["last_name"] == "Doe"
+    assert activated_user["phone"] == "(555) 123-4567"
+    assert activated_user["photo_url"] == "https://example.com/jane.jpg"
+    assert activated_user["tsa_certified"] is True
+    assert "Driver" in activated_user["roles"]
+    assert "Dispatcher" in activated_user["roles"]
+
+
 def test_admin_can_list_and_cancel_pending_invitations():
     admin_token = make_token("admin-1", "org-1", ["Admin"])
     limit_response = client.post(

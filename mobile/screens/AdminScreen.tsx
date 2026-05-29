@@ -1066,8 +1066,12 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                   ))}
                 </View>
                 {inviteMsg ? <Text style={[styles.metaText, { color: inviteMsg.includes("sent") ? "#6ABF7B" : "#F0C060" }]}>{inviteMsg}</Text> : null}
-                <Pressable style={[styles.btn, styles.btnPrimary, { alignSelf: "flex-start" }]} onPress={() => sendInvitation().catch(() => undefined)}>
-                  <Text style={styles.btnText}>Send Invitation</Text>
+                <Pressable
+                  style={[styles.btn, styles.btnPrimary, { alignSelf: "flex-start" }, adminLoading && { opacity: 0.6 }]}
+                  onPress={() => sendInvitation().catch(() => undefined)}
+                  disabled={adminLoading}
+                >
+                  <Text style={styles.btnText}>{adminLoading ? "Sending…" : "Send Invitation"}</Text>
                 </Pressable>
               </View>
             </View>
@@ -1199,8 +1203,12 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
               <OrderFormFields form={createForm} setForm={setCreateForm} />
               {createMsg ? <Text style={styles.errorText}>{createMsg}</Text> : null}
               <View style={styles.row}>
-                <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => createOrder().catch(() => undefined)}>
-                  <Text style={styles.btnText}>Create Order</Text>
+                <Pressable
+                  style={[styles.btn, styles.btnPrimary, loading && { opacity: 0.6 }]}
+                  onPress={() => createOrder().catch(() => undefined)}
+                  disabled={loading}
+                >
+                  <Text style={styles.btnText}>{loading ? "Creating…" : "Create Order"}</Text>
                 </Pressable>
                 <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setCreateVisible(false)}>
                   <Text style={styles.btnGhostText}>Cancel</Text>
@@ -1223,8 +1231,12 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
               <OrderFormFields form={editForm} setForm={setEditForm} />
               {editMsg ? <Text style={styles.errorText}>{editMsg}</Text> : null}
               <View style={styles.row}>
-                <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => saveEditOrder().catch(() => undefined)}>
-                  <Text style={styles.btnText}>Save Changes</Text>
+                <Pressable
+                  style={[styles.btn, styles.btnPrimary, loading && { opacity: 0.6 }]}
+                  onPress={() => saveEditOrder().catch(() => undefined)}
+                  disabled={loading}
+                >
+                  <Text style={styles.btnText}>{loading ? "Saving…" : "Save Changes"}</Text>
                 </Pressable>
                 <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setEditOrder(null)}>
                   <Text style={styles.btnGhostText}>Cancel</Text>
@@ -1441,7 +1453,7 @@ function DispatchTab({
       {/* Assigned orders for selected driver */}
       {selectedDriverId && assignedOrders.length > 0 ? (
         <>
-          <Text style={styles.sectionSubtitle}>Assigned to {selectedDriverId}</Text>
+          <Text style={styles.sectionSubtitle} numberOfLines={1}>Assigned to {deriveDriverName(selectedDriverId)}</Text>
           {assignedOrders.map((order) => (
             <View key={order.id} style={styles.orderCard}>
               <Text style={styles.orderTitle}>{order.customer_name}</Text>

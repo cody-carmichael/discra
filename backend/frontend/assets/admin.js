@@ -2301,15 +2301,50 @@
       .catch(function () { /* silently skip */ });
   }
 
+  function _markerDisplayName(rosterEntry, fallbackDriverId) {
+    if (rosterEntry) {
+      // Prefer structured first + last name over the legacy single-field name.
+      var first = (rosterEntry.first_name || "").trim();
+      var last = (rosterEntry.last_name || "").trim();
+      if (first && last) return first + " " + last;
+      if (first) return first;
+      if (last) return last;
+      var name = (rosterEntry.name || "").trim();
+      if (name) return name;
+      var username = (rosterEntry.username || "").trim();
+      if (username) return username;
+    }
+    return String(fallbackDriverId || "").trim();
+  }
+
+  function _driverInitials(displayName) {
+    var raw = (displayName || "").trim();
+    if (!raw) return "?";
+    // First letter of first word + first letter of last word.
+    // "John Smith" -> "JS", "Mary Jane Watson-Doe" -> "MW", "cher" -> "C".
+    var words = raw.split(/\s+/).filter(Boolean);
+    if (words.length === 1) return words[0].charAt(0).toUpperCase();
+    var first = words[0].charAt(0).toUpperCase();
+    var last = words[words.length - 1].charAt(0).toUpperCase();
+    return first + last;
+  }
+
   function _createDriverMarkerElement(item, rosterEntry, isSelectedDriver) {
     var photoUrl = rosterEntry && rosterEntry.photo_url;
     var isTsa = rosterEntry && rosterEntry.tsa_certified;
     var borderColor = isSelectedDriver ? "#C8973A" : (isTsa ? "#7B4FA6" : "#7A5C22");
+    var displayName = _markerDisplayName(rosterEntry, item.driver_id);
+
+    // Outer wrapper: icon on top, always-visible name pill below it.
+    var wrapper = document.createElement("div");
+    wrapper.className = "dispatch-map-marker" + (isSelectedDriver ? " is-selected" : "");
+
+    var iconEl;
+
     if (isTsa) {
-      var tsaEl = document.createElement("div");
-      tsaEl.className = "dispatch-map-marker-tsa";
-      tsaEl.style.cssText = "width:42px;height:42px;cursor:pointer;position:relative;";
-      tsaEl.innerHTML = '<svg width="42" height="42" viewBox="0 0 42 42">' +
+      iconEl = document.createElement("div");
+      iconEl.className = "dispatch-map-marker-icon dispatch-map-marker-tsa";
+      iconEl.innerHTML = '<svg width="42" height="42" viewBox="0 0 42 42">' +
         '<circle cx="21" cy="21" r="19" fill="#7B4FA6" stroke="#F0C060" stroke-width="2.5"/>' +
         '<circle cx="21" cy="21" r="16" fill="none" stroke="#F0C060" stroke-width="1" opacity=".5"/>' +
         '<g transform="translate(21,22) rotate(-45) scale(.55)">' +
@@ -2319,25 +2354,39 @@
       '</svg>';
       if (photoUrl) {
         var photoOverlay = document.createElement("div");
-        photoOverlay.style.cssText = "position:absolute;bottom:-2px;right:-2px;width:18px;height:18px;border-radius:50%;border:2px solid #7B4FA6;overflow:hidden;background:#130F1A;";
+        photoOverlay.className = "dispatch-map-marker-tsa-photo";
         var pImg = document.createElement("img");
-        pImg.src = photoUrl; pImg.alt = "";
-        pImg.style.cssText = "width:100%;height:100%;object-fit:cover;";
+        pImg.src = photoUrl;
+        pImg.alt = "";
         photoOverlay.appendChild(pImg);
-        tsaEl.appendChild(photoOverlay);
+        iconEl.appendChild(photoOverlay);
       }
-      return { element: tsaEl, offset: 20 };
     } else if (photoUrl) {
-      var elDiv = document.createElement("div");
-      elDiv.className = "dispatch-map-marker-photo";
-      elDiv.style.cssText = "width:36px;height:36px;border-radius:50%;border:3px solid " + borderColor + ";overflow:hidden;cursor:pointer;background:#130F1A;box-shadow:0 0 8px rgba(200,151,58,0.35);";
+      iconEl = document.createElement("div");
+      iconEl.className = "dispatch-map-marker-icon dispatch-map-marker-photo";
+      iconEl.style.borderColor = borderColor;
       var img = document.createElement("img");
-      img.src = photoUrl; img.alt = "";
-      img.style.cssText = "width:100%;height:100%;object-fit:cover;";
-      elDiv.appendChild(img);
-      return { element: elDiv, offset: 15 };
+      img.src = photoUrl;
+      img.alt = "";
+      iconEl.appendChild(img);
+    } else {
+      // No photo — render initials so the marker stays identifiable.
+      iconEl = document.createElement("div");
+      iconEl.className = "dispatch-map-marker-icon dispatch-map-marker-initials";
+      iconEl.style.borderColor = borderColor;
+      iconEl.textContent = _driverInitials(displayName);
     }
-    return { color: borderColor, offset: 15 };
+
+    var labelEl = document.createElement("div");
+    labelEl.className = "dispatch-map-marker-label";
+    labelEl.textContent = displayName;
+
+    wrapper.appendChild(iconEl);
+    wrapper.appendChild(labelEl);
+
+    // Anchor offset accounts for the larger TSA shield (42px) vs 36px circles.
+    var offset = isTsa ? 22 : 18;
+    return { element: wrapper, offset: offset };
   }
 
   function renderDriverMarkers(driverLocations, options) {
@@ -2361,7 +2410,9 @@
       activeIds.add(item.driver_id);
       const isSelectedDriver = !!focusDriverId && item.driver_id === focusDriverId;
       var rosterEntry = roster.find(function (r) { return r.user_id === item.driver_id; });
-      var driverName = (rosterEntry && rosterEntry.username) || item.driver_id;
+      // Prefer full name; fall back to username, then user_id. Same helper
+      // backs the visible marker label so popup + label always agree.
+      var driverName = _markerDisplayName(rosterEntry, item.driver_id);
       var isTsa = rosterEntry && rosterEntry.tsa_certified;
       var popupHtml = "<strong>" + C.escapeHtml(driverName) + "</strong>" +
         (isTsa ? "<br><span style=\"color:#9D6FC8;font-weight:700;font-size:.75rem;letter-spacing:0.08em;\">TSA CERTIFIED</span>" : "") +
@@ -2436,7 +2487,7 @@
       html += "<li class=\"dispatch-driver-section-label\">Online (" + driverLocations.length + ")</li>";
       html += driverLocations.map(function (item) {
         var rosterEntry = roster.find(function (r) { return r.user_id === item.driver_id; });
-        var displayName = (rosterEntry && (rosterEntry.name || rosterEntry.username)) || item.driver_id;
+        var displayName = _markerDisplayName(rosterEntry, item.driver_id);
         var photoUrl = rosterEntry && rosterEntry.photo_url;
         var selectedClass = item.driver_id === selectedDriverId ? " is-selected" : "";
         var avatarHtml = photoUrl

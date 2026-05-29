@@ -219,3 +219,45 @@ def test_audit_logs_filter_is_applied_before_limit():
     events = response.json()
     assert len(events) == 1
     assert events[0]["action"] == "order.assigned"
+
+
+def test_profile_update_persists_first_and_last_name():
+    """PUT /users/me saves first_name + last_name; GET /users/me returns them."""
+    token = make_token("driver-800", "org-800", ["Driver"])
+
+    # Create the user record via GET.
+    get_resp = client.get("/users/me", headers={"Authorization": f"Bearer {token}"})
+    assert get_resp.status_code == 200
+    body = get_resp.json()
+    assert body["first_name"] is None
+    assert body["last_name"] is None
+
+    # Save first + last name.
+    put_resp = client.put(
+        "/users/me",
+        json={"first_name": "Jane", "last_name": "Smith"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert put_resp.status_code == 200
+    updated = put_resp.json()
+    assert updated["first_name"] == "Jane"
+    assert updated["last_name"] == "Smith"
+
+    # Confirm they survive a re-sync (GET /users/me triggers _sync_user again).
+    get2 = client.get("/users/me", headers={"Authorization": f"Bearer {token}"})
+    assert get2.status_code == 200
+    synced = get2.json()
+    assert synced["first_name"] == "Jane"
+    assert synced["last_name"] == "Smith"
+
+
+def test_profile_update_first_name_max_length():
+    """first_name exceeding 80 chars returns 422."""
+    token = make_token("driver-801", "org-801", ["Driver"])
+    client.get("/users/me", headers={"Authorization": f"Bearer {token}"})
+    resp = client.put(
+        "/users/me",
+        json={"first_name": "A" * 81},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422

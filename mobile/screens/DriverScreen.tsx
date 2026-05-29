@@ -94,6 +94,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   const [podState, setPodState] = useState<Map<string, PodState>>(new Map());
   const [profileVisible, setProfileVisible] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileFirstName, setProfileFirstName] = useState("");
+  const [profileLastName, setProfileLastName] = useState("");
   const [profilePhone, setProfilePhone] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profileTsa, setProfileTsa] = useState(false);
@@ -499,6 +501,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
     try {
       const data = await apiRequest<UserProfile>(apiBase, "/users/me", { token });
       setProfile(data);
+      setProfileFirstName(data.first_name || "");
+      setProfileLastName(data.last_name || "");
       setProfilePhone(formatPhoneNumber(data.phone || ""));
       setProfileEmail(data.email || "");
       setProfileTsa(!!data.tsa_certified);
@@ -571,10 +575,19 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   async function saveProfile() {
     setLoading(true);
     try {
+      const trimmedFirst = profileFirstName.trim();
+      const trimmedLast = profileLastName.trim();
+      if (!trimmedFirst || !trimmedLast) {
+        setProfileMsg("First and last name are required.");
+        setLoading(false);
+        return;
+      }
       await apiRequest(apiBase, "/users/me", {
         method: "PUT",
         token,
         json: {
+          first_name: trimmedFirst,
+          last_name: trimmedLast,
           phone: profilePhone || null,
           tsa_certified: profileTsa,
           // Only persist URLs the backend can actually store and share.
@@ -593,6 +606,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
         prev
           ? {
               ...prev,
+              first_name: trimmedFirst,
+              last_name: trimmedLast,
               phone: profilePhone || undefined,
               tsa_certified: profileTsa,
               // Always reflect the picked photo locally (for top-bar avatar)
@@ -1001,6 +1016,26 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                 )}
                 <Text style={styles.avatarPickerLabel}>Change Photo</Text>
               </Pressable>
+              <Text style={styles.detailLabel}>FIRST NAME <Text style={{ color: "#E05A3B" }}>*</Text></Text>
+              <TextInput
+                style={styles.input}
+                value={profileFirstName}
+                onChangeText={setProfileFirstName}
+                placeholder="First name"
+                placeholderTextColor="#4A3F60"
+                autoCapitalize="words"
+                maxLength={80}
+              />
+              <Text style={styles.detailLabel}>LAST NAME <Text style={{ color: "#E05A3B" }}>*</Text></Text>
+              <TextInput
+                style={styles.input}
+                value={profileLastName}
+                onChangeText={setProfileLastName}
+                placeholder="Last name"
+                placeholderTextColor="#4A3F60"
+                autoCapitalize="words"
+                maxLength={80}
+              />
               <Text style={styles.detailLabel}>EMAIL</Text>
               <Text style={styles.detailValue}>{profile?.email || profileEmail || "-"}</Text>
               <Text style={styles.detailLabel}>PHONE</Text>

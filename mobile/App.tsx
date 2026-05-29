@@ -137,8 +137,8 @@ export default function App() {
     if (!token) return;
     if (isDriver && !isAdmin) setWorkspace("driver");
     else if (isAdmin && !isDriver) setWorkspace("admin");
-    // if both (like cody.carmichael), keep current choice or default to admin
-    else if (isAdmin && isDriver && workspace === "driver" && !isDriver) setWorkspace("admin");
+    // If the user has both roles (e.g. cody.carmichael), keep whatever
+    // workspace is already selected (restored from storage; defaults to "driver").
   }, [token, isDriver, isAdmin]);
 
   // ── Storage ────────────────────────────────────────────────────────────────
@@ -865,17 +865,6 @@ const styles = StyleSheet.create({
   loginBtn: {
     marginTop: 4,
     paddingVertical: 13,
-  },
-  settingsLink: {
-    color: "#968AA8",
-    fontSize: 12,
-    marginTop: 4,
-    textDecorationLine: "underline",
-  },
-  row: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
   },
   // Workspace banner — always visible when authenticated
   workspaceBanner: {

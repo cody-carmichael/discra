@@ -51,9 +51,9 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 
 _STATUS_TRANSITIONS: Dict[OrderStatus, Set[OrderStatus]] = {
     OrderStatus.CREATED: {OrderStatus.ASSIGNED, OrderStatus.FAILED},
-    OrderStatus.ASSIGNED: {OrderStatus.PICKED_UP, OrderStatus.EN_ROUTE, OrderStatus.DELIVERED, OrderStatus.FAILED},
-    OrderStatus.PICKED_UP: {OrderStatus.EN_ROUTE, OrderStatus.DELIVERED, OrderStatus.FAILED},
-    OrderStatus.EN_ROUTE: {OrderStatus.DELIVERED, OrderStatus.FAILED},
+    OrderStatus.ASSIGNED: {OrderStatus.EN_ROUTE, OrderStatus.FAILED},
+    OrderStatus.EN_ROUTE: {OrderStatus.PICKED_UP, OrderStatus.FAILED},
+    OrderStatus.PICKED_UP: {OrderStatus.DELIVERED, OrderStatus.FAILED},
     OrderStatus.DELIVERED: set(),
     OrderStatus.FAILED: {OrderStatus.ASSIGNED},
 }
@@ -426,6 +426,16 @@ async def update_order_status(
 
     _validate_transition(order.status, body.status)
 
+    if body.status == OrderStatus.EN_ROUTE and order.assigned_to:
+        for conflicting in order_store.list_orders(
+            org_id=user["org_id"],
+            assigned_to=order.assigned_to,
+            status=OrderStatus.EN_ROUTE,
+        ):
+            if conflicting.id != order.id:
+                conflicting.status = OrderStatus.ASSIGNED
+                order_store.upsert_order(conflicting)
+
     # Delivered status requires proof of delivery — the driver must have
     # uploaded at least one POD record (photo or signature) for this order
     # before the order can move to Delivered. Failed has no such requirement
@@ -451,7 +461,7 @@ async def driver_inbox(
     results = order_store.list_assigned_orders(
         org_id=user["org_id"],
         driver_id=user["sub"],
-        include_terminal=True,
+        include_terminal=False,
     )
     return sorted(results, key=lambda order: order.created_at)
 

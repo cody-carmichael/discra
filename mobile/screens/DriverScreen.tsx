@@ -692,6 +692,9 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
             {loading ? <ActivityIndicator size="small" color="#C8973A" style={{ marginRight: 8 }} /> : null}
             <Pressable
               style={styles.profileBtn}
+              // The avatar is 36×36; expand the tap target to ~52×52 so it
+              // clears the 44×44 minimum touch-target guideline.
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               onPress={() => {
                 setProfileMsg("");
                 loadProfile().catch(() => undefined);

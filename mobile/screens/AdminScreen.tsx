@@ -1751,14 +1751,6 @@ const styles = StyleSheet.create({
   brandMarkText: { color: "#0B0910", fontWeight: "800", fontSize: 16 },
   brandName: { color: "#F5D98B", fontSize: 16, fontWeight: "700" },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
-  signOutBtn: {
-    borderWidth: 1,
-    borderColor: "#6B4F2A",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  signOutText: { color: "#C8973A", fontWeight: "700", fontSize: 12 },
 
   // Dispatch layout
   dispatchLayout: { flex: 1 },

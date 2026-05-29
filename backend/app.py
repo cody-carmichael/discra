@@ -13,7 +13,14 @@ def _load_dotenv() -> None:
     env_file = Path(__file__).parent.parent / ".env"
     if not env_file.exists():
         return
-    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+    # Try UTF-8 first; fall back to UTF-16 (Windows Notepad sometimes writes .env with BOM).
+    try:
+        content = env_file.read_text(encoding="utf-8-sig")
+        if "\x00" in content:
+            raise ValueError("null bytes — likely UTF-16")
+    except (UnicodeDecodeError, ValueError):
+        content = env_file.read_text(encoding="utf-16")
+    for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

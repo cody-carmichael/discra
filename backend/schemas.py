@@ -170,6 +170,8 @@ class UserRecord(BaseModel):
     org_id: str
     user_id: str
     username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -182,6 +184,8 @@ class UserRecord(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
+    first_name: Optional[str] = Field(default=None, max_length=80)
+    last_name: Optional[str] = Field(default=None, max_length=80)
     phone: Optional[str] = Field(default=None, max_length=40)
     email: Optional[str] = Field(default=None, max_length=320)
     photo_url: Optional[str] = Field(default=None, max_length=2048)

@@ -2303,6 +2303,12 @@
 
   function _markerDisplayName(rosterEntry, fallbackDriverId) {
     if (rosterEntry) {
+      // Prefer structured first + last name over the legacy single-field name.
+      var first = (rosterEntry.first_name || "").trim();
+      var last = (rosterEntry.last_name || "").trim();
+      if (first && last) return first + " " + last;
+      if (first) return first;
+      if (last) return last;
       var name = (rosterEntry.name || "").trim();
       if (name) return name;
       var username = (rosterEntry.username || "").trim();
@@ -2481,7 +2487,7 @@
       html += "<li class=\"dispatch-driver-section-label\">Online (" + driverLocations.length + ")</li>";
       html += driverLocations.map(function (item) {
         var rosterEntry = roster.find(function (r) { return r.user_id === item.driver_id; });
-        var displayName = (rosterEntry && (rosterEntry.name || rosterEntry.username)) || item.driver_id;
+        var displayName = _markerDisplayName(rosterEntry, item.driver_id);
         var photoUrl = rosterEntry && rosterEntry.photo_url;
         var selectedClass = item.driver_id === selectedDriverId ? " is-selected" : "";
         var avatarHtml = photoUrl

@@ -55,6 +55,8 @@ export type OsrmResult = {
 
 export type UserProfile = {
   sub?: string;
+  first_name?: string | null;
+  last_name?: string | null;
   email?: string;
   phone?: string | null;
   photo_url?: string | null;

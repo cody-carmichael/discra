@@ -90,8 +90,10 @@ def _sync_user(user, repo) -> UserRecord:
         roles=user.get("groups", []),
         is_active=True,
         # User-editable profile fields — preserve whatever was last saved so
-        # that a plain GET /users/me never wipes phone, photo_url, or
-        # tsa_certified that the user previously set via PUT /users/me.
+        # that a plain GET /users/me never wipes these values that the user
+        # previously set via PUT /users/me.
+        first_name=existing_user.first_name if existing_user else None,
+        last_name=existing_user.last_name if existing_user else None,
         phone=existing_user.phone if existing_user else None,
         photo_url=existing_user.photo_url if existing_user else None,
         tsa_certified=existing_user.tsa_certified if existing_user else False,

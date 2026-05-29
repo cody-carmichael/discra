@@ -441,6 +441,7 @@ class PodViewRecord(BaseModel):
     pod_id: str
     order_id: str
     driver_id: str
+    driver_name: Optional[str] = None
     captured_at: datetime
     notes: Optional[str] = None
     photo_urls: List[str] = Field(default_factory=list)

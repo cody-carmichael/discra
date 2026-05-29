@@ -1086,7 +1086,15 @@
         var canvas = el.detailBody.querySelector("canvas.signature-pad");
         if (canvas) clearSignature(canvas);
       } else if (action === "submit-pod") {
-        await submitPod(orderId);
+        var submitBtn = el.detailBody.querySelector('[data-action="submit-pod"]');
+        if (submitBtn && submitBtn.disabled) return; // already in-flight
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Submitting…"; }
+        try {
+          await submitPod(orderId);
+        } catch (podErr) {
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Submit POD & Deliver"; }
+          throw podErr;
+        }
         C.showMessage(el.ordersMessage, "POD submitted & delivered.", "success");
         await refreshInbox();
         closeDetailPanel();

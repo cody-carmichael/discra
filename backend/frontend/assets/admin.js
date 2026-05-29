@@ -667,7 +667,7 @@
       }).join("");
       return (i > 0 ? "<hr style=\"border-color:var(--border);margin:16px 0\">" : "") +
         "<div class=\"pod-record\">" +
-        "<div class=\"pod-meta\">Driver: <strong>" + C.escapeHtml(record.driver_id || "—") + "</strong>" +
+        "<div class=\"pod-meta\">Driver: <strong>" + C.escapeHtml(record.driver_name || record.driver_id || "—") + "</strong>" +
         " &bull; Captured: <strong>" + C.escapeHtml(C.formatTimestamp(record.captured_at)) + "</strong>" +
         (record.notes ? " &bull; Notes: <em>" + C.escapeHtml(record.notes) + "</em>" : "") +
         "</div>" +

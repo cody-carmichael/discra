@@ -13,6 +13,7 @@ try:
         pod_key_prefix,
         validate_presign_artifact,
     )
+    from backend.repositories import get_identity_repository
     from backend.routers.orders import _require_tenant_order
     from backend.schemas import (
         PodMetadataCreateRequest,
@@ -33,6 +34,7 @@ except ModuleNotFoundError:  # local run from backend/ directory
         pod_key_prefix,
         validate_presign_artifact,
     )
+    from repositories import get_identity_repository
     from routers.orders import _require_tenant_order
     from schemas import (
         PodMetadataCreateRequest,
@@ -142,22 +144,39 @@ async def create_pod_metadata(
 POD_VIEW_EXPIRES_SECONDS = 600
 
 
+def _driver_display_name(user_record) -> str:
+    """Return 'First Last', falling back to username/email, then raw sub."""
+    if user_record is None:
+        return ""
+    first = (user_record.first_name or "").strip()
+    last = (user_record.last_name or "").strip()
+    if first or last:
+        return f"{first} {last}".strip()
+    return user_record.username or user_record.email or ""
+
+
 @router.get("/order/{order_id}", response_model=List[PodViewRecord])
 async def list_pod_for_order(
     order_id: str,
     user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER])),
     pod_store=Depends(get_pod_data_store),
+    identity_repo=Depends(get_identity_repository),
 ):
     _require_tenant_order(order_id, user["org_id"])
     records = pod_store.list_by_order_id(user["org_id"], order_id)
+    driver_name_cache: dict = {}
     result = []
     for record in records:
         photo_urls = [pod_store.generate_presigned_get_url(k, POD_VIEW_EXPIRES_SECONDS) for k in record.photo_keys]
         sig_urls = [pod_store.generate_presigned_get_url(k, POD_VIEW_EXPIRES_SECONDS) for k in record.signature_keys]
+        if record.driver_id not in driver_name_cache:
+            driver_record = identity_repo.get_user(user["org_id"], record.driver_id)
+            driver_name_cache[record.driver_id] = _driver_display_name(driver_record) or record.driver_id
         result.append(PodViewRecord(
             pod_id=record.pod_id,
             order_id=record.order_id,
             driver_id=record.driver_id,
+            driver_name=driver_name_cache[record.driver_id],
             captured_at=record.captured_at,
             notes=record.notes,
             photo_urls=photo_urls,

@@ -283,6 +283,15 @@ def _apply_review_decision_for_registration(
             user_id=registration.identity_sub,
             username=registration.identity_username or registration.identity_sub,
             email=registration.requester_email or (existing_user.email if existing_user else None),
+            # Preserve any profile fields already saved for this user in the org
+            # so granting admin on approval never wipes them. Mirrors
+            # identity._sync_user; new users simply default to None/False.
+            name=existing_user.name if existing_user else None,
+            first_name=existing_user.first_name if existing_user else None,
+            last_name=existing_user.last_name if existing_user else None,
+            phone=existing_user.phone if existing_user else None,
+            photo_url=existing_user.photo_url if existing_user else None,
+            tsa_certified=existing_user.tsa_certified if existing_user else False,
             roles=_roles_with_admin(existing_user.roles if existing_user else []),
             is_active=True,
             created_at=existing_user.created_at if existing_user else now,

@@ -732,6 +732,16 @@ async def activate_invitation(
         user_id=invitation.user_id,
         username=existing_user.username if existing_user else invitation.user_id,
         email=existing_user.email if existing_user and existing_user.email else invitation.email,
+        # Preserve user-editable profile fields. Activating an invitation for an
+        # existing user (e.g. a driver who is also granted a dispatcher seat)
+        # must never wipe the name / contact / photo / TSA data they previously
+        # saved via PUT /users/me. Mirrors identity._sync_user.
+        name=existing_user.name if existing_user else None,
+        first_name=existing_user.first_name if existing_user else None,
+        last_name=existing_user.last_name if existing_user else None,
+        phone=existing_user.phone if existing_user else None,
+        photo_url=existing_user.photo_url if existing_user else None,
+        tsa_certified=existing_user.tsa_certified if existing_user else False,
         roles=roles,
         is_active=True,
         created_at=existing_user.created_at if existing_user else now,

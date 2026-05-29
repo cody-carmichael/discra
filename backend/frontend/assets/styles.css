@@ -983,7 +983,7 @@ td small {
 .assignment-item {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
-  background: #fff;
+  background: var(--panel-2);
   padding: 0.54rem;
   display: grid;
   gap: 0.38rem;
@@ -1115,7 +1115,7 @@ td small {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   padding: 0.6rem;
-  background: #fff;
+  background: var(--panel-2);
 }
 
 .audit-item-head,
@@ -1155,7 +1155,7 @@ td small {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   padding: 0.52rem;
-  background: #fff;
+  background: var(--panel-2);
 }
 
 .kv-label {

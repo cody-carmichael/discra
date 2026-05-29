@@ -827,6 +827,82 @@
     await updateOrderStatus(orderId, "Delivered");
   }
 
+  // ── Delivery celebration (MMO level-up flourish) ────────────────
+
+  // Plays a one-shot dark-fantasy flourish when a stop is delivered: a
+  // sunburst, expanding rune rings, rising embers, and a glowing sigil with a
+  // "DELIVERY COMPLETE" banner. Auto-dismisses (~2.7s) or on tap. CSS in
+  // driver-mobile.css does the animating; this just builds + tears down the DOM.
+  function showDeliveryCelebration(reference) {
+    var prior = document.querySelector(".drv-celebrate");
+    if (prior && prior.parentNode) prior.parentNode.removeChild(prior);
+
+    var EMBERS = 16;
+    var TICKS = 8;
+
+    var embers = "";
+    for (var i = 0; i < EMBERS; i++) {
+      var ang = (Math.PI * 2 * i) / EMBERS + (Math.random() - 0.5) * 0.6;
+      var dist = 120 + Math.random() * 170;
+      var tx = Math.round(Math.cos(ang) * dist);
+      var ty = Math.round(Math.sin(ang) * dist - 60); // bias upward, like sparks
+      var size = (3 + Math.random() * 5).toFixed(1);
+      var delay = Math.round(Math.random() * 220);
+      var color = Math.random() > 0.5 ? "#E05A3B" : "var(--drv-accent-bright)";
+      embers +=
+        '<span class="drv-celebrate-ember" style="width:' + size + "px;height:" + size +
+        "px;background:" + color + ";--tx:" + tx + "px;--ty:" + ty + "px;--d:" + delay + 'ms;"></span>';
+    }
+
+    var ticks = "";
+    for (var t = 0; t < TICKS; t++) {
+      ticks +=
+        '<span class="drv-celebrate-tick" style="transform:translateX(-50%) rotate(' +
+        (t * (360 / TICKS)) + 'deg);"></span>';
+    }
+
+    var refHtml = reference
+      ? '<div class="drv-celebrate-ref">' + C.escapeHtml(reference) + "</div>"
+      : "";
+
+    var overlay = document.createElement("div");
+    overlay.className = "drv-celebrate";
+    overlay.setAttribute("role", "alert");
+    overlay.setAttribute("aria-label", "Delivery complete");
+    overlay.innerHTML =
+      '<div class="drv-celebrate-backdrop"></div>' +
+      '<div class="drv-celebrate-rays"></div>' +
+      '<div class="drv-celebrate-flash"></div>' +
+      '<div class="drv-celebrate-ring r1"></div>' +
+      '<div class="drv-celebrate-ring r2"></div>' +
+      '<div class="drv-celebrate-ring r3"></div>' +
+      embers +
+      '<div class="drv-celebrate-glow"></div>' +
+      '<div class="drv-celebrate-rune">' + ticks + "</div>" +
+      '<div class="drv-celebrate-sigil"><span class="drv-celebrate-dash"></span>' +
+      '<span class="drv-celebrate-check">✓</span></div>' +
+      '<div class="drv-celebrate-banner">' +
+      '<div class="drv-celebrate-title">DELIVERY COMPLETE</div>' +
+      '<div class="drv-celebrate-divider"></div>' +
+      '<div class="drv-celebrate-reward">✦&nbsp;&nbsp;STOP CLEARED&nbsp;&nbsp;✦</div>' +
+      refHtml +
+      "</div>";
+
+    var removed = false;
+    function teardown() {
+      if (removed) return;
+      removed = true;
+      overlay.classList.add("is-leaving");
+      setTimeout(function () {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }, 380);
+    }
+    overlay.addEventListener("click", teardown);
+    setTimeout(teardown, 2700);
+
+    document.body.appendChild(overlay);
+  }
+
   // ── Profile ────────────────────────────────────────────────────
 
   var currentProfile = null;
@@ -1096,6 +1172,8 @@
           throw podErr;
         }
         C.showMessage(el.ordersMessage, "POD submitted & delivered.", "success");
+        var deliveredOrder = currentOrders.find(function (o) { return o.id === orderId; });
+        showDeliveryCelebration(deliveredOrder && deliveredOrder.reference_id ? "REF " + deliveredOrder.reference_id : "");
         await refreshInbox();
         closeDetailPanel();
       }

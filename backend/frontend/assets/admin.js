@@ -305,9 +305,6 @@
     var nowDate = new Date();
 
     if (el.unassignedQueueCount) {
-      var unassignedCount = allOrders.filter(function (o) {
-        return !o.assigned_to || o.status === "Created";
-      }).length;
       el.unassignedQueueCount.textContent = String(filtered.length);
     }
 
@@ -1718,6 +1715,17 @@
     if (!requireAuthorized(el.createMessage)) {
       return;
     }
+    // Guard against double-submit: a second click (or Enter keypress) before
+    // the POST resolves would create a duplicate order. Lock the submit button
+    // for the duration of the request — a disabled submit button also blocks
+    // the implicit Enter-to-submit path.
+    const submitBtn = el.createForm.querySelector("button[type=\"submit\"]");
+    if (submitBtn && submitBtn.disabled) {
+      return;
+    }
+    if (submitBtn) {
+      submitBtn.disabled = true;
+    }
     const formData = new FormData(el.createForm);
     try {
       const payload = normalizeCreatePayload(formData);
@@ -1732,6 +1740,10 @@
       await refreshOrders();
     } catch (error) {
       C.showMessage(el.createMessage, error.message, "error");
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+      }
     }
   }
 

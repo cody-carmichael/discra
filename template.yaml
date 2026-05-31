@@ -78,8 +78,13 @@ Parameters:
     Description: MapLibre style JSON URL used by Admin/Dispatcher map view
   EnableUiDevAuth:
     Type: String
-    Default: "true"
-    Description: Enable cookie-based UI dev auth profiles for no-token manual testing
+    AllowedValues: ["true", "false"]
+    Default: "false"
+    Description: >-
+      Enable cookie-based UI dev auth profiles for no-token manual testing.
+      SECURITY: when "true" anyone can mint an Admin session with no credentials
+      via POST /backend/ui/dev-auth/login. MUST stay "false" for any non-dev
+      deploy; only enable explicitly for an isolated dev/test stack.
   DevAuthSecret:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /discra/dev-auth-secret

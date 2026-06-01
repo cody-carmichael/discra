@@ -128,6 +128,18 @@ async def create_pod_metadata(
     _validate_metadata_keys(key_prefix, payload.photo_keys)
     _validate_metadata_keys(key_prefix, payload.signature_keys)
 
+    # Idempotency: a retried or double-submitted POST (network retry, two tabs,
+    # restored detail panel) must not create duplicate POD records. If this
+    # driver already recorded a POD for this order with the same artifact keys,
+    # return the existing record instead of minting a new one. Keys are unique
+    # per upload (uuid4 in build_pod_key), so identical key sets ⇒ same submit.
+    incoming_keys = (frozenset(payload.photo_keys), frozenset(payload.signature_keys))
+    for existing in pod_store.list_by_order_id(user["org_id"], payload.order_id):
+        if existing.driver_id != user["sub"]:
+            continue
+        if (frozenset(existing.photo_keys), frozenset(existing.signature_keys)) == incoming_keys:
+            return existing
+
     metadata = new_pod_metadata(
         org_id=user["org_id"],
         order_id=payload.order_id,

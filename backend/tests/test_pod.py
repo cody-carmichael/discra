@@ -224,3 +224,87 @@ def test_driver_can_store_pod_metadata():
     assert body["driver_id"] == "driver-1"
     assert body["photo_keys"] == [photo_key]
     assert body["location"]["lat"] == 37.782
+
+
+def _presign_one(driver_token: str, order_id: str, artifact_type="photo", content_type="image/jpeg"):
+    resp = client.post(
+        "/pod/presign",
+        json={
+            "order_id": order_id,
+            "artifacts": [
+                {"artifact_type": artifact_type, "content_type": content_type, "file_size_bytes": 20000}
+            ],
+        },
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    assert resp.status_code == 200
+    return resp.json()["uploads"][0]["key"]
+
+
+def test_pod_metadata_is_idempotent_on_duplicate_submit():
+    """Regression (ledger A-1 / Step 1.2): a retried or double-submitted
+    /pod/metadata with the SAME artifact keys must NOT create a second POD
+    record — it returns the existing one. Guards against network retries, two
+    tabs, and a restored detail panel producing duplicate deliveries."""
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    driver_token = make_token("driver-1", "org-1", ["Driver"])
+    order_id = _create_assigned_order(admin_token, "driver-1")
+    photo_key = _presign_one(driver_token, order_id)
+
+    payload = {"order_id": order_id, "photo_keys": [photo_key], "signature_keys": []}
+    first = client.post("/pod/metadata", json=payload, headers={"Authorization": f"Bearer {driver_token}"})
+    second = client.post("/pod/metadata", json=payload, headers={"Authorization": f"Bearer {driver_token}"})
+
+    assert first.status_code == 200 and second.status_code == 200
+    # Same logical record returned both times.
+    assert first.json()["pod_id"] == second.json()["pod_id"]
+
+    # And the viewer shows exactly ONE record for the order.
+    pod_list = client.get(
+        f"/pod/order/{order_id}", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert pod_list.status_code == 200
+    assert len(pod_list.json()) == 1
+
+
+def test_pod_metadata_distinct_captures_create_distinct_records():
+    """A genuinely new capture (different keys) is still recorded separately —
+    idempotency must not collapse legitimately different submissions."""
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    driver_token = make_token("driver-1", "org-1", ["Driver"])
+    order_id = _create_assigned_order(admin_token, "driver-1")
+
+    key_a = _presign_one(driver_token, order_id)
+    key_b = _presign_one(driver_token, order_id)
+    assert key_a != key_b  # uuid4 per upload
+
+    client.post("/pod/metadata", json={"order_id": order_id, "photo_keys": [key_a]},
+                headers={"Authorization": f"Bearer {driver_token}"})
+    client.post("/pod/metadata", json={"order_id": order_id, "photo_keys": [key_b]},
+                headers={"Authorization": f"Bearer {driver_token}"})
+
+    pod_list = client.get(f"/pod/order/{order_id}", headers={"Authorization": f"Bearer {admin_token}"})
+    assert len(pod_list.json()) == 2
+
+
+def test_pod_viewer_returns_photo_and_signature_urls():
+    """The admin POD viewer must surface presigned GET URLs for both the photo
+    and signature so the images actually render (Step 1.2 'image/signature
+    appears'). In-memory store returns deterministic view URLs per key."""
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    driver_token = make_token("driver-1", "org-1", ["Driver"])
+    order_id = _create_assigned_order(admin_token, "driver-1")
+
+    photo_key = _presign_one(driver_token, order_id, "photo", "image/jpeg")
+    sig_key = _presign_one(driver_token, order_id, "signature", "image/png")
+    client.post(
+        "/pod/metadata",
+        json={"order_id": order_id, "photo_keys": [photo_key], "signature_keys": [sig_key]},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+
+    view = client.get(f"/pod/order/{order_id}", headers={"Authorization": f"Bearer {admin_token}"})
+    assert view.status_code == 200
+    record = view.json()[0]
+    assert len(record["photo_urls"]) == 1 and record["photo_urls"][0]
+    assert len(record["signature_urls"]) == 1 and record["signature_urls"][0]

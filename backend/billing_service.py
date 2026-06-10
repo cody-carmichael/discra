@@ -485,6 +485,17 @@ class DisabledStripeClient(StripeClient):
         raise RuntimeError("Stripe billing portal is not configured")
 
 
+def _stripe_object_to_dict(value: Any) -> Dict[str, Any]:
+    # stripe-python v15 responses are StripeObject instances, not dicts; the
+    # routers and webhook handler consume dict-style payloads.
+    if isinstance(value, dict):
+        return value
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return to_dict(for_json=True)
+    return value
+
+
 class StripeSdkClient(StripeClient):
     def __init__(
         self,
@@ -503,15 +514,20 @@ class StripeSdkClient(StripeClient):
             stripe.api_key = self._api_key
 
     def parse_webhook_event(self, payload: bytes, signature_header: Optional[str]) -> Dict[str, Any]:
+        payload_text = payload.decode("utf-8") if isinstance(payload, (bytes, bytearray)) else str(payload)
         if self._webhook_secret:
             if not signature_header:
                 raise ValueError("Missing Stripe-Signature header")
-            return stripe.Webhook.construct_event(
-                payload=payload,
-                sig_header=signature_header,
-                secret=self._webhook_secret,
+            # Verify the signature but return the plain JSON dict: stripe-python's
+            # Event/StripeObject no longer supports dict-style .get(), which the
+            # webhook handler relies on.
+            stripe.WebhookSignature.verify_header(
+                payload_text,
+                signature_header,
+                self._webhook_secret,
+                stripe.Webhook.DEFAULT_TOLERANCE,
             )
-        return json.loads(payload.decode("utf-8"))
+        return json.loads(payload_text)
 
     def _item_update(self, items: List[Dict[str, Any]], price_id: str, quantity: int) -> Optional[Dict[str, Any]]:
         if not price_id:
@@ -533,9 +549,11 @@ class StripeSdkClient(StripeClient):
         if not subscription_id:
             raise RuntimeError("Stripe subscription id is required")
 
-        subscription = stripe.Subscription.retrieve(
-            subscription_id,
-            expand=["items.data.price"],
+        subscription = _stripe_object_to_dict(
+            stripe.Subscription.retrieve(
+                subscription_id,
+                expand=["items.data.price"],
+            )
         )
         items = (subscription.get("items", {}) or {}).get("data", [])
         updates = []
@@ -549,10 +567,12 @@ class StripeSdkClient(StripeClient):
         if not updates:
             return subscription
 
-        return stripe.Subscription.modify(
-            subscription_id,
-            items=updates,
-            proration_behavior="create_prorations",
+        return _stripe_object_to_dict(
+            stripe.Subscription.modify(
+                subscription_id,
+                items=updates,
+                proration_behavior="create_prorations",
+            )
         )
 
     def create_checkout_session(
@@ -596,7 +616,7 @@ class StripeSdkClient(StripeClient):
         if customer_id:
             params["customer"] = customer_id
 
-        return stripe.checkout.Session.create(**params)
+        return _stripe_object_to_dict(stripe.checkout.Session.create(**params))
 
     def create_billing_portal_session(
         self,
@@ -607,9 +627,11 @@ class StripeSdkClient(StripeClient):
             raise RuntimeError("STRIPE_SECRET_KEY is required to create billing portal sessions")
         if not customer_id:
             raise RuntimeError("Stripe customer id is required")
-        return stripe.billing_portal.Session.create(
-            customer=customer_id,
-            return_url=return_url,
+        return _stripe_object_to_dict(
+            stripe.billing_portal.Session.create(
+                customer=customer_id,
+                return_url=return_url,
+            )
         )
 
 
@@ -655,6 +677,26 @@ def apply_subscription_webhook(
         return None
 
     current = existing or get_or_default_subscription(org_id, billing_store)
+
+    event_id = str(event.get("id") or "").strip()
+    raw_event_created = event.get("created")
+    event_created = (
+        int(raw_event_created)
+        if isinstance(raw_event_created, (int, float)) and not isinstance(raw_event_created, bool)
+        else None
+    )
+    # Stripe delivers events at-least-once and without ordering guarantees:
+    # drop a redelivery of the event we already applied, and drop any event
+    # older than the one that produced the current state.
+    if event_id and current.last_stripe_event_id == event_id:
+        return None
+    if (
+        event_created is not None
+        and current.last_stripe_event_created is not None
+        and event_created < current.last_stripe_event_created
+    ):
+        return None
+
     dispatcher_limit, driver_limit = _extract_limits_from_subscription_object(
         payload,
         fallback_dispatcher=current.dispatcher_seat_limit,
@@ -669,6 +711,8 @@ def apply_subscription_webhook(
         stripe_subscription_id=stripe_subscription_id or current.stripe_subscription_id,
         dispatcher_seat_limit=dispatcher_limit,
         driver_seat_limit=driver_limit,
+        last_stripe_event_id=event_id or current.last_stripe_event_id,
+        last_stripe_event_created=event_created if event_created is not None else current.last_stripe_event_created,
         created_at=current.created_at,
         updated_at=utc_now(),
     )

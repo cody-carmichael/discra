@@ -227,6 +227,11 @@ class SeatSubscriptionRecord(BaseModel):
     stripe_subscription_id: Optional[str] = None
     dispatcher_seat_limit: int = Field(default=0, ge=0)
     driver_seat_limit: int = Field(default=0, ge=0)
+    # Stripe delivers webhook events at-least-once and out of order; the last
+    # applied event id/created pair lets the webhook handler drop duplicates
+    # and stale events instead of overwriting newer seat state.
+    last_stripe_event_id: Optional[str] = None
+    last_stripe_event_created: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

@@ -1,7 +1,10 @@
 import base64
+import hashlib
+import hmac
 import json
 import os
 import sys
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -534,3 +537,313 @@ def test_invitation_requires_email_or_user_id():
         headers=_auth_header(admin_token),
     )
     assert invite.status_code == 422
+
+
+# --- RBAC: every billing endpoint is Admin-only ---
+
+BILLING_ENDPOINTS = [
+    ("GET", "/billing/summary", None),
+    ("GET", "/billing/status", None),
+    ("POST", "/billing/seats", {"dispatcher_seat_limit": 1, "driver_seat_limit": 1}),
+    (
+        "POST",
+        "/billing/checkout",
+        {
+            "dispatcher_seat_limit": 1,
+            "driver_seat_limit": 1,
+            "success_url": "https://example.com/ok",
+            "cancel_url": "https://example.com/cancel",
+        },
+    ),
+    ("POST", "/billing/portal", {"return_url": "https://example.com/admin"}),
+    ("POST", "/billing/invitations", {"email": "x@example.com", "role": "Driver"}),
+    ("GET", "/billing/invitations", None),
+    ("POST", "/billing/invitations/some-id/activate", None),
+    ("POST", "/billing/invitations/some-id/cancel", None),
+]
+
+
+@pytest.mark.parametrize("role", ["Dispatcher", "Driver"])
+@pytest.mark.parametrize("method,path,body", BILLING_ENDPOINTS)
+def test_non_admin_roles_get_403_on_billing_endpoints(method, path, body, role):
+    token = make_token(f"{role.lower()}-1", "org-1", [role])
+    response = client.request(method, path, json=body, headers=_auth_header(token))
+    assert response.status_code == 403, f"{role} {method} {path} -> {response.status_code}"
+    assert "insufficient role" in response.json()["detail"].lower()
+
+
+@pytest.mark.parametrize("method,path,body", BILLING_ENDPOINTS)
+def test_unauthenticated_requests_get_401_on_billing_endpoints(method, path, body):
+    response = client.request(method, path, json=body)
+    assert response.status_code == 401, f"anon {method} {path} -> {response.status_code}"
+
+
+# --- Webhook idempotency and ordering ---
+
+def _subscription_event(event_id, created, *, quantity_dispatcher, quantity_driver, event_type="customer.subscription.updated"):
+    return {
+        "id": event_id,
+        "type": event_type,
+        "created": created,
+        "data": {
+            "object": {
+                "id": "sub_123",
+                "customer": "cus_123",
+                "status": "active",
+                "metadata": {"org_id": "org-1", "plan_name": "Pro"},
+                "items": {
+                    "data": [
+                        {"id": "si_dispatch", "quantity": quantity_dispatcher, "price": {"id": "price_dispatcher"}},
+                        {"id": "si_driver", "quantity": quantity_driver, "price": {"id": "price_driver"}},
+                    ]
+                },
+            }
+        },
+    }
+
+
+def _post_unsigned_webhook(event):
+    return client.post(
+        "/webhooks/stripe",
+        data=json.dumps(event),
+        headers={"Content-Type": "application/json"},
+    )
+
+
+def test_webhook_duplicate_event_is_ignored(monkeypatch):
+    monkeypatch.setenv("ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET", "true")
+    monkeypatch.setenv("STRIPE_DISPATCHER_PRICE_ID", "price_dispatcher")
+    monkeypatch.setenv("STRIPE_DRIVER_PRICE_ID", "price_driver")
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+
+    event = _subscription_event("evt_dup", 1_700_000_000, quantity_dispatcher=2, quantity_driver=4)
+    first = _post_unsigned_webhook(event)
+    assert first.status_code == 200
+    assert first.json()["org_id"] == "org-1"
+
+    replay = _post_unsigned_webhook(event)
+    assert replay.status_code == 200
+    assert replay.json()["org_id"] is None  # duplicate delivery applied nothing
+
+    summary = client.get("/billing/summary", headers=_auth_header(admin_token)).json()
+    assert summary["dispatcher_seats"]["total"] == 2
+    assert summary["driver_seats"]["total"] == 4
+
+    audit_events = get_audit_log_store().list_events("org-1", limit=20)
+    applied = [event for event in audit_events if event.action == "billing.subscription.webhook_applied"]
+    assert len(applied) == 1
+
+
+def test_webhook_stale_out_of_order_event_does_not_overwrite_newer_state(monkeypatch):
+    monkeypatch.setenv("ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET", "true")
+    monkeypatch.setenv("STRIPE_DISPATCHER_PRICE_ID", "price_dispatcher")
+    monkeypatch.setenv("STRIPE_DRIVER_PRICE_ID", "price_driver")
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+
+    newer = _subscription_event("evt_new", 1_700_000_100, quantity_dispatcher=5, quantity_driver=10)
+    assert _post_unsigned_webhook(newer).status_code == 200
+
+    stale = _subscription_event("evt_old", 1_700_000_000, quantity_dispatcher=1, quantity_driver=1)
+    response = _post_unsigned_webhook(stale)
+    assert response.status_code == 200
+    assert response.json()["org_id"] is None  # stale event dropped
+
+    summary = client.get("/billing/summary", headers=_auth_header(admin_token)).json()
+    assert summary["dispatcher_seats"]["total"] == 5
+    assert summary["driver_seats"]["total"] == 10
+
+
+def test_manual_seat_update_preserves_webhook_dedup_state(monkeypatch):
+    monkeypatch.setenv("ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET", "true")
+    monkeypatch.setenv("STRIPE_DISPATCHER_PRICE_ID", "price_dispatcher")
+    monkeypatch.setenv("STRIPE_DRIVER_PRICE_ID", "price_driver")
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+
+    event = _subscription_event("evt_1", 1_700_000_100, quantity_dispatcher=5, quantity_driver=10)
+    assert _post_unsigned_webhook(event).status_code == 200
+
+    seats = client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 6, "driver_seat_limit": 10},
+        headers=_auth_header(admin_token),
+    )
+    assert seats.status_code == 200
+
+    # A replay of the already-applied event must still be dropped after the
+    # manual update rebuilt the subscription record.
+    replay = _post_unsigned_webhook(event)
+    assert replay.status_code == 200
+    assert replay.json()["org_id"] is None
+
+    summary = client.get("/billing/summary", headers=_auth_header(admin_token)).json()
+    assert summary["dispatcher_seats"]["total"] == 6
+
+
+# --- Webhook signature verification (real stripe library) ---
+
+def _stripe_signature_header(payload: str, secret: str, timestamp=None) -> str:
+    ts = int(timestamp if timestamp is not None else time.time())
+    signed = f"{ts}.{payload}"
+    digest = hmac.new(secret.encode("utf-8"), signed.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"t={ts},v1={digest}"
+
+
+def test_webhook_accepts_correctly_signed_event(monkeypatch):
+    secret = "whsec_test_secret"
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", secret)
+    monkeypatch.setenv("STRIPE_DISPATCHER_PRICE_ID", "price_dispatcher")
+    monkeypatch.setenv("STRIPE_DRIVER_PRICE_ID", "price_driver")
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+
+    payload = json.dumps(_subscription_event("evt_signed", 1_700_000_000, quantity_dispatcher=3, quantity_driver=7))
+    response = client.post(
+        "/webhooks/stripe",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Stripe-Signature": _stripe_signature_header(payload, secret),
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["org_id"] == "org-1"
+
+    summary = client.get("/billing/summary", headers=_auth_header(admin_token)).json()
+    assert summary["dispatcher_seats"]["total"] == 3
+    assert summary["driver_seats"]["total"] == 7
+
+
+def test_webhook_rejects_bad_signature(monkeypatch):
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
+    payload = json.dumps(_subscription_event("evt_forged", 1_700_000_000, quantity_dispatcher=99, quantity_driver=99))
+
+    response = client.post(
+        "/webhooks/stripe",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Stripe-Signature": _stripe_signature_header(payload, "whsec_wrong_secret"),
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_webhook_rejects_expired_signature_timestamp(monkeypatch):
+    secret = "whsec_test_secret"
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", secret)
+    payload = json.dumps(_subscription_event("evt_replayed", 1_700_000_000, quantity_dispatcher=2, quantity_driver=2))
+
+    stale_ts = int(time.time()) - 3600  # far outside Stripe's default 300s tolerance
+    response = client.post(
+        "/webhooks/stripe",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Stripe-Signature": _stripe_signature_header(payload, secret, timestamp=stale_ts),
+        },
+    )
+    assert response.status_code == 400
+
+
+# --- StripeSdkClient must return plain dicts (stripe-python v15 returns
+# StripeObject, which is NOT a dict and broke checkout/portal/webhooks in
+# every environment with real Stripe configured) ---
+
+def test_stripe_sdk_client_returns_plain_dicts(monkeypatch):
+    import stripe
+    from stripe._stripe_object import StripeObject
+
+    from backend.billing_service import StripeSdkClient
+
+    def fake_session_create(**params):
+        return StripeObject.construct_from(
+            {"id": "cs_live_shape", "object": "checkout.session", "url": "https://checkout.stripe.com/c/pay/x"},
+            None,
+        )
+
+    def fake_portal_create(**params):
+        return StripeObject.construct_from(
+            {"id": "bps_live_shape", "object": "billing_portal.session", "url": "https://billing.stripe.com/p/session/x"},
+            None,
+        )
+
+    def fake_sub_retrieve(subscription_id, **params):
+        return StripeObject.construct_from(
+            {
+                "id": subscription_id,
+                "object": "subscription",
+                "status": "active",
+                "customer": "cus_x",
+                "metadata": {},
+                "items": {"data": []},
+            },
+            None,
+        )
+
+    monkeypatch.setattr(stripe.checkout.Session, "create", staticmethod(fake_session_create))
+    monkeypatch.setattr(stripe.billing_portal.Session, "create", staticmethod(fake_portal_create))
+    monkeypatch.setattr(stripe.Subscription, "retrieve", staticmethod(fake_sub_retrieve))
+
+    sdk = StripeSdkClient(
+        api_key="sk_test_x",
+        webhook_secret="",
+        dispatcher_price_id="price_d",
+        driver_price_id="price_v",
+    )
+
+    session = sdk.create_checkout_session(
+        org_id="org-1",
+        dispatcher_seat_limit=1,
+        driver_seat_limit=1,
+        success_url="https://example.com/ok",
+        cancel_url="https://example.com/cancel",
+    )
+    assert type(session) is dict
+    assert session.get("url") == "https://checkout.stripe.com/c/pay/x"
+
+    portal = sdk.create_billing_portal_session(customer_id="cus_x", return_url="https://example.com")
+    assert type(portal) is dict
+    assert portal.get("url") == "https://billing.stripe.com/p/session/x"
+
+    # no price ids configured -> no updates -> returns the retrieved subscription
+    sdk_no_prices = StripeSdkClient(
+        api_key="sk_test_x",
+        webhook_secret="",
+        dispatcher_price_id="",
+        driver_price_id="",
+    )
+    subscription = sdk_no_prices.update_subscription_quantities(
+        subscription_id="sub_x",
+        dispatcher_seat_limit=1,
+        driver_seat_limit=1,
+    )
+    assert type(subscription) is dict
+    assert subscription.get("status") == "active"
+
+
+# --- Seat over-allocation guards ---
+
+def test_seat_limit_cannot_be_lowered_below_active_plus_pending():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    assert (
+        client.post(
+            "/billing/seats",
+            json={"dispatcher_seat_limit": 2, "driver_seat_limit": 2},
+            headers=_auth_header(admin_token),
+        ).status_code
+        == 200
+    )
+
+    invite = client.post(
+        "/billing/invitations",
+        json={"email": "d1@example.com", "role": "Driver"},
+        headers=_auth_header(admin_token),
+    )
+    assert invite.status_code == 200
+
+    lowered = client.post(
+        "/billing/seats",
+        json={"driver_seat_limit": 0},
+        headers=_auth_header(admin_token),
+    )
+    assert lowered.status_code == 400
+    assert "cannot be lower" in lowered.json()["detail"].lower()

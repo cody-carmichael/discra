@@ -277,6 +277,8 @@ def _merge_stripe_subscription_snapshot(
         stripe_subscription_id=subscription_id,
         dispatcher_seat_limit=current.dispatcher_seat_limit,
         driver_seat_limit=current.driver_seat_limit,
+        last_stripe_event_id=current.last_stripe_event_id,
+        last_stripe_event_created=current.last_stripe_event_created,
         created_at=current.created_at,
         updated_at=_utc_now(),
     )
@@ -371,6 +373,8 @@ async def update_billing_seats(
         stripe_subscription_id=subscription.stripe_subscription_id,
         dispatcher_seat_limit=dispatcher_limit,
         driver_seat_limit=driver_limit,
+        last_stripe_event_id=subscription.last_stripe_event_id,
+        last_stripe_event_created=subscription.last_stripe_event_created,
         created_at=subscription.created_at,
         updated_at=_utc_now(),
     )
@@ -475,6 +479,8 @@ async def start_billing_checkout(
             stripe_subscription_id=subscription.stripe_subscription_id,
             dispatcher_seat_limit=dispatcher_limit,
             driver_seat_limit=driver_limit,
+            last_stripe_event_id=subscription.last_stripe_event_id,
+            last_stripe_event_created=subscription.last_stripe_event_created,
             created_at=subscription.created_at,
             updated_at=_utc_now(),
         )

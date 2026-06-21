@@ -43,6 +43,24 @@ def test_ui_pages_are_available():
     assert "driver-logout-hosted-ui" in driver.text
 
 
+def test_ui_signup_redirects_to_register():
+    """`/ui/signup` (and its prefix variants) used to serve a signup.html that
+    never existed → every hit 500'd. They now redirect to the register page.
+    Account creation itself is handled by the Cognito Hosted UI."""
+    for signup_path, register_path in (
+        ("/ui/signup", "/ui/register"),
+        ("/backend/ui/signup", "/backend/ui/register"),
+        ("/dev/backend/ui/signup", "/dev/backend/ui/register"),
+    ):
+        no_follow = client.get(signup_path, follow_redirects=False)
+        assert no_follow.status_code == 307, signup_path
+        assert no_follow.headers["location"] == register_path, signup_path
+
+        followed = client.get(signup_path)
+        assert followed.status_code == 200, signup_path
+        assert "Register Your Tenant" in followed.text, signup_path
+
+
 def test_ui_assets_and_service_worker_are_served():
     common_js = client.get("/ui/assets/common.js")
     login_js = client.get("/ui/assets/login.js")

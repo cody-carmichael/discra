@@ -661,3 +661,49 @@ def test_en_route_does_not_affect_other_drivers():
 
     a_status = client.get(f"/orders/{order_a}", headers={"Authorization": f"Bearer {admin_token}"}).json()["status"]
     assert a_status == "EnRoute"
+
+
+def test_driver_cannot_access_another_drivers_order(monkeypatch):
+    """Regression for A-2 (cross-driver isolation / IDOR). A driver must only
+    ever see and act on their OWN assigned orders, and no user may read another
+    org's order by id (tenant isolation)."""
+    monkeypatch.setenv("USE_IN_MEMORY_IDENTITY_STORE", "true")
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    driver_a_token = make_token("driver-a", "org-a", ["Driver"])
+    driver_b_token = make_token("driver-b", "org-a", ["Driver"])
+    other_org_admin = make_token("admin-x", "org-x", ["Admin"])
+
+    order_id = client.post(
+        "/orders/",
+        json=make_order_payload("Isolation Co", "WH A2", "9 Dest Ave", reference_id="A2-1"),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["id"]
+    assert (
+        client.post(
+            f"/orders/{order_id}/assign",
+            json={"driver_id": "driver-a"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        ).status_code
+        == 200
+    )
+
+    # driver-a (the assignee) sees it in their inbox; driver-b does not.
+    inbox_a = client.get("/orders/driver/inbox", headers={"Authorization": f"Bearer {driver_a_token}"}).json()
+    assert [o["id"] for o in inbox_a] == [order_id]
+    inbox_b = client.get("/orders/driver/inbox", headers={"Authorization": f"Bearer {driver_b_token}"}).json()
+    assert all(o["id"] != order_id for o in inbox_b)
+
+    # driver-b cannot read or mutate driver-a's order directly (IDOR).
+    assert client.get(
+        f"/orders/{order_id}", headers={"Authorization": f"Bearer {driver_b_token}"}
+    ).status_code in (403, 404)
+    assert client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "EnRoute"},
+        headers={"Authorization": f"Bearer {driver_b_token}"},
+    ).status_code in (403, 404)
+
+    # A different org cannot read the order at all (tenant isolation).
+    assert client.get(
+        f"/orders/{order_id}", headers={"Authorization": f"Bearer {other_org_admin}"}
+    ).status_code in (403, 404)

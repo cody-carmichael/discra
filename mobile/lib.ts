@@ -210,6 +210,25 @@ export function extractTokenGroups(token: string): string[] {
   return [];
 }
 
+/** The JWT `exp` claim (epoch seconds), or null if absent/undecodable. */
+export function getTokenExp(token: string): number | null {
+  const payload = decodeJwtPayload(token);
+  const exp = payload ? payload.exp : undefined;
+  return typeof exp === "number" && Number.isFinite(exp) ? exp : null;
+}
+
+/**
+ * True only when the token has a decodable `exp` claim that is at/after now
+ * (optionally minus a skew, to expire slightly early and avoid a request racing
+ * the boundary). Fail-open: a token with no decodable `exp` is treated as NOT
+ * expired, so this can never sign out a token we simply cannot parse.
+ */
+export function isTokenExpired(token: string, skewSeconds = 0, nowMs: number = Date.now()): boolean {
+  const exp = getTokenExp(token);
+  if (exp == null) return false;
+  return nowMs >= (exp - skewSeconds) * 1000;
+}
+
 /**
  * Derive a human-readable display name from a driver_id.
  * - `sim-alex-rivera-78c98b` → "Alex Rivera"

@@ -106,6 +106,9 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   // Level-up flourish shown after a POD is submitted and the stop is delivered.
   const [celebration, setCelebration] = useState<{ reference: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  // Guards the status-action buttons against double-tap: a second tap before the
+  // POST resolves would fire a duplicate /orders/{id}/status request.
+  const [statusUpdating, setStatusUpdating] = useState(false);
   const [locationActive, setLocationActive] = useState(false);
   const locationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mapRef = useRef<MapView | null>(null);
@@ -268,6 +271,9 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
 
   // ── Update order status ────────────────────────────────────────────────────
   async function updateStatus(orderId: string, status: string) {
+    // Drop a concurrent tap while a status change is already in flight.
+    if (statusUpdating) return;
+    setStatusUpdating(true);
     setLoading(true);
     try {
       await apiRequest(apiBase, `/orders/${orderId}/status`, {
@@ -281,6 +287,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       setStatusMsg(e instanceof Error ? e.message : "Status update failed.");
     } finally {
       setLoading(false);
+      setStatusUpdating(false);
     }
   }
 
@@ -786,6 +793,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                 return (
                   <Pressable
                     key={order.id}
+                    testID={`stop-card-${idx}`}
                     style={[styles.stopCard, selectedOrder?.id === order.id && styles.stopCardSelected]}
                     onPress={() => selectOrder(order)}
                   >
@@ -806,7 +814,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                 );
               })}
               <View style={styles.sheetActions}>
-                <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => loadInbox().catch(() => undefined)}>
+                <Pressable testID="inbox-refresh-btn" style={[styles.btn, styles.btnPrimary]} onPress={() => loadInbox().catch(() => undefined)}>
                   <Text style={styles.btnText}>Refresh</Text>
                 </Pressable>
                 <Pressable style={[styles.btn, styles.btnGhost]} onPress={onSignOut}>
@@ -838,7 +846,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                 <Text style={styles.detailTitle} numberOfLines={1}>
                   {selectedOrder?.customer_name ?? "Order"}
                 </Text>
-                <Pressable onPress={() => { setDetailVisible(false); setSelectedOrder(null); }}>
+                <Pressable testID="detail-close-btn" onPress={() => { setDetailVisible(false); setSelectedOrder(null); }}>
                   <Text style={styles.detailClose}>✕</Text>
                 </Pressable>
               </View>
@@ -890,12 +898,15 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                     {DRIVER_STATUS.map((s) => (
                       <Pressable
                         key={s}
+                        testID={`status-action-${s}`}
                         style={[
                           styles.actionBtn,
                           selectedOrder.status === s && styles.actionBtnActive,
                           s === "Failed" && styles.actionBtnDanger,
                           s === "Delivered" && styles.actionBtnGreen,
+                          statusUpdating && styles.actionBtnDisabled,
                         ]}
+                        disabled={statusUpdating}
                         onPress={() => updateStatus(selectedOrder.id, s).catch(() => undefined)}
                       >
                         <Text style={styles.actionBtnText}>{s}</Text>
@@ -910,10 +921,10 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
 
                   {/* Photo */}
                   {pod.photoUri ? (
-                    <Image source={{ uri: pod.photoUri }} style={styles.podPhoto} />
+                    <Image testID="pod-photo-preview" source={{ uri: pod.photoUri }} style={styles.podPhoto} />
                   ) : null}
                   <View style={styles.row}>
-                    <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => capturePodPhoto(selectedOrder.id).catch(() => undefined)}>
+                    <Pressable testID="pod-photo-btn" style={[styles.btn, styles.btnPrimary]} onPress={() => capturePodPhoto(selectedOrder.id).catch(() => undefined)}>
                       <Text style={styles.btnText}>📷 {pod.photoUri ? "Retake" : "Photo"}</Text>
                     </Pressable>
                     {pod.photoUri ? (
@@ -925,7 +936,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
 
                   {/* Signature */}
                   <View style={styles.row}>
-                    <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => setSignatureOrderId(selectedOrder.id)}>
+                    <Pressable testID="pod-signature-btn" style={[styles.btn, styles.btnPrimary]} onPress={() => setSignatureOrderId(selectedOrder.id)}>
                       <Text style={styles.btnText}>✍️ {pod.signatureData ? "Re-sign" : "Signature"}</Text>
                     </Pressable>
                     {pod.signatureData ? (
@@ -934,10 +945,11 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                       </Pressable>
                     ) : null}
                   </View>
-                  {pod.signatureData ? <Text style={styles.podCaptured}>✓ Signature captured</Text> : null}
+                  {pod.signatureData ? <Text testID="pod-signature-captured" style={styles.podCaptured}>✓ Signature captured</Text> : null}
 
                   {/* Notes */}
                   <TextInput
+                    testID="pod-notes-input"
                     style={styles.input}
                     value={pod.notes}
                     onChangeText={(v) => setPodField(selectedOrder.id, "notes", v)}
@@ -948,6 +960,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
 
                   {/* Submit */}
                   <Pressable
+                    testID="pod-submit-btn"
                     style={[styles.btn, styles.btnGreen, { width: "100%" }]}
                     onPress={() => submitPod(selectedOrder).catch((e) => setStatusMsg(e instanceof Error ? e.message : "Submit failed."))}
                     disabled={pod.submitting}
@@ -1512,6 +1525,9 @@ const styles = StyleSheet.create({
   },
   actionBtnGreen: {
     borderColor: "#1A5C3A",
+  },
+  actionBtnDisabled: {
+    opacity: 0.5,
   },
   actionBtnText: {
     color: "#EDE0C4",

@@ -19,7 +19,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { apiRequest, decodeJwtPayload, extractTokenGroups, extractUsername, normalizeApiBase } from "./lib";
+import { apiRequest, decodeJwtPayload, extractTokenGroups, extractUsername, getTokenExp, isTokenExpired, normalizeApiBase } from "./lib";
 import AdminScreen from "./screens/AdminScreen";
 import DriverScreen from "./screens/DriverScreen";
 
@@ -141,6 +141,36 @@ export default function App() {
     // workspace is already selected (restored from storage; defaults to "driver").
   }, [token, isDriver, isAdmin]);
 
+  // Token-expiry watchdog. id_tokens expire (~1h) with no refresh token kept,
+  // so a session left open mid-shift would otherwise fail every API call with
+  // an opaque toast. Detect expiry and drop the user back to a sign-in screen
+  // with a clear message, both immediately and on a poll for in-session expiry.
+  useEffect(() => {
+    if (!looksLikeJwt(token)) return;
+    const expireNow = () => {
+      setToken("");
+      setLoginMsg("Your session expired. Please sign in again.");
+    };
+    if (isTokenExpired(token)) {
+      expireNow();
+      return;
+    }
+    const exp = getTokenExp(token);
+    const id = setInterval(() => {
+      if (isTokenExpired(token)) expireNow();
+    }, 30_000);
+    // If we know the exact expiry, also schedule a precise wake-up for it.
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    if (exp != null) {
+      const msUntil = exp * 1000 - Date.now();
+      if (msUntil > 0 && msUntil < 0x7fffffff) timeoutId = setTimeout(expireNow, msUntil);
+    }
+    return () => {
+      clearInterval(id);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [token]);
+
   // ── Storage ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -154,7 +184,16 @@ export default function App() {
           cognitoDomain?: string;
           workspace?: Workspace;
         };
-        if (parsed.token && looksLikeJwt(parsed.token)) setToken(parsed.token);
+        // Restore a stored token only if it's structurally valid AND not already
+        // expired — a stale token would otherwise drop the user into the
+        // authenticated UI where every API call 401s with no clear recovery.
+        if (parsed.token && looksLikeJwt(parsed.token)) {
+          if (isTokenExpired(parsed.token)) {
+            setLoginMsg("Your session expired. Please sign in again.");
+          } else {
+            setToken(parsed.token);
+          }
+        }
         if (parsed.apiBase && Platform.OS !== "web") setApiBase(parsed.apiBase);
         if (parsed.cognitoDomain) setCognitoDomain(normalizeDomain(parsed.cognitoDomain));
         if (parsed.workspace === "admin" || parsed.workspace === "driver") setWorkspace(parsed.workspace);
@@ -325,7 +364,7 @@ export default function App() {
 
   // ─── Authenticated: route to workspace ───────────────────────────────────
 
-  if (looksLikeJwt(token)) {
+  if (looksLikeJwt(token) && !isTokenExpired(token)) {
     // If token is valid but groups are empty (shouldn't happen normally), show sign-out
     const canAdmin = isAdmin;
     const canDriver = isDriver;
@@ -445,6 +484,7 @@ export default function App() {
 
           <Text style={styles.label}>Username</Text>
           <TextInput
+            testID="login-username"
             style={styles.input}
             value={loginUser}
             onChangeText={setLoginUser}
@@ -456,6 +496,7 @@ export default function App() {
           />
           <Text style={styles.label}>Password</Text>
           <TextInput
+            testID="login-password"
             style={styles.input}
             value={loginPass}
             onChangeText={setLoginPass}
@@ -471,6 +512,7 @@ export default function App() {
           {loginMsg ? <Text style={styles.errorText}>{loginMsg}</Text> : null}
 
           <Pressable
+            testID="login-submit"
             style={[styles.btn, styles.btnPrimary, styles.loginBtn, loginLoading && { opacity: 0.6 }]}
             onPress={() => signIn().catch(() => undefined)}
             disabled={loginLoading}

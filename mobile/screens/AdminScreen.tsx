@@ -924,6 +924,7 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                   onAssign={assignOrder}
                   onUnassign={unassignOrder}
                   onCreateNew={() => { setCreateForm(BLANK_FORM); setCreateMsg(""); setCreateVisible(true); }}
+                  busy={loading}
                 />
               ) : ordersSubTab === "inflight" ? (
                 <>
@@ -1637,9 +1638,10 @@ type OrdersTabProps = {
   onAssign: (id: string) => void;
   onUnassign: (id: string) => void;
   onCreateNew: () => void;
+  busy: boolean;
 };
 
-function OrdersTab({ orders, searchQuery, setSearchQuery, onEdit, onUpdateStatus, onAssign, onUnassign, onCreateNew }: OrdersTabProps) {
+function OrdersTab({ orders, searchQuery, setSearchQuery, onEdit, onUpdateStatus, onAssign, onUnassign, onCreateNew, busy }: OrdersTabProps) {
   return (
     <>
       <View style={styles.row}>
@@ -1675,7 +1677,8 @@ function OrdersTab({ orders, searchQuery, setSearchQuery, onEdit, onUpdateStatus
             {ADMIN_STATUS.map((s) => (
               <Pressable
                 key={s}
-                style={[styles.statusBtn, order.status === s && styles.statusBtnActive]}
+                style={[styles.statusBtn, order.status === s && styles.statusBtnActive, busy && styles.btnDisabled]}
+                disabled={busy}
                 onPress={() => onUpdateStatus(order.id, s)}
               >
                 <Text style={styles.statusBtnText}>{s}</Text>
@@ -1684,11 +1687,11 @@ function OrdersTab({ orders, searchQuery, setSearchQuery, onEdit, onUpdateStatus
           </View>
           <View style={styles.row}>
             {!order.assigned_to ? (
-              <Pressable style={[styles.btn, styles.btnPrimary]} onPress={() => onAssign(order.id)}>
+              <Pressable style={[styles.btn, styles.btnPrimary, busy && styles.btnDisabled]} disabled={busy} onPress={() => onAssign(order.id)}>
                 <Text style={styles.btnText}>Assign</Text>
               </Pressable>
             ) : (
-              <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => onUnassign(order.id)}>
+              <Pressable style={[styles.btn, styles.btnGhost, busy && styles.btnDisabled]} disabled={busy} onPress={() => onUnassign(order.id)}>
                 <Text style={styles.btnGhostText}>Unassign</Text>
               </Pressable>
             )}
@@ -2001,6 +2004,7 @@ const styles = StyleSheet.create({
   },
   statusBtnActive: { backgroundColor: "#2A1E10", borderColor: "#C8973A" },
   statusBtnText: { color: "#EDE0C4", fontSize: 11, fontWeight: "600" },
+  btnDisabled: { opacity: 0.5 },
 
   // Orders sub-tabs
   tabContent: { flex: 1 },

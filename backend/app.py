@@ -399,17 +399,22 @@ def create_app() -> FastAPI:
     async def dev_backend_ui_login():
         return FileResponse(str(FRONTEND_DIR / "login.html"))
 
+    # There is no standalone signup page: account creation is handled by the
+    # Cognito Hosted UI (register.js builds the hosted `/signup` URL) and the
+    # local onboarding entry point is the register page. These routes used to
+    # serve a `signup.html` that never existed (every hit 500'd); redirect to
+    # the matching register page instead.
     @app.get("/ui/signup", include_in_schema=False)
     async def ui_signup():
-        return FileResponse(str(FRONTEND_DIR / "signup.html"))
+        return RedirectResponse(url="/ui/register", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
     @app.get("/backend/ui/signup", include_in_schema=False)
     async def backend_ui_signup():
-        return FileResponse(str(FRONTEND_DIR / "signup.html"))
+        return RedirectResponse(url="/backend/ui/register", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
     @app.get("/dev/backend/ui/signup", include_in_schema=False)
     async def dev_backend_ui_signup():
-        return FileResponse(str(FRONTEND_DIR / "signup.html"))
+        return RedirectResponse(url="/dev/backend/ui/register", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
     @app.get("/ui/review", include_in_schema=False)
     async def ui_review():

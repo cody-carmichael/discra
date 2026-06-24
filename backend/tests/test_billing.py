@@ -539,6 +539,168 @@ def test_invitation_requires_email_or_user_id():
     assert invite.status_code == 422
 
 
+# --- Invitation lifecycle: duplicate / revoked / re-activate / seat accounting / escalation (Step 2.2) ---
+
+
+def test_duplicate_pending_invitation_is_rejected():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 3, "driver_seat_limit": 3},
+        headers=_auth_header(admin_token),
+    )
+
+    payload = {"user_id": "dup-user", "email": "dup@example.com", "role": "Dispatcher"}
+    first = client.post("/billing/invitations", json=payload, headers=_auth_header(admin_token))
+    assert first.status_code == 200
+
+    second = client.post("/billing/invitations", json=payload, headers=_auth_header(admin_token))
+    assert second.status_code == 409
+    assert "already exists" in second.json()["detail"].lower()
+
+
+def test_cancelled_invitation_cannot_be_activated():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 2, "driver_seat_limit": 2},
+        headers=_auth_header(admin_token),
+    )
+
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": "rev-user", "email": "rev@example.com", "role": "Driver"},
+        headers=_auth_header(admin_token),
+    )
+    invitation_id = invite.json()["invitation_id"]
+    assert client.post(f"/billing/invitations/{invitation_id}/cancel", headers=_auth_header(admin_token)).status_code == 200
+
+    activate = client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token))
+    assert activate.status_code == 409
+    assert "not pending" in activate.json()["detail"].lower()
+
+
+def test_accepted_invitation_cannot_be_reactivated():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 2, "driver_seat_limit": 2},
+        headers=_auth_header(admin_token),
+    )
+
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": "twice-user", "email": "twice@example.com", "role": "Driver"},
+        headers=_auth_header(admin_token),
+    )
+    invitation_id = invite.json()["invitation_id"]
+
+    assert client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token)).status_code == 200
+    second = client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token))
+    assert second.status_code == 409
+    assert "not pending" in second.json()["detail"].lower()
+
+
+def test_cancel_non_pending_invitation_is_rejected():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 2, "driver_seat_limit": 2},
+        headers=_auth_header(admin_token),
+    )
+
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": "cancel-twice", "email": "ct@example.com", "role": "Driver"},
+        headers=_auth_header(admin_token),
+    )
+    invitation_id = invite.json()["invitation_id"]
+
+    assert client.post(f"/billing/invitations/{invitation_id}/cancel", headers=_auth_header(admin_token)).status_code == 200
+    second = client.post(f"/billing/invitations/{invitation_id}/cancel", headers=_auth_header(admin_token))
+    assert second.status_code == 409
+    assert "only pending" in second.json()["detail"].lower()
+
+
+def test_activation_moves_seat_from_pending_to_used():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 2, "driver_seat_limit": 2},
+        headers=_auth_header(admin_token),
+    )
+
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": "seat-user", "email": "seat@example.com", "role": "Driver"},
+        headers=_auth_header(admin_token),
+    )
+    invitation_id = invite.json()["invitation_id"]
+
+    before = client.get("/billing/summary", headers=_auth_header(admin_token)).json()["driver_seats"]
+    assert (before["used"], before["pending"], before["available"]) == (0, 1, 1)
+
+    assert client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token)).status_code == 200
+
+    after = client.get("/billing/summary", headers=_auth_header(admin_token)).json()["driver_seats"]
+    assert (after["used"], after["pending"], after["available"]) == (1, 0, 1)
+
+
+def test_admin_invitation_is_not_limited_by_seat_pools():
+    """R-2 regression: an Admin invitation must not be metered against the Driver
+    seat pool. A fresh org has 0 seats; inviting a co-admin must still succeed
+    (previously role=Admin fell into the Driver branch and 409'd)."""
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": "co-admin", "email": "co-admin@example.com", "role": "Admin"},
+        headers=_auth_header(admin_token),
+    )
+    assert invite.status_code == 200, invite.text
+    invitation_id = invite.json()["invitation_id"]
+
+    activate = client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token))
+    assert activate.status_code == 200, activate.text
+    assert "Admin" in activate.json()["roles"]
+
+
+def test_invited_role_is_server_controlled():
+    """The activated role is exactly what the admin specified — an invited Driver
+    is granted Driver only, never Admin/Dispatcher (no privilege escalation)."""
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 2, "driver_seat_limit": 2},
+        headers=_auth_header(admin_token),
+    )
+
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": "plain-driver", "email": "pd@example.com", "role": "Driver"},
+        headers=_auth_header(admin_token),
+    )
+    invitation_id = invite.json()["invitation_id"]
+    activate = client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token))
+    assert activate.status_code == 200
+    roles = activate.json()["roles"]
+    assert "Driver" in roles
+    assert "Admin" not in roles
+    assert "Dispatcher" not in roles
+
+
+def test_non_admin_cannot_create_admin_invitation():
+    """Invitation creation is Admin-only, so a Dispatcher/Driver cannot mint an
+    invitation of any role — including an Admin one. No self-escalation path."""
+    for role in ("Dispatcher", "Driver"):
+        token = make_token(f"{role.lower()}-esc", "org-1", [role])
+        resp = client.post(
+            "/billing/invitations",
+            json={"email": "escalate@example.com", "role": "Admin"},
+            headers=_auth_header(token),
+        )
+        assert resp.status_code == 403, f"{role} -> {resp.status_code}"
+
+
 # --- RBAC: every billing endpoint is Admin-only ---
 
 BILLING_ENDPOINTS = [

@@ -93,6 +93,26 @@ def _stops_from_assigned_orders(org_id: str, driver_id: str) -> List[RouteStopIn
     return stops
 
 
+def _authorize_driver_scope(user: dict, requested_driver_id: str) -> str:
+    """Resolve which driver's route the caller is allowed to plan.
+
+    Admin/Dispatcher may plan on behalf of any driver in their org. A
+    driver-only caller may ONLY ever plan their own route — passing another
+    driver's id would let them enumerate that driver's assigned-order delivery
+    addresses and coordinates (object-level/IDOR exposure), so reject it.
+    """
+    roles = set(user.get("groups") or [])
+    if ROLE_ADMIN in roles or ROLE_DISPATCHER in roles:
+        return requested_driver_id
+    own_id = user.get("sub") or ""
+    if requested_driver_id and requested_driver_id != own_id:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Drivers can only plan their own route",
+        )
+    return own_id
+
+
 def _resolve_start_position(
     org_id: str,
     driver_id: str,
@@ -119,16 +139,17 @@ async def optimize_driver_route(
     payload: RouteOptimizeRequest,
     user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
 ):
+    driver_id = _authorize_driver_scope(user, payload.driver_id)
     stops = payload.stops or _stops_from_assigned_orders(
         org_id=user["org_id"],
-        driver_id=payload.driver_id,
+        driver_id=driver_id,
     )
     if len(stops) == 0:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="At least one stop is required")
 
     start_lat, start_lng = _resolve_start_position(
         org_id=user["org_id"],
-        driver_id=payload.driver_id,
+        driver_id=driver_id,
         stops=stops,
         start_lat=payload.start_lat,
         start_lng=payload.start_lng,
@@ -204,9 +225,10 @@ async def get_route_directions(
     fallback connecting the stops in optimized order.
     """
     # Resolve stops from payload or assigned orders.
+    driver_id = _authorize_driver_scope(user, payload.driver_id)
     stops = payload.stops or _stops_from_assigned_orders(
         org_id=user["org_id"],
-        driver_id=payload.driver_id,
+        driver_id=driver_id,
     )
     if not stops:
         raise HTTPException(
@@ -216,7 +238,7 @@ async def get_route_directions(
 
     start_lat, start_lng = _resolve_start_position(
         org_id=user["org_id"],
-        driver_id=payload.driver_id,
+        driver_id=driver_id,
         stops=stops,
         start_lat=payload.start_lat,
         start_lng=payload.start_lng,

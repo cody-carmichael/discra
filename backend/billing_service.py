@@ -342,9 +342,18 @@ def ensure_seat_limit_for_invitation(role: SeatRole, subscription: SeatSubscript
             raise SeatLimitExceededError("Dispatcher seat limit reached")
         return
 
-    reserved = usage.driver_active + usage.driver_pending
-    if reserved >= subscription.driver_seat_limit:
-        raise SeatLimitExceededError("Driver seat limit reached")
+    if role == SeatRole.DRIVER:
+        reserved = usage.driver_active + usage.driver_pending
+        if reserved >= subscription.driver_seat_limit:
+            raise SeatLimitExceededError("Driver seat limit reached")
+        return
+
+    # Admin (and any future non-seat role) is not metered against the
+    # Dispatcher/Driver seat pools — admins are org owners, not billable seats.
+    # This previously fell through to the Driver branch and was wrongly blocked
+    # by the driver seat limit (a fresh org with 0 driver seats could not invite
+    # a co-admin).
+    return
 
 
 def ensure_seat_limit_for_activation(role: SeatRole, subscription: SeatSubscriptionRecord, usage: SeatUsage):
@@ -353,8 +362,13 @@ def ensure_seat_limit_for_activation(role: SeatRole, subscription: SeatSubscript
             raise SeatLimitExceededError("Dispatcher seat limit reached for activation")
         return
 
-    if usage.driver_active >= subscription.driver_seat_limit:
-        raise SeatLimitExceededError("Driver seat limit reached for activation")
+    if role == SeatRole.DRIVER:
+        if usage.driver_active >= subscription.driver_seat_limit:
+            raise SeatLimitExceededError("Driver seat limit reached for activation")
+        return
+
+    # Admin / non-seat roles: no seat to consume (mirrors the invitation path).
+    return
 
 
 def new_invitation(org_id: str, user_id: str, email: Optional[str], role: SeatRole) -> BillingInvitationRecord:

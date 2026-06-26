@@ -19,6 +19,13 @@ Parameters:
     Type: String
     Default: exampleclientid
     Description: Cognito App Client ID (JWT audience)
+  CorsAllowedOrigins:
+    Type: CommaDelimitedList
+    Default: "http://localhost:8000,http://127.0.0.1:8000"
+    Description: >-
+      Allowed CORS origins for the HTTP API and the app CORS middleware. Defaults
+      to local dev origins; set to your deployed app HTTPS origin(s) in prod. Do
+      not use "*". Drives both API Gateway CorsConfiguration and CORS_ALLOWED_ORIGINS.
   OrsApiKey:
     Type: String
     Default: ""
@@ -193,8 +200,7 @@ Resources:
     Properties:
       StageName: dev
       CorsConfiguration:
-        AllowOrigins:
-          - "*"
+        AllowOrigins: !Ref CorsAllowedOrigins
         AllowMethods:
           - GET
           - POST
@@ -564,6 +570,7 @@ Resources:
           COGNITO_ISSUER: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}"
           COGNITO_AUDIENCE: !Ref CognitoAppClientId
           COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+          CORS_ALLOWED_ORIGINS: !Join [",", !Ref CorsAllowedOrigins]
           JWT_VERIFY_SIGNATURE: "true"
           ORGANIZATIONS_TABLE: !Ref OrganizationsTable
           USERS_TABLE: !Ref UsersTable

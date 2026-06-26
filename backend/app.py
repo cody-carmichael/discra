@@ -214,6 +214,17 @@ def _apply_security_headers(response: Response, request: Request) -> None:
         )
 
 
+def _cors_allowed_origins() -> list[str]:
+    """Allowed CORS origins (S-2). Driven by the CorsAllowedOrigins stack parameter
+    via the CORS_ALLOWED_ORIGINS env var. The web consoles call the API same-origin,
+    so this list only governs genuine cross-origin browsers — default to local-dev
+    origins with NO wildcard. An explicit `*` is still honored as an opt-in."""
+    raw = (os.environ.get("CORS_ALLOWED_ORIGINS") or "").strip()
+    if not raw:
+        return ["http://localhost:8000", "http://127.0.0.1:8000"]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
 def _normalize_hosted_domain(value: str) -> str:
     return value.replace("https://", "").replace("http://", "").rstrip("/")
 
@@ -284,10 +295,10 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_cors_allowed_origins(),
         allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["content-type", "authorization", "x-admin-token", "x-correlation-id"],
     )
 
     @app.middleware("http")

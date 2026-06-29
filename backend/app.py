@@ -189,6 +189,42 @@ def _cookie_secure(request: Request) -> bool:
     return request.url.scheme == "https"
 
 
+# Baseline HTTP security headers applied to every response (S-1). `frame-ancestors
+# 'none'` + `X-Frame-Options: DENY` block clickjacking of the admin/driver consoles;
+# `nosniff` blocks MIME sniffing; `Referrer-Policy` avoids leaking full URLs (e.g.
+# signed onboarding review links) cross-origin. CSP is deliberately limited to
+# framing/base/object hardening so it does not break inline scripts or the map/font
+# CDNs the consoles load — a full script-src/style-src policy is a separate pass.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Content-Security-Policy": "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+}
+
+
+def _apply_security_headers(response: Response, request: Request) -> None:
+    for header, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    # Only advertise HSTS over HTTPS (mirrors the secure-cookie determination) so we
+    # never send it on the local http dev server.
+    if _cookie_secure(request):
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+
+
+def _cors_allowed_origins() -> list[str]:
+    """Allowed CORS origins (S-2). Driven by the CorsAllowedOrigins stack parameter
+    via the CORS_ALLOWED_ORIGINS env var. The web consoles call the API same-origin,
+    so this list only governs genuine cross-origin browsers — default to local-dev
+    origins with NO wildcard. An explicit `*` is still honored as an opt-in."""
+    raw = (os.environ.get("CORS_ALLOWED_ORIGINS") or "").strip()
+    if not raw:
+        return ["http://localhost:8000", "http://127.0.0.1:8000"]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
 def _normalize_hosted_domain(value: str) -> str:
     return value.replace("https://", "").replace("http://", "").rstrip("/")
 
@@ -259,10 +295,10 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_cors_allowed_origins(),
         allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["content-type", "authorization", "x-admin-token", "x-correlation-id"],
     )
 
     @app.middleware("http")
@@ -277,6 +313,7 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         elapsed_ms = (time.perf_counter() - started) * 1000
         response.headers["x-request-id"] = request_id
+        _apply_security_headers(response, request)
         logger.info(
             _json_log(
                 {

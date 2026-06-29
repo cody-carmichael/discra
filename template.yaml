@@ -26,6 +26,20 @@ Parameters:
       Allowed CORS origins for the HTTP API and the app CORS middleware. Defaults
       to local dev origins; set to your deployed app HTTPS origin(s) in prod. Do
       not use "*". Drives both API Gateway CorsConfiguration and CORS_ALLOWED_ORIGINS.
+  ApiThrottleRateLimit:
+    Type: Number
+    Default: 100
+    Description: >-
+      API Gateway stage steady-state request rate limit (requests/sec, aggregate
+      per route) — caps DoS / cost-runaway on every route incl. auth + webhooks.
+      Tune to pilot load. NOTE: aggregate throttling, not per-IP; per-IP abuse
+      limiting needs AWS WAF, which on an HTTP API requires CloudFront in front.
+  ApiThrottleBurstLimit:
+    Type: Number
+    Default: 200
+    Description: >-
+      API Gateway stage burst limit (max concurrent request spike, aggregate per
+      route). Should be >= ApiThrottleRateLimit.
   OrsApiKey:
     Type: String
     Default: ""
@@ -180,6 +194,12 @@ Parameters:
     NoEcho: true
     Description: Google OAuth client secret for Gmail API access
 
+Conditions:
+  # SES sending is only used by the onboarding notifier when a from-email is set;
+  # otherwise it logs only. Gate the ses:SendEmail grant on that so the role has no
+  # SES permission at all when unconfigured (S-4 least privilege).
+  HasSesFromEmail: !Not [!Equals [!Ref OnboardingSesFromEmail, ""]]
+
 Globals:
   Function:
     MemorySize: 512
@@ -199,6 +219,13 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: dev
+      # Stage-wide request throttling (S-3): baseline DoS / cost-runaway protection
+      # applied to every route, including the auth/onboarding endpoints served via
+      # the /backend/{proxy+} routes and the webhook routes. Aggregate (per-route),
+      # not per-IP — per-IP abuse limiting is a WAF follow-up (needs CloudFront).
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: !Ref ApiThrottleBurstLimit
+        ThrottlingRateLimit: !Ref ApiThrottleRateLimit
       CorsConfiguration:
         AllowOrigins: !Ref CorsAllowedOrigins
         AllowMethods:
@@ -677,12 +704,22 @@ Resources:
               - cognito-idp:AdminAddUserToGroup
               - cognito-idp:AdminUpdateUserAttributes
             Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}"
-        - Statement:
-            Effect: Allow
-            Action:
-              - ses:SendEmail
-              - ses:SendRawEmail
-            Resource: "*"
+        # S-4: scope SES to the configured onboarding sender's identity (and its
+        # domain identity, covering both SES verification styles) instead of "*".
+        # Omitted entirely when no from-email is configured.
+        - !If
+          - HasSesFromEmail
+          - Statement:
+              Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource:
+                - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${OnboardingSesFromEmail}"
+                - !Sub
+                  - "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${Domain}"
+                  - Domain: !Select [1, !Split ["@", !Ref OnboardingSesFromEmail]]
+          - !Ref AWS::NoValue
         - Statement:
             Effect: Allow
             Action:

@@ -26,6 +26,20 @@ Parameters:
       Allowed CORS origins for the HTTP API and the app CORS middleware. Defaults
       to local dev origins; set to your deployed app HTTPS origin(s) in prod. Do
       not use "*". Drives both API Gateway CorsConfiguration and CORS_ALLOWED_ORIGINS.
+  ApiThrottleRateLimit:
+    Type: Number
+    Default: 100
+    Description: >-
+      API Gateway stage steady-state request rate limit (requests/sec, aggregate
+      per route) — caps DoS / cost-runaway on every route incl. auth + webhooks.
+      Tune to pilot load. NOTE: aggregate throttling, not per-IP; per-IP abuse
+      limiting needs AWS WAF, which on an HTTP API requires CloudFront in front.
+  ApiThrottleBurstLimit:
+    Type: Number
+    Default: 200
+    Description: >-
+      API Gateway stage burst limit (max concurrent request spike, aggregate per
+      route). Should be >= ApiThrottleRateLimit.
   OrsApiKey:
     Type: String
     Default: ""
@@ -199,6 +213,13 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: dev
+      # Stage-wide request throttling (S-3): baseline DoS / cost-runaway protection
+      # applied to every route, including the auth/onboarding endpoints served via
+      # the /backend/{proxy+} routes and the webhook routes. Aggregate (per-route),
+      # not per-IP — per-IP abuse limiting is a WAF follow-up (needs CloudFront).
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: !Ref ApiThrottleBurstLimit
+        ThrottlingRateLimit: !Ref ApiThrottleRateLimit
       CorsConfiguration:
         AllowOrigins: !Ref CorsAllowedOrigins
         AllowMethods:

@@ -194,6 +194,12 @@ Parameters:
     NoEcho: true
     Description: Google OAuth client secret for Gmail API access
 
+Conditions:
+  # SES sending is only used by the onboarding notifier when a from-email is set;
+  # otherwise it logs only. Gate the ses:SendEmail grant on that so the role has no
+  # SES permission at all when unconfigured (S-4 least privilege).
+  HasSesFromEmail: !Not [!Equals [!Ref OnboardingSesFromEmail, ""]]
+
 Globals:
   Function:
     MemorySize: 512
@@ -698,12 +704,22 @@ Resources:
               - cognito-idp:AdminAddUserToGroup
               - cognito-idp:AdminUpdateUserAttributes
             Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}"
-        - Statement:
-            Effect: Allow
-            Action:
-              - ses:SendEmail
-              - ses:SendRawEmail
-            Resource: "*"
+        # S-4: scope SES to the configured onboarding sender's identity (and its
+        # domain identity, covering both SES verification styles) instead of "*".
+        # Omitted entirely when no from-email is configured.
+        - !If
+          - HasSesFromEmail
+          - Statement:
+              Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource:
+                - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${OnboardingSesFromEmail}"
+                - !Sub
+                  - "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${Domain}"
+                  - Domain: !Select [1, !Split ["@", !Ref OnboardingSesFromEmail]]
+          - !Ref AWS::NoValue
         - Statement:
             Effect: Allow
             Action:

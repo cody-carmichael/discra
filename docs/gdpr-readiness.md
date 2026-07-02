@@ -9,19 +9,19 @@ Discra is the **controller**. A Discra↔tenant DPA does not yet exist (see Buil
 
 ## 1. Data inventory — what PII we hold, and where
 
-| Data | Subjects | Store | Retention today |
-|---|---|---|---|
-| Staff identity: name, email, phone, profile photo, TSA flag | Tenant staff | Cognito; `UsersTable`; S3 `profile-photos/` | Indefinite |
-| Customer order PII: name, pickup/delivery address, phone, email, free-text notes | Tenant's customers | `OrdersTable` (sources: admin console, orders webhook, Gmail ingest, AI parse) | Indefinite |
-| Driver geolocation (lat/lng/heading, timestamped) | Drivers | `DriverLocationsTable` | **TTL'd** (`expires_at_epoch`) ✓ |
-| POD artifacts: delivery photos, **recipient signature images**, capture location, notes | Customers + drivers | S3 `pod/{org}/{order}/{driver}/`; `PodArtifactsTable` | Indefinite (+ 90d noncurrent versions) |
-| Gmail integration: connected mailbox address, **OAuth refresh token** (mailbox credential), rules | Tenant + email senders | `EmailConfigTable` | Until disconnect |
-| Skipped-email log: sender, subject, reason | Email senders | `SkippedEmailsTable` | **TTL'd** ✓ |
-| Invitations / onboarding: invitee email+role; requester email, contact name, tenant, notes | Staff / prospects | `SeatInvitationsTable`; `OnboardingRegistrationsTable` | Indefinite |
-| Audit trail: actor id, roles, action, details (may embed invitee emails) | Staff | `AuditLogsTable` | Indefinite (deliberate) |
-| Push subscriptions: endpoint URL + crypto keys | Drivers/staff | `PushSubscriptionsTable` | **TTL'd** ✓ |
-| Application logs | — | CloudWatch | **PII-redacted** (S-5, #187) ✓; retention unmanaged |
-| Backups | all of the above | DynamoDB PITR (35d rolling) + S3 versions (90d) | rolls off automatically |
+| Data | Subjects | Store | Retention today | Lawful basis (art. 6) |
+|---|---|---|---|---|
+| Staff identity: name, email, phone, profile photo, TSA flag | Tenant staff | Cognito; `UsersTable`; S3 `profile-photos/` | Indefinite | 6(1)(b) contract — account/service provision via the tenant |
+| Customer order PII: name, pickup/delivery address, phone, email, free-text notes | Tenant's customers | `OrdersTable` (sources: admin console, orders webhook, Gmail ingest, AI parse) | Indefinite | Tenant's basis: 6(1)(b) delivery contract / 6(1)(f) fulfillment; Discra processes on instruction (art. 28) |
+| Driver geolocation (lat/lng/heading, timestamped) | Drivers | `DriverLocationsTable` | **TTL'd** (`expires_at_epoch`) ✓ | 6(1)(f) legitimate interest (dispatch ops, employment context) — **not consent** (invalid under employer–employee imbalance); transparency notice required |
+| POD artifacts: delivery photos, **recipient signature images**, capture location, notes | Customers + drivers | S3 `pod/{org}/{order}/{driver}/`; `PodArtifactsTable` | Indefinite (+ 90d noncurrent versions) | 6(1)(b)/(f) proof of delivery. Signature images are ordinary PII here (not art. 9 biometric — no identification processing) |
+| Gmail integration: connected mailbox address, **OAuth refresh token** (mailbox credential), rules | Tenant + email senders | `EmailConfigTable` | Until disconnect | Tenant admin's OAuth authorization + 6(1)(b); third-party sender data: tenant's 6(1)(f) order processing |
+| Skipped-email log: sender, subject, reason | Email senders | `SkippedEmailsTable` | **TTL'd** ✓ | 6(1)(f) ops triage (short-lived) |
+| Invitations / onboarding: invitee email+role; requester email, contact name, tenant, notes | Staff / prospects | `SeatInvitationsTable`; `OnboardingRegistrationsTable` | Indefinite | 6(1)(b) contract / pre-contractual steps at the data subject's request |
+| Audit trail: actor id, roles, action, details (may embed invitee emails) | Staff | `AuditLogsTable` | Indefinite (deliberate) | 6(1)(f) security & accountability (supports art. 32 obligations) |
+| Push subscriptions: endpoint URL + crypto keys | Drivers/staff | `PushSubscriptionsTable` | **TTL'd** ✓ | 6(1)(b) — notifications are a requested service function |
+| Application logs | — | CloudWatch | **PII-redacted** (S-5, #187) ✓; retention unmanaged | 6(1)(f) security/ops (minimized by design) |
+| Backups | all of the above | DynamoDB PITR (35d rolling) + S3 versions (90d) | rolls off automatically | Same basis as the underlying data (availability/integrity) |
 
 At rest all stores are encrypted (SSE-KMS on tables, SSE-S3 + versioning on the bucket — #187);
 access is org-scoped + RBAC/IDOR-tested (#184).
@@ -47,7 +47,7 @@ vendor's DPA and review annually.
 |---|---|---|---|---|
 | 1 | Lawful basis & roles | Partial | Processing is on tenant instructions (contract); driver location = employment context; no Discra↔tenant **DPA** exists | DPA template as part of the pilot contract (**build**) |
 | 2 | Transparency / privacy policy | **Gap** | no privacy policy anywhere (web, mobile, onboarding) | publish policy page; link from login/register + app settings (**build**) |
-| 3 | Consent/notice for driver location tracking | **Gap** | driver PWA + mobile app send location with no notice or in-app disclosure | one-time in-app notice ("location shared with dispatcher while on shift") + doc; consent screen on mobile (**build**) |
+| 3 | Transparency for driver location tracking | **Gap** | driver PWA + mobile app send location with no notice or in-app disclosure. Basis is 6(1)(f) legitimate interest (employment context — consent would be invalid there), which makes **transparency** the binding obligation | one-time in-app notice ("location is shared with your dispatcher while on shift") in PWA + Expo, acknowledged on first use; documented in the privacy policy (**build**) |
 | 4 | Data minimization | Partial | good: TTLs on location/push/skipped-email; POD size caps; log redaction (S-5). Weak: full email bodies sent to AI parsing; indefinite orders/POD | scope AI parse to matched-rule emails only (already the case for the poller — verify elevate path); retention below |
 | 5 | Retention & deletion policy | **Gap** | no policy or job for orders / POD / invitations / onboarding records | define policy (e.g. orders+POD N months post-delivery, configurable per tenant) + a scheduled purge job (**build**) |
 | 6 | Right of access (export) | **Gap** | no per-person export; data is org-scoped, not person-scoped | admin "export person data" action: given email/driver-id, export matching rows (users, orders-by-customer-contact, PODs, invitations, audit refs) (**build**) |

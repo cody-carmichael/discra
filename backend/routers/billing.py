@@ -23,6 +23,10 @@ try:
         get_stripe_client,
         new_invitation,
     )
+    from backend.onboarding_service import (
+        CognitoUserNotFoundError,
+        get_onboarding_cognito_admin_client,
+    )
     from backend.order_store import get_order_store
     from backend.repositories import get_identity_repository
     from backend.schemas import (
@@ -61,6 +65,10 @@ except ModuleNotFoundError:  # local run from backend/ directory
         get_or_default_subscription,
         get_stripe_client,
         new_invitation,
+    )
+    from onboarding_service import (
+        CognitoUserNotFoundError,
+        get_onboarding_cognito_admin_client,
     )
     from order_store import get_order_store
     from repositories import get_identity_repository
@@ -710,6 +718,7 @@ async def activate_invitation(
     identity_repo=Depends(get_identity_repository),
     billing_store=Depends(get_billing_store),
     audit_store=Depends(get_audit_log_store),
+    cognito_admin=Depends(get_onboarding_cognito_admin_client),
 ):
     invitation = billing_store.get_invitation(user["org_id"], invitation_id)
     if invitation is None:
@@ -726,6 +735,31 @@ async def activate_invitation(
         ensure_seat_limit_for_activation(invitation.role, subscription, usage)
     except SeatLimitExceededError as exc:
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    # G-1 (ledger I-1): RBAC reads roles from the JWT's cognito:groups, so the
+    # activation must put the invitee in the Cognito group (and bind their org
+    # attribute) or the seat grants no working access. Done BEFORE any state
+    # mutation: if the invitee hasn't signed up yet, the invitation stays
+    # PENDING (seat stays reserved) and the admin gets an actionable 409.
+    try:
+        cognito_group_assigned = cognito_admin.ensure_admin_access(
+            username=invitation.user_id,
+            org_id=user["org_id"],
+            role_name=invitation.role.value,
+        )
+    except CognitoUserNotFoundError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=(
+                "Invitee has not created their account yet. Ask them to sign up "
+                "via the app first, then activate the invitation."
+            ),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to apply Cognito group for invitee: {exc}",
+        ) from exc
 
     existing_user = identity_repo.get_user(user["org_id"], invitation.user_id)
     now = _utc_now()
@@ -779,6 +813,8 @@ async def activate_invitation(
             "user_id": invitation.user_id,
             "role": invitation.role.value,
             "status": accepted_invitation.status.value,
+            # False = no user pool configured (local/dev no-op client).
+            "cognito_group_assigned": cognito_group_assigned,
         },
     )
 

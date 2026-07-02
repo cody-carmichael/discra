@@ -45,6 +45,8 @@ def _test_env(monkeypatch):
     monkeypatch.delenv("STRIPE_DISPATCHER_PRICE_ID", raising=False)
     monkeypatch.delenv("STRIPE_DRIVER_PRICE_ID", raising=False)
     monkeypatch.delenv("ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET", raising=False)
+    # Keep the Cognito admin client a no-op unless a test overrides it.
+    monkeypatch.delenv("COGNITO_USER_POOL_ID", raising=False)
     reset_in_memory_billing_store()
     reset_in_memory_audit_log_store()
     _IN_MEMORY_REPO._orgs.clear()
@@ -699,6 +701,92 @@ def test_non_admin_cannot_create_admin_invitation():
             headers=_auth_header(token),
         )
         assert resp.status_code == 403, f"{role} -> {resp.status_code}"
+
+
+# --- G-1: activation assigns the invitee's Cognito group ---
+
+from backend.onboarding_service import CognitoUserNotFoundError  # noqa: E402
+
+
+class _RecordingCognitoAdmin:
+    def __init__(self, error: Exception = None):
+        self.calls = []
+        self._error = error
+
+    def ensure_admin_access(self, *, username: str, org_id: str, role_name: str = "Admin") -> bool:
+        self.calls.append({"username": username, "org_id": org_id, "role_name": role_name})
+        if self._error is not None:
+            raise self._error
+        return True
+
+
+def _pending_invitation(admin_token, user_id="cog-user", role="Driver"):
+    client.post(
+        "/billing/seats",
+        json={"dispatcher_seat_limit": 2, "driver_seat_limit": 2},
+        headers=_auth_header(admin_token),
+    )
+    invite = client.post(
+        "/billing/invitations",
+        json={"user_id": user_id, "email": f"{user_id}@example.com", "role": role},
+        headers=_auth_header(admin_token),
+    )
+    assert invite.status_code == 200, invite.text
+    return invite.json()["invitation_id"]
+
+
+def test_activation_assigns_cognito_group():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    cognito = _RecordingCognitoAdmin()
+    app.dependency_overrides[billing_router.get_onboarding_cognito_admin_client] = lambda: cognito
+
+    invitation_id = _pending_invitation(admin_token, user_id="cog-driver", role="Driver")
+    activate = client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token))
+    assert activate.status_code == 200, activate.text
+
+    assert cognito.calls == [{"username": "cog-driver", "org_id": "org-1", "role_name": "Driver"}]
+    audit_events = get_audit_log_store().list_events("org-1", limit=10)
+    activated = [e for e in audit_events if e.action == "billing.invitation.activated"]
+    assert activated and activated[0].details["cognito_group_assigned"] is True
+
+
+def test_activation_blocked_until_invitee_signs_up():
+    """User-not-found in Cognito -> 409, the invitation stays PENDING (seat still
+    reserved), no user record is created, and a later activation succeeds."""
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    app.dependency_overrides[billing_router.get_onboarding_cognito_admin_client] = (
+        lambda: _RecordingCognitoAdmin(error=CognitoUserNotFoundError("no such user"))
+    )
+
+    invitation_id = _pending_invitation(admin_token, user_id="not-signed-up", role="Driver")
+    blocked = client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token))
+    assert blocked.status_code == 409
+    assert "sign up" in blocked.json()["detail"].lower()
+
+    pending = client.get("/billing/invitations?status=Pending", headers=_auth_header(admin_token))
+    assert invitation_id in [item["invitation_id"] for item in pending.json()]
+    assert _IN_MEMORY_REPO.get_user("org-1", "not-signed-up") is None
+
+    # Invitee signs up -> activation now succeeds cleanly.
+    app.dependency_overrides[billing_router.get_onboarding_cognito_admin_client] = (
+        lambda: _RecordingCognitoAdmin()
+    )
+    retry = client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token))
+    assert retry.status_code == 200, retry.text
+
+
+def test_activation_cognito_failure_returns_502_and_stays_pending():
+    admin_token = make_token("admin-1", "org-1", ["Admin"])
+    app.dependency_overrides[billing_router.get_onboarding_cognito_admin_client] = (
+        lambda: _RecordingCognitoAdmin(error=RuntimeError("cognito unavailable"))
+    )
+
+    invitation_id = _pending_invitation(admin_token, user_id="unlucky", role="Dispatcher")
+    resp = client.post(f"/billing/invitations/{invitation_id}/activate", headers=_auth_header(admin_token))
+    assert resp.status_code == 502
+
+    pending = client.get("/billing/invitations?status=Pending", headers=_auth_header(admin_token))
+    assert invitation_id in [item["invitation_id"] for item in pending.json()]
 
 
 # --- RBAC: every billing endpoint is Admin-only ---

@@ -111,6 +111,10 @@ class Order(BaseModel):
     external_order_id: Optional[str] = None
     source: Optional[str] = None
     status: OrderStatus
+    # Reason/note recorded with the most recent status transition (G-2) — e.g. a
+    # driver's failed-delivery reason. The full transition history lives in the
+    # audit log (action=order.status_changed).
+    status_notes: Optional[str] = Field(default=None, max_length=500)
     assigned_to: Optional[str] = None
     created_at: datetime
     org_id: str

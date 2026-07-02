@@ -788,8 +788,10 @@
     } catch (e) { C.showMessage(el.ordersMessage, e.message, "error"); }
   }
 
-  async function updateOrderStatus(orderId, statusValue) {
-    await C.requestJson(apiBase, "/orders/" + orderId + "/status", { method: "POST", token: token, json: { status: statusValue } });
+  async function updateOrderStatus(orderId, statusValue, statusNotes) {
+    var payload = { status: statusValue };
+    if (statusNotes) payload.notes = statusNotes;
+    await C.requestJson(apiBase, "/orders/" + orderId + "/status", { method: "POST", token: token, json: payload });
   }
 
   async function uploadWithPresignedPost(upload, fileBlob, fileName) {
@@ -1154,7 +1156,14 @@
     try {
       if (action === "status") {
         var statusValue = target.getAttribute("data-status");
-        await updateOrderStatus(orderId, statusValue);
+        var statusNotes = null;
+        if (statusValue === "Failed") {
+          // G-2: capture the failed-delivery reason so dispatch sees WHY.
+          statusNotes = window.prompt("Why did the delivery fail? (e.g. business closed, refused, no access)", "");
+          if (statusNotes === null) return; // driver cancelled — don't mark Failed
+          statusNotes = statusNotes.trim() || null;
+        }
+        await updateOrderStatus(orderId, statusValue, statusNotes);
         C.showMessage(el.ordersMessage, "Updated to " + statusValue + ".", "success");
         await refreshInbox();
         closeDetailPanel();

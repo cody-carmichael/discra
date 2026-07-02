@@ -342,6 +342,11 @@
         "<div class=\"dispatch-card-details\">" +
         "<div class=\"dispatch-card-detail\"><span class=\"dispatch-card-label\">Pickup</span><span class=\"dispatch-card-value\">" + pickup + "</span></div>" +
         "<div class=\"dispatch-card-detail\"><span class=\"dispatch-card-label\">Delivery</span><span class=\"dispatch-card-value\">" + delivery + "</span></div>" +
+        (order.status_notes
+          ? "<div class=\"dispatch-card-detail\" data-testid=\"status-notes\"><span class=\"dispatch-card-label\">" +
+            (order.status === "Failed" ? "Failure reason" : "Status note") +
+            "</span><span class=\"dispatch-card-value\">" + C.escapeHtml(order.status_notes) + "</span></div>"
+          : "") +
         "</div>" +
         "<div class=\"dispatch-card-footer\">" +
         "<div class=\"dispatch-card-driver\"><span class=\"" + dotClass + "\"></span>" + driverLabel + "</div>" +
@@ -611,8 +616,17 @@
       el.orderHistoryBody.innerHTML = "<tr><td colspan=\"5\" style=\"text-align:center;color:var(--text-muted)\">Loading…</td></tr>";
     }
     try {
-      var orders = await C.requestJson(apiBase, "/orders?status=Delivered&sort_field=created_at&sort_direction=desc", { token });
-      renderOrderHistory(Array.isArray(orders) ? orders : []);
+      // G-2: failed orders were invisible (dispatch hides terminal statuses and
+      // this table fetched Delivered only) — include Failed so dispatchers see
+      // failed deliveries and their reasons.
+      var results = await Promise.all([
+        C.requestJson(apiBase, "/orders?status=Delivered&sort_field=created_at&sort_direction=desc", { token }),
+        C.requestJson(apiBase, "/orders?status=Failed&sort_field=created_at&sort_direction=desc", { token }),
+      ]);
+      var orders = []
+        .concat(Array.isArray(results[0]) ? results[0] : [], Array.isArray(results[1]) ? results[1] : [])
+        .sort(function (a, b) { return String(b.created_at || "").localeCompare(String(a.created_at || "")); });
+      renderOrderHistory(orders);
     } catch (error) {
       if (el.orderHistoryMessage) C.showMessage(el.orderHistoryMessage, error.message, "error");
     }
@@ -621,7 +635,7 @@
   function renderOrderHistory(orders) {
     if (!el.orderHistoryBody) return;
     if (!orders.length) {
-      el.orderHistoryBody.innerHTML = "<tr><td colspan=\"5\" style=\"text-align:center;color:var(--text-muted);padding:24px\">No delivered orders yet.</td></tr>";
+      el.orderHistoryBody.innerHTML = "<tr><td colspan=\"5\" style=\"text-align:center;color:var(--text-muted);padding:24px\">No completed orders yet.</td></tr>";
       return;
     }
     el.orderHistoryBody.innerHTML = orders.map(function (order) {
@@ -630,8 +644,15 @@
         : "<span style=\"color:var(--text-muted)\">—</span>";
       var pickup = C.escapeHtml((order.pick_up_street || "") + ", " + (order.pick_up_city || ""));
       var delivery = C.escapeHtml((order.delivery_street || "") + ", " + (order.delivery_city || ""));
+      var failedInfo = "";
+      if (order.status === "Failed") {
+        failedInfo = "<br><span class=\"table-status status-failed\" data-testid=\"history-status-failed\">Failed</span>" +
+          (order.status_notes
+            ? "<br><small style=\"color:var(--text-danger,#D94D4D)\" data-testid=\"history-failure-reason\">" + C.escapeHtml(order.status_notes) + "</small>"
+            : "");
+      }
       return "<tr>" +
-        "<td><strong>" + C.escapeHtml(order.customer_name || "") + "</strong><br><small style=\"color:var(--text-muted)\">Ref " + C.escapeHtml(order.reference_id || "") + "</small></td>" +
+        "<td><strong>" + C.escapeHtml(order.customer_name || "") + "</strong><br><small style=\"color:var(--text-muted)\">Ref " + C.escapeHtml(order.reference_id || "") + "</small>" + failedInfo + "</td>" +
         "<td><small>" + pickup + "</small><br><small style=\"color:var(--text-muted)\">→ " + delivery + "</small></td>" +
         "<td>" + driver + "</td>" +
         "<td><small>" + C.escapeHtml(C.formatTimestamp(order.created_at)) + "</small></td>" +
@@ -1784,7 +1805,11 @@
         "<small>" + C.escapeHtml(_formatOrderDeadlines(order)) + "</small>" +
         "<br><span class=\"" + C.escapeHtml(due.cssClass) + "\">" + C.escapeHtml(due.label) + "</span>" +
         "</td>" +
-        "<td><span class=\"table-status " + currentStatusClass + "\">" + C.escapeHtml(order.status) + "</span></td>" +
+        "<td><span class=\"table-status " + currentStatusClass + "\">" + C.escapeHtml(order.status) + "</span>" +
+        (order.status_notes
+          ? "<br><small style=\"color:var(--text-danger,#D94D4D)\" data-testid=\"order-status-notes\">" + C.escapeHtml(order.status_notes) + "</small>"
+          : "") +
+        "</td>" +
         "<td class=\"order-cell-assign\">" +
         (hasDriver
           ? "<span class=\"assign-badge\">" + C.escapeHtml(driverName) + "</span>"

@@ -465,6 +465,20 @@ def create_app() -> FastAPI:
     async def dev_backend_ui_review():
         return FileResponse(str(FRONTEND_DIR / "review.html"))
 
+    # Privacy policy (G-3, GDPR art. 13) — public, linked from the entry pages,
+    # the driver location notice, and the mobile app.
+    @app.get("/ui/privacy", include_in_schema=False)
+    async def ui_privacy():
+        return FileResponse(str(FRONTEND_DIR / "privacy.html"))
+
+    @app.get("/backend/ui/privacy", include_in_schema=False)
+    async def backend_ui_privacy():
+        return FileResponse(str(FRONTEND_DIR / "privacy.html"))
+
+    @app.get("/dev/backend/ui/privacy", include_in_schema=False)
+    async def dev_backend_ui_privacy():
+        return FileResponse(str(FRONTEND_DIR / "privacy.html"))
+
     @app.get("/ui/driver-sw.js", include_in_schema=False)
     async def ui_driver_service_worker():
         return FileResponse(str(FRONTEND_DIR / "driver-sw.js"), media_type="application/javascript")

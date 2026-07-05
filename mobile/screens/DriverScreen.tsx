@@ -1,4 +1,5 @@
 // DriverScreen.tsx — Full-screen map + bottom sheet driver experience
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
@@ -9,6 +10,7 @@ import {
   Dimensions,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   PanResponder,
   Platform,
@@ -50,6 +52,8 @@ const SHEET_HEIGHT = Math.round(SCREEN_HEIGHT * 0.72);
 const SHEET_OPEN_Y = 0;
 const SHEET_CLOSED_Y = SHEET_HEIGHT - PEEK_HEIGHT;
 const DRIVER_STATUS = ["PickedUp", "EnRoute", "Failed", "Delivered"] as const;
+// G-4 (GDPR transparency): one-time location-sharing notice acknowledgment.
+const LOCATION_NOTICE_ACK_KEY = "discra_location_notice_ack_v1";
 const AUSTIN_REGION: Region = {
   latitude: 30.2672,
   longitude: -97.7431,
@@ -110,6 +114,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   // POST resolves would fire a duplicate /orders/{id}/status request.
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [locationActive, setLocationActive] = useState(false);
+  // null = still loading from storage; false = notice pending; true = acknowledged.
+  const [locationNoticeAck, setLocationNoticeAck] = useState<boolean | null>(null);
   const locationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mapRef = useRef<MapView | null>(null);
 
@@ -639,12 +645,26 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   useEffect(() => {
     loadInbox().catch(() => undefined);
     loadProfile().catch(() => undefined);
-    startAutoLocation();
+    // G-4: don't start sharing until the one-time notice is acknowledged.
+    AsyncStorage.getItem(LOCATION_NOTICE_ACK_KEY)
+      .then((v) => setLocationNoticeAck(!!v))
+      .catch(() => setLocationNoticeAck(true)); // storage unavailable — fail open
     return () => {
       stopAutoLocation();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Start location sharing once (and only once) the notice is acknowledged.
+  useEffect(() => {
+    if (locationNoticeAck === true) startAutoLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationNoticeAck]);
+
+  function acknowledgeLocationNotice() {
+    AsyncStorage.setItem(LOCATION_NOTICE_ACK_KEY, new Date().toISOString()).catch(() => undefined);
+    setLocationNoticeAck(true);
+  }
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -724,6 +744,27 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
             </Pressable>
           </View>
         </View>
+        {locationNoticeAck === false ? (
+          <View style={styles.locationNotice} testID="location-notice">
+            <Text style={styles.locationNoticeText}>
+              While you are signed in, your location is shared with your dispatcher to
+              coordinate deliveries.{" "}
+              <Text
+                style={styles.locationNoticeLink}
+                onPress={() => Linking.openURL(`${apiBase}/ui/privacy`).catch(() => undefined)}
+              >
+                Privacy Policy
+              </Text>
+            </Text>
+            <Pressable
+              testID="location-notice-ack"
+              style={styles.locationNoticeBtn}
+              onPress={acknowledgeLocationNotice}
+            >
+              <Text style={styles.locationNoticeBtnText}>Got it</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </SafeAreaView>
 
       {/* ── Status bar (floats above sheet) ────────────────────────── */}
@@ -1093,6 +1134,12 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                   <Text style={styles.btnGhostText}>Sign Out</Text>
                 </Pressable>
               </View>
+              <Text
+                style={styles.privacyLink}
+                onPress={() => Linking.openURL(`${apiBase}/ui/privacy`).catch(() => undefined)}
+              >
+                Privacy Policy
+              </Text>
             </View>
           </SafeAreaView>
         </View>
@@ -1210,6 +1257,46 @@ const styles = StyleSheet.create({
     color: "#EDE0C4",
     fontSize: 12,
     fontWeight: "600",
+  },
+  locationNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 8,
+    marginHorizontal: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(11,9,16,0.92)",
+    borderWidth: 1,
+    borderColor: "#3A2F50",
+  },
+  locationNoticeText: {
+    flex: 1,
+    color: "#EDE0C4",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  locationNoticeLink: {
+    color: "#C8973A",
+    textDecorationLine: "underline",
+  },
+  locationNoticeBtn: {
+    backgroundColor: "#C8973A",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  locationNoticeBtnText: {
+    color: "#1A1424",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  privacyLink: {
+    color: "#8A7F6C",
+    fontSize: 12,
+    textAlign: "center",
+    textDecorationLine: "underline",
+    marginTop: 12,
   },
   profileBtn: {
     width: 36,

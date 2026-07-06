@@ -1,63 +1,6 @@
-:root {
-  /* Backgrounds */
-  --bg-base: #0B0910;
-  --bg-surface: #130F1A;
-  --bg-elevated: #1C1628;
-  --bg-input: #0F0C16;
-
-  /* Borders */
-  --border-default: #3A2F50;
-  --border-accent: #6B4F2A;
-  --border-glow: #C8973A;
-
-  /* Gold */
-  --gold-primary: #C8973A;
-  --gold-bright: #F0C060;
-  --gold-dim: #7A5C22;
-
-  /* Text */
-  --text-primary: #EDE0C4;
-  --text-heading: #F5D98B;
-  --text-muted: #968AA8;
-  --text-danger: #D94D4D;
-  --text-success: #4A9E5C;
-
-  /* Secondary accents */
-  --purple-accent: #7B4FA6;
-  --blue-deep: #1E3A5C;
-
-  /* Typography */
-  --font-display: "Cinzel", "Trajan Pro", Georgia, serif;
-  --font-ornate:  "Cinzel Decorative", "Cinzel", Georgia, serif;
-  --font-body:    "Crimson Pro", "Iowan Old Style", Georgia, serif;
-  --font-mono:    "Fira Code", "IBM Plex Mono", Consolas, monospace;
-
-  /* Radius (flat-ish, 2-4px maximum) */
-  --radius-sm: 2px;
-  --radius-md: 4px;
-
-  /* Shadows (warm-tinted, never neutral grey) */
-  --shadow-panel:  0 2px 14px rgba(11, 9, 16, 0.6), 0 0 0 1px rgba(107, 79, 42, 0.25);
-  --shadow-glow:   0 0 8px rgba(200, 151, 58, 0.4);
-  --shadow-strong: 0 12px 32px rgba(11, 9, 16, 0.75), 0 0 24px rgba(200, 151, 58, 0.08);
-
-  /* Backwards-compatibility aliases so existing class references resolve */
-  --bg: var(--bg-base);
-  --bg-soft: var(--bg-surface);
-  --panel: var(--bg-surface);
-  --panel-2: var(--bg-elevated);
-  --panel-border: var(--border-default);
-  --text: var(--text-primary);
-  --primary: var(--gold-primary);
-  --primary-strong: var(--gold-bright);
-  --accent: var(--gold-primary);
-  --danger: var(--text-danger);
-  --ok: var(--text-success);
-  --sans: var(--font-body);
-  --mono: var(--font-mono);
-  --shadow: var(--shadow-panel);
-  --radius: var(--radius-md);
-}
+/* Design tokens live in ONE place — tokens.css (see docs/design-system.md).
+   This import must stay the first rule in the file. */
+@import url("tokens.css?v=20260705a");
 
 * {
   box-sizing: border-box;

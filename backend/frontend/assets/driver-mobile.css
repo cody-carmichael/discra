@@ -113,7 +113,11 @@ body {
   font-family: var(--drv-font-display); font-weight: 600; font-size: .78rem;
   letter-spacing: 0.1em; text-transform: uppercase;
   cursor: pointer; padding: .55rem 1rem;
-  transition: background .15s, border-color .15s, box-shadow .15s, opacity .15s;
+  /* 5.3 one-handed use: all primary controls meet the 44px touch-target
+     minimum — drivers tap these gloved, moving, one-thumbed. */
+  min-height: 44px;
+  transition: background var(--motion-fast), border-color var(--motion-fast),
+              box-shadow var(--motion-fast), opacity var(--motion-fast);
 }
 .drv-btn:active { transform: scale(0.98); opacity: .85; }
 .drv-btn-accent {
@@ -160,9 +164,20 @@ body {
   color: var(--drv-text-heading);
   border-color: var(--drv-border-accent);
 }
-.drv-btn-sm { padding: .38rem .8rem; font-size: .72rem; }
-.drv-btn-xs { padding: .28rem .55rem; font-size: .68rem; }
+/* -sm keeps the compact look but never drops below the touch minimum (the
+   status actions — the most-used driving controls — are -sm). -xs is reserved
+   for secondary chrome (e.g. Clear signature) and still gets 36px. */
+.drv-btn-sm { padding: .38rem .8rem; font-size: .72rem; min-height: 44px; }
+.drv-btn-xs { padding: .28rem .55rem; font-size: .68rem; min-height: 36px; }
 .drv-btn:disabled { opacity: .4; pointer-events: none; }
+
+/* Keyboard/AT focus parity with the admin console (tokens.css --border-glow). */
+:focus-visible {
+  outline: 2px solid var(--border-glow);
+  outline-offset: 2px;
+  border-radius: var(--drv-radius-sm);
+}
+:focus:not(:focus-visible) { outline: none; }
 
 /* ===== MESSAGES ===== */
 .drv-msg { font-size: .75rem; padding: .25rem .5rem; min-height: 1em; }
@@ -461,15 +476,17 @@ body {
   color: var(--purple-light);
   border-color: rgba(123, 79, 166, 0.4);
 }
+/* PickedUp/EnRoute follow the shared --status-* progression (tokens.css) so
+   the driver app and admin console tell the same color story. */
 .drv-badge-pickedup {
-  background: rgba(200, 151, 58, 0.12);
-  color: var(--drv-accent-bright);
-  border-color: rgba(200, 151, 58, 0.4);
+  background: rgba(224, 164, 59, 0.14);
+  color: var(--status-pickedup);
+  border-color: rgba(224, 164, 59, 0.45);
 }
 .drv-badge-enroute {
-  background: rgba(200, 151, 58, 0.12);
-  color: var(--drv-accent-bright);
-  border-color: rgba(200, 151, 58, 0.4);
+  background: rgba(74, 158, 92, 0.18);
+  color: var(--status-enroute);
+  border-color: rgba(74, 158, 92, 0.4);
 }
 .drv-badge-delivered {
   background: rgba(74, 158, 92, 0.18);

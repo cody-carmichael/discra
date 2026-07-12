@@ -1,27 +1,32 @@
 /* ===== Discra Driver Mobile CSS ===== */
+/* Design tokens live in ONE place — tokens.css (see docs/design-system.md).
+   The --drv-* names are driver-scoped ALIASES onto the shared tokens; never
+   assign a raw hex here. */
+@import url("tokens.css?v=20260705a");
+
 :root {
-  --drv-bg: #0B0910;
-  --drv-surface: #130F1A;
-  --drv-surface-2: #1C1628;
-  --drv-border: #3A2F50;
-  --drv-border-accent: #6B4F2A;
-  --drv-text: #EDE0C4;
-  --drv-text-heading: #F5D98B;
-  --drv-text-muted: #968AA8;
-  --drv-accent: #C8973A;
-  --drv-accent-bright: #F0C060;
-  --drv-accent-dim: #7A5C22;
+  --drv-bg: var(--bg-base);
+  --drv-surface: var(--bg-surface);
+  --drv-surface-2: var(--bg-elevated);
+  --drv-border: var(--border-default);
+  --drv-border-accent: var(--border-accent);
+  --drv-text: var(--text-primary);
+  --drv-text-heading: var(--text-heading);
+  --drv-text-muted: var(--text-muted);
+  --drv-accent: var(--gold-primary);
+  --drv-accent-bright: var(--gold-bright);
+  --drv-accent-dim: var(--gold-dim);
   --drv-accent-glow: rgba(200, 151, 58, 0.2);
-  --drv-green: #4A9E5C;
-  --drv-red: #D94D4D;
-  --drv-orange: #C8973A;
-  --drv-purple: #7B4FA6;
-  --drv-radius: 4px;
-  --drv-radius-sm: 2px;
+  --drv-green: var(--text-success);
+  --drv-red: var(--text-danger);
+  --drv-orange: var(--gold-primary);
+  --drv-purple: var(--purple-accent);
+  --drv-radius: var(--radius-md);
+  --drv-radius-sm: var(--radius-sm);
   --drv-topbar-h: 52px;
-  --drv-font-display: "Cinzel", "Trajan Pro", Georgia, serif;
-  --drv-font-ornate: "Cinzel Decorative", "Cinzel", Georgia, serif;
-  --drv-font-body: "Crimson Pro", "Iowan Old Style", Georgia, serif;
+  --drv-font-display: var(--font-display);
+  --drv-font-ornate: var(--font-ornate);
+  --drv-font-body: var(--font-body);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -135,7 +140,7 @@ body {
   background: rgba(74, 158, 92, 0.3);
 }
 .drv-btn-red {
-  background: linear-gradient(180deg, #7A2222, var(--drv-red));
+  background: linear-gradient(180deg, var(--danger-dim), var(--drv-red));
   border-color: var(--drv-red);
   color: var(--drv-text);
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
@@ -453,7 +458,7 @@ body {
 }
 .drv-badge-assigned {
   background: rgba(123, 79, 166, 0.18);
-  color: #b18ed0;
+  color: var(--purple-light);
   border-color: rgba(123, 79, 166, 0.4);
 }
 .drv-badge-pickedup {
@@ -685,7 +690,7 @@ body {
 .drv-celebrate.is-leaving { opacity: 0; }
 
 .drv-celebrate-backdrop {
-  position: absolute; inset: 0; background: #070510;
+  position: absolute; inset: 0; background: var(--bg-deepest);
   opacity: 0; animation: drv-cel-dim .22s ease-out forwards;
 }
 @keyframes drv-cel-dim { to { opacity: .92; } }

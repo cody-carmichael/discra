@@ -411,9 +411,11 @@ async def update_order(
 async def update_order_status(
     order_id: str,
     body: StatusUpdateRequest,
+    request: Request,
     user=Depends(require_roles([ROLE_ADMIN, ROLE_DISPATCHER, ROLE_DRIVER])),
     order_store=Depends(get_order_store),
     pod_store=Depends(get_pod_data_store),
+    audit_store=Depends(get_audit_log_store),
 ):
     order = _require_tenant_order(order_id, user["org_id"], order_store=order_store)
 
@@ -449,8 +451,31 @@ async def update_order_status(
                 detail="Cannot mark order Delivered without proof of delivery. Upload a POD photo or signature first.",
             )
 
+    previous_status = order.status
     order.status = body.status
-    return order_store.upsert_order(order)
+    # G-2: persist the transition note (e.g. failed-delivery reason). Previously
+    # StatusUpdateRequest.notes was accepted and silently dropped.
+    status_notes = (body.notes or "").strip() or None
+    if status_notes is not None:
+        order.status_notes = status_notes
+    saved = order_store.upsert_order(order)
+
+    _audit_event(
+        audit_store,
+        org_id=user["org_id"],
+        action="order.status_changed",
+        actor_id=user.get("sub"),
+        actor_roles=user.get("groups") or [],
+        target_type="order",
+        target_id=saved.id,
+        request=request,
+        details={
+            "from_status": previous_status.value,
+            "to_status": saved.status.value,
+            "notes": status_notes,
+        },
+    )
+    return saved
 
 
 @router.get("/driver/inbox", response_model=List[Order])

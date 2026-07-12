@@ -27,6 +27,8 @@ export type OrderRecord = {
   time_window_start?: string | null;
   time_window_end?: string | null;
   status: string;
+  // Reason recorded with the latest status transition (e.g. failed delivery).
+  status_notes?: string | null;
   assigned_to?: string | null;
   phone?: string | null;
   notes?: string | null;

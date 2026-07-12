@@ -707,3 +707,103 @@ def test_driver_cannot_access_another_drivers_order(monkeypatch):
     assert client.get(
         f"/orders/{order_id}", headers={"Authorization": f"Bearer {other_org_admin}"}
     ).status_code in (403, 404)
+
+
+# --- G-2: status-transition notes (failed-delivery reasons) persist + audit ---
+
+
+def test_failed_status_persists_reason_and_audits():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    driver_token = make_token("driver-1", "org-a", ["Driver"])
+
+    created = client.post(
+        "/orders/",
+        json=make_order_payload("Reason Co", "Warehouse 9", "9 Fail St"),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    order_id = created.json()["id"]
+    assert client.post(
+        f"/orders/{order_id}/assign",
+        json={"driver_id": "driver-1"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).status_code == 200
+
+    failed = client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "Failed", "notes": "Business closed at arrival"},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    assert failed.status_code == 200
+    assert failed.json()["status_notes"] == "Business closed at arrival"
+
+    fetched = client.get(f"/orders/{order_id}", headers={"Authorization": f"Bearer {admin_token}"})
+    assert fetched.json()["status_notes"] == "Business closed at arrival"
+
+    events = [
+        e for e in get_audit_log_store().list_events("org-a", limit=20)
+        if e.action == "order.status_changed"
+    ]
+    assert len(events) == 1
+    assert events[0].target_id == order_id
+    assert events[0].details == {
+        "from_status": "Assigned",
+        "to_status": "Failed",
+        "notes": "Business closed at arrival",
+    }
+
+
+def test_status_note_is_optional_and_preserved_until_replaced():
+    admin_token = make_token("admin-a", "org-a", ["Admin"])
+    driver_token = make_token("driver-1", "org-a", ["Driver"])
+
+    created = client.post(
+        "/orders/",
+        json=make_order_payload("Retry Co", "Warehouse 9", "10 Retry Ave"),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    order_id = created.json()["id"]
+    client.post(
+        f"/orders/{order_id}/assign",
+        json={"driver_id": "driver-1"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    # No notes -> status_notes stays unset, audit records notes=None.
+    en_route = client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "EnRoute"},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    assert en_route.status_code == 200
+    assert en_route.json()["status_notes"] is None
+
+    # Whitespace-only notes are treated as absent.
+    fail = client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "Failed", "notes": "   "},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    assert fail.status_code == 200
+    assert fail.json()["status_notes"] is None
+
+    # A real reason persists across the retry re-assignment (dispatch context).
+    fail_again = client.post(
+        f"/orders/{order_id}/assign",
+        json={"driver_id": "driver-1"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert fail_again.status_code == 200
+    with_reason = client.post(
+        f"/orders/{order_id}/status",
+        json={"status": "Failed", "notes": "No access to loading dock"},
+        headers={"Authorization": f"Bearer {driver_token}"},
+    )
+    assert with_reason.status_code == 200
+    refetched = client.get(f"/orders/{order_id}", headers={"Authorization": f"Bearer {admin_token}"})
+    assert refetched.json()["status_notes"] == "No access to loading dock"
+
+    changed_events = [
+        e for e in get_audit_log_store().list_events("org-a", limit=30)
+        if e.action == "order.status_changed"
+    ]
+    assert len(changed_events) == 3  # EnRoute, Failed (blank note), Failed (reason)

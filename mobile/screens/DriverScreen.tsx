@@ -92,6 +92,9 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   const [selectedOrder, setSelectedOrder] = useState<OrderRecord | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [signatureOrderId, setSignatureOrderId] = useState<string | null>(null);
+  // G-2: failed-delivery reason capture — which order is being failed + reason text.
+  const [failingOrderId, setFailingOrderId] = useState<string | null>(null);
+  const [failReason, setFailReason] = useState("");
   const [podState, setPodState] = useState<Map<string, PodState>>(new Map());
   const [profileVisible, setProfileVisible] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -270,7 +273,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   }, [apiBase, token, geocodeOrders]);
 
   // ── Update order status ────────────────────────────────────────────────────
-  async function updateStatus(orderId: string, status: string) {
+  async function updateStatus(orderId: string, status: string, notes?: string) {
     // Drop a concurrent tap while a status change is already in flight.
     if (statusUpdating) return;
     setStatusUpdating(true);
@@ -279,7 +282,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       await apiRequest(apiBase, `/orders/${orderId}/status`, {
         method: "POST",
         token,
-        json: { status },
+        json: notes ? { status, notes } : { status },
       });
       await loadInbox();
       setStatusMsg(`Status updated: ${status}`);
@@ -907,12 +910,54 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                           statusUpdating && styles.actionBtnDisabled,
                         ]}
                         disabled={statusUpdating}
-                        onPress={() => updateStatus(selectedOrder.id, s).catch(() => undefined)}
+                        onPress={() => {
+                          if (s === "Failed") {
+                            // G-2: ask for the reason before marking Failed.
+                            setFailReason("");
+                            setFailingOrderId(selectedOrder.id);
+                            return;
+                          }
+                          updateStatus(selectedOrder.id, s).catch(() => undefined);
+                        }}
                       >
                         <Text style={styles.actionBtnText}>{s}</Text>
                       </Pressable>
                     ))}
                   </View>
+                  {failingOrderId === selectedOrder.id ? (
+                    <View style={styles.detailSection}>
+                      <TextInput
+                        testID="fail-reason-input"
+                        style={styles.input}
+                        value={failReason}
+                        onChangeText={setFailReason}
+                        placeholder="Why did the delivery fail? (e.g. business closed)"
+                        placeholderTextColor="#4A3F60"
+                        multiline
+                      />
+                      <View style={styles.statusActions}>
+                        <Pressable
+                          testID="fail-confirm-btn"
+                          style={[styles.actionBtn, styles.actionBtnDanger, statusUpdating && styles.actionBtnDisabled]}
+                          disabled={statusUpdating}
+                          onPress={() => {
+                            const reason = failReason.trim();
+                            setFailingOrderId(null);
+                            updateStatus(selectedOrder.id, "Failed", reason || undefined).catch(() => undefined);
+                          }}
+                        >
+                          <Text style={styles.actionBtnText}>Confirm Failed</Text>
+                        </Pressable>
+                        <Pressable
+                          testID="fail-cancel-btn"
+                          style={styles.actionBtn}
+                          onPress={() => setFailingOrderId(null)}
+                        >
+                          <Text style={styles.actionBtnText}>Cancel</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : null}
                 </View>
 
                 {/* POD section */}

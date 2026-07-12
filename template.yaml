@@ -26,6 +26,20 @@ Parameters:
       Allowed CORS origins for the HTTP API and the app CORS middleware. Defaults
       to local dev origins; set to your deployed app HTTPS origin(s) in prod. Do
       not use "*". Drives both API Gateway CorsConfiguration and CORS_ALLOWED_ORIGINS.
+  ApiThrottleRateLimit:
+    Type: Number
+    Default: 100
+    Description: >-
+      API Gateway stage steady-state request rate limit (requests/sec, aggregate
+      per route) — caps DoS / cost-runaway on every route incl. auth + webhooks.
+      Tune to pilot load. NOTE: aggregate throttling, not per-IP; per-IP abuse
+      limiting needs AWS WAF, which on an HTTP API requires CloudFront in front.
+  ApiThrottleBurstLimit:
+    Type: Number
+    Default: 200
+    Description: >-
+      API Gateway stage burst limit (max concurrent request spike, aggregate per
+      route). Should be >= ApiThrottleRateLimit.
   OrsApiKey:
     Type: String
     Default: ""
@@ -180,6 +194,17 @@ Parameters:
     NoEcho: true
     Description: Google OAuth client secret for Gmail API access
 
+Conditions:
+  # SES sending is only used by the onboarding notifier when a from-email is set;
+  # otherwise it logs only. Gate the ses:SendEmail grant on that so the role has no
+  # SES permission at all when unconfigured (S-4 least privilege).
+  HasSesFromEmail: !Not [!Equals [!Ref OnboardingSesFromEmail, ""]]
+  # Amazon Location is optional (code falls back to haversine/in-memory when the
+  # names are unset). Gate each geo grant on its resource being configured so the
+  # role carries no geo permission otherwise (S-6 least privilege).
+  HasLocationRouteCalculator: !Not [!Equals [!Ref LocationRouteCalculatorName, ""]]
+  HasLocationPlaceIndex: !Not [!Equals [!Ref LocationPlaceIndexName, ""]]
+
 Globals:
   Function:
     MemorySize: 512
@@ -199,6 +224,13 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: dev
+      # Stage-wide request throttling (S-3): baseline DoS / cost-runaway protection
+      # applied to every route, including the auth/onboarding endpoints served via
+      # the /backend/{proxy+} routes and the webhook routes. Aggregate (per-route),
+      # not per-IP — per-IP abuse limiting is a WAF follow-up (needs CloudFront).
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: !Ref ApiThrottleBurstLimit
+        ThrottlingRateLimit: !Ref ApiThrottleRateLimit
       CorsConfiguration:
         AllowOrigins: !Ref CorsAllowedOrigins
         AllowMethods:
@@ -228,6 +260,12 @@ Resources:
     Properties:
       TableName: !Sub "discra-organizations-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
+      # S-9: point-in-time recovery for persistent business data (backup/restore).
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -245,6 +283,12 @@ Resources:
     Properties:
       TableName: !Sub "discra-users-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
+      # S-9: point-in-time recovery for persistent business data (backup/restore).
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -273,6 +317,12 @@ Resources:
     Properties:
       TableName: !Sub "discra-orders-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
+      # S-9: point-in-time recovery for persistent business data (backup/restore).
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -305,6 +355,12 @@ Resources:
     Properties:
       TableName: !Sub "discra-pod-artifacts-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
+      # S-9: point-in-time recovery for persistent business data (backup/restore).
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -326,6 +382,9 @@ Resources:
     Properties:
       TableName: !Sub "discra-driver-locations-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -350,6 +409,9 @@ Resources:
     Properties:
       TableName: !Sub "discra-push-subscriptions-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -374,6 +436,12 @@ Resources:
     Properties:
       TableName: !Sub "discra-seat-subscriptions-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
+      # S-9: point-in-time recovery for persistent business data (backup/restore).
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -391,6 +459,12 @@ Resources:
     Properties:
       TableName: !Sub "discra-seat-invitations-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
+      # S-9: point-in-time recovery for persistent business data (backup/restore).
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -412,6 +486,12 @@ Resources:
     Properties:
       TableName: !Sub "discra-audit-logs-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
+      # S-9: point-in-time recovery for persistent business data (backup/restore).
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -433,6 +513,12 @@ Resources:
     Properties:
       TableName: !Sub "discra-onboarding-registrations-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
+      # S-9: point-in-time recovery for persistent business data (backup/restore).
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: registration_id
           AttributeType: S
@@ -463,6 +549,12 @@ Resources:
     Properties:
       TableName: !Sub "discra-email-config-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
+      # S-9: point-in-time recovery for persistent business data (backup/restore).
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -480,6 +572,9 @@ Resources:
     Properties:
       TableName: !Sub "discra-skipped-emails-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
       AttributeDefinitions:
         - AttributeName: org_id
           AttributeType: S
@@ -504,6 +599,9 @@ Resources:
     Properties:
       TableName: !Sub "discra-ws-connections-${AWS::StackName}"
       BillingMode: PAY_PER_REQUEST
+      # S-7: SSE-KMS (AWS-managed key) for key-usage auditability (vs AWS-owned default).
+      SSESpecification:
+        SSEEnabled: true
       AttributeDefinitions:
         - AttributeName: connection_id
           AttributeType: S
@@ -536,6 +634,19 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      # S-9: versioning protects POD artifacts (delivery evidence) against
+      # accidental overwrite/delete; the lifecycle rule caps noncurrent-version
+      # storage cost and cleans up abandoned multipart uploads.
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-noncurrent-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -665,24 +776,46 @@ Resources:
               - s3:AbortMultipartUpload
               - s3:GetObject
             Resource: !Sub "${PodArtifactsBucket.Arn}/*"
-        - Statement:
-            Effect: Allow
-            Action:
-              - geo:CalculateRouteMatrix
-              - geo:SearchPlaceIndexForText
-            Resource: "*"
+        # S-6: scope Amazon Location to the configured calculator / place index
+        # instead of "*"; each grant is omitted entirely when unconfigured.
+        - !If
+          - HasLocationRouteCalculator
+          - Statement:
+              Effect: Allow
+              Action:
+                - geo:CalculateRouteMatrix
+              Resource: !Sub "arn:aws:geo:${AWS::Region}:${AWS::AccountId}:route-calculator/${LocationRouteCalculatorName}"
+          - !Ref AWS::NoValue
+        - !If
+          - HasLocationPlaceIndex
+          - Statement:
+              Effect: Allow
+              Action:
+                - geo:SearchPlaceIndexForText
+              Resource: !Sub "arn:aws:geo:${AWS::Region}:${AWS::AccountId}:place-index/${LocationPlaceIndexName}"
+          - !Ref AWS::NoValue
         - Statement:
             Effect: Allow
             Action:
               - cognito-idp:AdminAddUserToGroup
               - cognito-idp:AdminUpdateUserAttributes
             Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}"
-        - Statement:
-            Effect: Allow
-            Action:
-              - ses:SendEmail
-              - ses:SendRawEmail
-            Resource: "*"
+        # S-4: scope SES to the configured onboarding sender's identity (and its
+        # domain identity, covering both SES verification styles) instead of "*".
+        # Omitted entirely when no from-email is configured.
+        - !If
+          - HasSesFromEmail
+          - Statement:
+              Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource:
+                - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${OnboardingSesFromEmail}"
+                - !Sub
+                  - "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${Domain}"
+                  - Domain: !Select [1, !Split ["@", !Ref OnboardingSesFromEmail]]
+          - !Ref AWS::NoValue
         - Statement:
             Effect: Allow
             Action:

@@ -18,6 +18,25 @@ from typing import Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _redact_email(value: str) -> str:
+    """Mask the local-part of an email for logging, keeping the (org-level) domain
+    for classification debugging (S-5). 'john.doe@acme.com' -> '***@acme.com';
+    a value without '@' -> '***'; empty -> ''."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if "@" not in value:
+        return "***"
+    _, _, domain = value.partition("@")
+    return f"***@{domain}" if domain else "***"
+
+
+def _redact_text(value: str) -> str:
+    """Never log free-text headers (subjects can carry customer PII) — log only a
+    length indicator so the line stays useful for ops without exposing content."""
+    return f"<{len(value or '')} chars>"
+
+
 class SkipReason(str, Enum):
     NO_SENDER_MATCH = "no_sender_match"
     NO_SUBJECT_MATCH = "no_subject_match"
@@ -132,7 +151,7 @@ def classify_email(
     # subject_pattern are tried before empty-subject catch-alls so a catch-all
     # can't shadow more specific parsers regardless of saved order.
     if not custom_rules:
-        logger.debug("Unknown sender: %s (no rules configured)", original_sender)
+        logger.debug("Unknown sender: %s (no rules configured)", _redact_email(original_sender))
         return ClassificationResult(
             is_order=False,
             skip_reason=SkipReason.NO_SENDER_MATCH,
@@ -161,7 +180,7 @@ def classify_email(
             logger.info(
                 "Rule '%s' matched sender %s",
                 rule.get("name", ""),
-                original_sender,
+                _redact_email(original_sender),
             )
             return ClassificationResult(
                 is_order=True,
@@ -171,9 +190,9 @@ def classify_email(
             )
     if sender_matched:
         logger.info(
-            "Rules matched sender %s but no subject_pattern accepted %r",
-            original_sender,
-            original_subject,
+            "Rules matched sender %s but no subject_pattern accepted %s",
+            _redact_email(original_sender),
+            _redact_text(original_subject),
         )
         return ClassificationResult(
             is_order=False,
@@ -182,7 +201,7 @@ def classify_email(
             original_subject=original_subject,
         )
 
-    logger.debug("Unknown sender: %s (subject: %s)", original_sender, original_subject)
+    logger.debug("Unknown sender: %s (subject: %s)", _redact_email(original_sender), _redact_text(original_subject))
     return ClassificationResult(
         is_order=False,
         skip_reason=SkipReason.NO_SENDER_MATCH,

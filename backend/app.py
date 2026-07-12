@@ -225,6 +225,45 @@ def _cors_allowed_origins() -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
+def _is_deployed_runtime() -> bool:
+    """True when running in a deployed environment: the Lambda runtime sets
+    AWS_LAMBDA_FUNCTION_NAME; REQUIRE_SECURE_CONFIG=true opts other deploy
+    targets into the same guard."""
+    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return True
+    return _as_bool(os.environ.get("REQUIRE_SECURE_CONFIG"), default=False)
+
+
+def _assert_safe_deployed_config() -> None:
+    """Fail fast at startup if a dev escape hatch is unsafely set in a deployed
+    environment (S-8, belt-and-suspenders over the safe template defaults).
+
+    Hard failures — never legitimate when deployed:
+      * JWT_VERIFY_SIGNATURE=false (accepts unsigned/forged JWTs)
+      * ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET=true (unsigned webhooks)
+
+    ENABLE_UI_DEV_AUTH only warns: it is a supported QA path on the dev stack
+    (per docs/qa-plan.md) and is already secret-gated at request time.
+    """
+    if not _is_deployed_runtime():
+        return
+    if not _as_bool(os.environ.get("JWT_VERIFY_SIGNATURE"), default=True):
+        raise RuntimeError(
+            "Unsafe deployed config: JWT_VERIFY_SIGNATURE is disabled. "
+            "Refusing to start with JWT signature verification off."
+        )
+    if _as_bool(os.environ.get("ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET"), default=False):
+        raise RuntimeError(
+            "Unsafe deployed config: ALLOW_UNSAFE_STRIPE_WEBHOOK_WITHOUT_SECRET is enabled. "
+            "Refusing to start with unsigned Stripe webhooks."
+        )
+    if _as_bool(os.environ.get("ENABLE_UI_DEV_AUTH"), default=False):
+        logger.warning(
+            "ENABLE_UI_DEV_AUTH is enabled in a deployed environment — "
+            "credential-free role sign-in is active (QA/dev stacks only)."
+        )
+
+
 def _normalize_hosted_domain(value: str) -> str:
     return value.replace("https://", "").replace("http://", "").rstrip("/")
 
@@ -288,6 +327,7 @@ def _exchange_hosted_code_for_token(
 
 
 def create_app() -> FastAPI:
+    _assert_safe_deployed_config()
     app = FastAPI(
         title="Discra Backend",
         version=os.environ.get("VERSION", "dev"),

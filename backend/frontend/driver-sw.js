@@ -1,8 +1,8 @@
-const CACHE_NAME = "discra-driver-v20260705a";
+const CACHE_NAME = "discra-driver-v20260705b";
 const PRECACHE_URLS = [
   "driver",
-  "assets/tokens.css?v=20260705a",
-  "assets/driver-mobile.css?v=20260705a",
+  "assets/tokens.css?v=20260705b",
+  "assets/driver-mobile.css?v=20260705b",
   "assets/common.js?v=20260524a",
   "assets/driver.js?v=20260529b",
   "assets/driver-manifest.json",

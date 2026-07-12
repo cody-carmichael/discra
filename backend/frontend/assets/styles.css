@@ -1,9 +1,22 @@
 /* Design tokens live in ONE place — tokens.css (see docs/design-system.md).
    This import must stay the first rule in the file. */
-@import url("tokens.css?v=20260705a");
+@import url("tokens.css?v=20260705b");
 
 * {
   box-sizing: border-box;
+}
+
+/* Consistent, on-theme keyboard focus ring across the console (5.2 micro-
+   interaction / 5.5 groundwork). Mouse clicks stay ring-free via :focus-visible;
+   keyboard/AT users get a clear warm-gold indicator. */
+:focus-visible {
+  outline: 2px solid var(--border-glow);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+/* Belt-and-suspenders: never render the default UA focus ring on mouse focus. */
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 [hidden] {
@@ -2781,8 +2794,8 @@ body.theme-admin .billing-seat-cards .stat-card small {
   border-radius: var(--radius-sm); transition: width .4s;
 }
 .inflight-bar-fill.status-assigned { background: var(--accent); }
-.inflight-bar-fill.status-pickedup { background: #f59e0b; width: 50%; }
-.inflight-bar-fill.status-enroute { background: #34d399; }
+.inflight-bar-fill.status-pickedup { background: var(--status-pickedup); width: 50%; }
+.inflight-bar-fill.status-enroute { background: var(--status-enroute); }
 .inflight-bar-fill.status-created { background: rgba(255,255,255,.15); width: 5%; }
 .inflight-progress-labels {
   display: flex; justify-content: space-between; align-items: flex-start;
@@ -2800,8 +2813,8 @@ body.theme-admin .billing-seat-cards .stat-card small {
   display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px;
 }
 .inflight-status-dot.dot-assigned { background: var(--accent); }
-.inflight-status-dot.dot-pickedup { background: #f59e0b; }
-.inflight-status-dot.dot-enroute { background: #34d399; }
+.inflight-status-dot.dot-pickedup { background: var(--status-pickedup); }
+.inflight-status-dot.dot-enroute { background: var(--status-enroute); }
 .inflight-status-dot.dot-created { background: var(--text-muted); }
 .inflight-section-label {
   font-size: .7rem; font-weight: 700; text-transform: uppercase;
@@ -3119,8 +3132,8 @@ body.theme-admin .billing-seat-cards .stat-card small {
   white-space: nowrap;
 }
 
-.badge-created { background: rgba(123, 79, 166, 0.18); color: #b18ed0; border: 1px solid rgba(123, 79, 166, 0.4); }
-.badge-assigned { background: rgba(123, 79, 166, 0.18); color: #b18ed0; border: 1px solid rgba(123, 79, 166, 0.4); }
+.badge-created { background: rgba(123, 79, 166, 0.18); color: var(--purple-light); border: 1px solid rgba(123, 79, 166, 0.4); }
+.badge-assigned { background: rgba(123, 79, 166, 0.18); color: var(--purple-light); border: 1px solid rgba(123, 79, 166, 0.4); }
 .badge-pickedup { background: rgba(200, 151, 58, 0.12); color: var(--gold-bright); border: 1px solid rgba(200, 151, 58, 0.4); }
 .badge-enroute { background: rgba(200, 151, 58, 0.12); color: var(--gold-bright); border: 1px solid rgba(200, 151, 58, 0.4); }
 .badge-delivered { background: rgba(74, 158, 92, 0.16); color: var(--text-success); border: 1px solid rgba(74, 158, 92, 0.4); }
@@ -3336,7 +3349,7 @@ body.theme-admin .billing-seat-cards .stat-card small {
 .stat-success { color: var(--text-success); }
 .stat-accent { color: var(--gold-bright); }
 .stat-warning { color: var(--gold-primary); }
-.stat-blue { color: #b18ed0; }
+.stat-blue { color: var(--purple-light); }
 
 .dispatch-map-actions {
   display: flex;
@@ -3959,7 +3972,7 @@ body.theme-admin .billing-seat-cards .stat-card small {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #130F1A;
+  background: var(--bg-surface);
   box-shadow: 0 0 8px rgba(200, 151, 58, 0.35);
   display: flex;
   align-items: center;
@@ -4004,9 +4017,9 @@ body.theme-admin .billing-seat-cards .stat-card small {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid #7B4FA6;
+  border: 2px solid var(--purple-accent);
   overflow: hidden;
-  background: #130F1A;
+  background: var(--bg-surface);
 }
 
 .dispatch-map-marker-tsa-photo img {

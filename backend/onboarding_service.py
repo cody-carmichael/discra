@@ -347,16 +347,25 @@ def get_onboarding_repository() -> OnboardingRepository:
         return _IN_MEMORY_ONBOARDING_REPOSITORY
 
 
+class CognitoUserNotFoundError(Exception):
+    """Raised when a Cognito group/attribute update targets a username that does
+    not exist yet (e.g. an invitee who has not signed up)."""
+
+
 class OnboardingCognitoAdminClient(ABC):
     @abstractmethod
-    def ensure_admin_access(self, *, username: str, org_id: str, role_name: str = "Admin") -> None:
+    def ensure_admin_access(self, *, username: str, org_id: str, role_name: str = "Admin") -> bool:
+        """Add the user to the Cognito group `role_name` and bind their org
+        attribute. Returns True when applied, False when the client is a no-op
+        (no user pool configured). Raises CognitoUserNotFoundError when the
+        username does not exist in the pool."""
         raise NotImplementedError
 
 
 class DisabledOnboardingCognitoAdminClient(OnboardingCognitoAdminClient):
-    def ensure_admin_access(self, *, username: str, org_id: str, role_name: str = "Admin") -> None:
+    def ensure_admin_access(self, *, username: str, org_id: str, role_name: str = "Admin") -> bool:
         del username, org_id, role_name
-        return
+        return False
 
 
 class AwsOnboardingCognitoAdminClient(OnboardingCognitoAdminClient):
@@ -366,23 +375,29 @@ class AwsOnboardingCognitoAdminClient(OnboardingCognitoAdminClient):
         self._client = boto3.client("cognito-idp")
         self._user_pool_id = user_pool_id
 
-    def ensure_admin_access(self, *, username: str, org_id: str, role_name: str = "Admin") -> None:
+    def ensure_admin_access(self, *, username: str, org_id: str, role_name: str = "Admin") -> bool:
         attr_key = onboarding_cognito_org_attribute_key()
-        self._client.admin_add_user_to_group(
-            UserPoolId=self._user_pool_id,
-            Username=username,
-            GroupName=role_name,
-        )
-        self._client.admin_update_user_attributes(
-            UserPoolId=self._user_pool_id,
-            Username=username,
-            UserAttributes=[
-                {
-                    "Name": attr_key,
-                    "Value": org_id,
-                }
-            ],
-        )
+        try:
+            self._client.admin_add_user_to_group(
+                UserPoolId=self._user_pool_id,
+                Username=username,
+                GroupName=role_name,
+            )
+            self._client.admin_update_user_attributes(
+                UserPoolId=self._user_pool_id,
+                Username=username,
+                UserAttributes=[
+                    {
+                        "Name": attr_key,
+                        "Value": org_id,
+                    }
+                ],
+            )
+        except self._client.exceptions.UserNotFoundException as exc:
+            raise CognitoUserNotFoundError(
+                f"Cognito user '{username}' not found in pool"
+            ) from exc
+        return True
 
 
 def get_onboarding_cognito_admin_client() -> OnboardingCognitoAdminClient:

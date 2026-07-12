@@ -108,3 +108,21 @@ def test_ui_config_reflects_env(monkeypatch):
     assert body["onboarding_enabled"] is True
     assert body["register_url_path"] == "/ui/register"
     assert body["review_url_path"] == "/ui/review"
+
+
+# --- G-3: privacy policy page (GDPR art. 13) ---
+
+
+def test_privacy_policy_page_is_served_on_all_prefixes():
+    for path in ("/ui/privacy", "/backend/ui/privacy", "/dev/backend/ui/privacy"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} -> {resp.status_code}"
+        assert "Privacy Policy" in resp.text
+        assert "location is shared" in resp.text  # driver-location transparency
+        assert "Anthropic" in resp.text  # sub-processor disclosure
+
+
+def test_entry_pages_link_to_privacy_policy():
+    assert 'href="privacy"' in client.get("/ui/login").text
+    assert 'href="privacy"' in client.get("/ui/register").text
+    assert 'href="ui/privacy"' in client.get("/ui").text

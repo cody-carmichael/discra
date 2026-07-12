@@ -748,8 +748,39 @@
     }
   }
 
+  // G-4 (GDPR transparency): drivers see a one-time notice before the first
+  // location share. Sharing stays off until they acknowledge it.
+  var LOCATION_NOTICE_ACK_KEY = "discra_location_notice_ack_v1";
+
+  function locationNoticeAcknowledged() {
+    try { return !!window.localStorage.getItem(LOCATION_NOTICE_ACK_KEY); } catch (e) { return true; }
+  }
+
+  function showLocationNotice() {
+    if (!el.locationBar || document.getElementById("location-notice")) return;
+    var notice = document.createElement("div");
+    notice.id = "location-notice";
+    notice.setAttribute("data-testid", "location-notice");
+    notice.style.cssText = "display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 12px;font-size:.8rem;line-height:1.35;border-bottom:1px solid rgba(255,255,255,.12);";
+    notice.innerHTML =
+      '<span>While you are signed in, your location is shared with your dispatcher to coordinate deliveries. ' +
+      '<a href="privacy" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">Privacy Policy</a></span>' +
+      '<button id="location-notice-ack" data-testid="location-notice-ack" class="drv-btn drv-btn-accent drv-btn-sm" type="button" style="flex-shrink:0;">Got it</button>';
+    el.locationBar.insertBefore(notice, el.locationBar.firstChild);
+    if (el.locationStatus) el.locationStatus.textContent = "Location paused";
+    notice.querySelector("#location-notice-ack").addEventListener("click", function () {
+      try { window.localStorage.setItem(LOCATION_NOTICE_ACK_KEY, new Date().toISOString()); } catch (e) { /* storage blocked — proceed */ }
+      notice.remove();
+      startAutoLocationShare();
+    });
+  }
+
   function startAutoLocationShare() {
     if (locationTimer) return;
+    if (!locationNoticeAcknowledged()) {
+      showLocationNotice();
+      return;
+    }
     sendLocationUpdate();
     locationTimer = window.setInterval(sendLocationUpdate, 60000);
   }

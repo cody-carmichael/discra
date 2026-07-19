@@ -1,5 +1,6 @@
 // AdminScreen.tsx — Dispatcher / admin dashboard with map, stats, order management
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { theme } from "../theme";
 import {
   Animated,
   Easing,
@@ -751,7 +752,7 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
             <Text style={styles.brandName}>Discra Dispatch</Text>
           </View>
           <View style={styles.headerRight}>
-            {loading ? <ActivityIndicator size="small" color="#C8973A" /> : null}
+            {loading ? <ActivityIndicator size="small" color={theme.colors.goldPrimary} /> : null}
             <Pressable style={styles.hamburgerBtn} onPress={openMenu}>
               <Text style={styles.hamburgerIcon}>☰</Text>
             </Pressable>
@@ -823,12 +824,12 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                   );
                 })}
                 {routePoints.length > 1 ? (
-                  <Polyline coordinates={routePoints} strokeColor="#C8973A" strokeWidth={3} />
+                  <Polyline coordinates={routePoints} strokeColor={theme.colors.goldPrimary} strokeWidth={3} />
                 ) : null}
                 {previewState?.route && previewState.route.length > 1 ? (
                   <Polyline
                     coordinates={previewState.route}
-                    strokeColor="#9D6FC8"
+                    strokeColor={theme.colors.purpleBright}
                     strokeWidth={5}
                   />
                 ) : null}
@@ -870,7 +871,7 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                   placeholder="Search orders…"
-                  placeholderTextColor="#4A3F60"
+                  placeholderTextColor={theme.colors.placeholder}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
@@ -973,7 +974,7 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
             <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
               <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => loadAdminData().catch(() => undefined)}>
                 {adminLoading
-                  ? <ActivityIndicator size="small" color="#C8973A" />
+                  ? <ActivityIndicator size="small" color={theme.colors.goldPrimary} />
                   : <Text style={styles.btnGhostText}>↻ Refresh All</Text>}
               </Pressable>
             </View>
@@ -995,7 +996,7 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                     </View>
                     <View style={styles.adminStatRow}>
                       <Text style={styles.adminStatLabel}>Status</Text>
-                      <Text style={[styles.adminStatValue, { color: emailStatus.last_error ? "#F0C060" : "#6ABF7B" }]}>
+                      <Text style={[styles.adminStatValue, { color: emailStatus.last_error ? theme.colors.goldBright : "#6ABF7B" }]}>
                         {emailStatus.last_error ? emailStatus.last_error : "OK"}
                       </Text>
                     </View>
@@ -1049,7 +1050,7 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                   value={inviteEmail}
                   onChangeText={setInviteEmail}
                   placeholder="colleague@example.com"
-                  placeholderTextColor="#4A3F60"
+                  placeholderTextColor={theme.colors.placeholder}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -1066,7 +1067,7 @@ export default function AdminScreen({ token, apiBase, onSignOut }: Props) {
                     </Pressable>
                   ))}
                 </View>
-                {inviteMsg ? <Text style={[styles.metaText, { color: inviteMsg.includes("sent") ? "#6ABF7B" : "#F0C060" }]}>{inviteMsg}</Text> : null}
+                {inviteMsg ? <Text style={[styles.metaText, { color: inviteMsg.includes("sent") ? "#6ABF7B" : theme.colors.goldBright }]}>{inviteMsg}</Text> : null}
                 <Pressable
                   style={[styles.btn, styles.btnPrimary, { alignSelf: "flex-start" }, adminLoading && { opacity: 0.6 }]}
                   onPress={() => sendInvitation().catch(() => undefined)}
@@ -1356,9 +1357,9 @@ function DispatchTab({
                 style={[styles.driverPill, isSelected && styles.driverPillSelected]}
                 onPress={() => onSelectDriver(driver)}
               >
-                <View style={[styles.driverDot, { backgroundColor: isSelected ? "#C8973A" : "#0e7aa6" }]} />
+                <View style={[styles.driverDot, { backgroundColor: isSelected ? theme.colors.goldPrimary : "#0e7aa6" }]} />
                 <View>
-                  <Text style={[styles.driverPillName, isSelected && { color: "#C8973A" }]} numberOfLines={1}>
+                  <Text style={[styles.driverPillName, isSelected && { color: theme.colors.goldPrimary }]} numberOfLines={1}>
                     {displayName}
                   </Text>
                   <Text style={styles.metaText}>{driverOrderCount} order{driverOrderCount !== 1 ? "s" : ""}</Text>
@@ -1576,7 +1577,7 @@ function AssignSheet({
             </Text>
           ) : null}
           {!isMulti && previewedDriverName ? (
-            <Text style={[styles.metaText, { color: "#9D6FC8", fontWeight: "700" }]}>
+            <Text style={[styles.metaText, { color: theme.colors.purpleBright, fontWeight: "700" }]}>
               Previewing route for {previewedDriverName}
             </Text>
           ) : !isMulti && pickupCoord ? (
@@ -1599,7 +1600,7 @@ function AssignSheet({
                     style={[styles.driverRow, isPreviewed && styles.driverRowSelected]}
                     onPress={() => handleRowPress(driver.driver_id)}
                   >
-                    <View style={[styles.driverDot, { backgroundColor: isPreviewed ? "#9D6FC8" : "#0e7aa6" }]} />
+                    <View style={[styles.driverDot, { backgroundColor: isPreviewed ? theme.colors.purpleBright : "#0e7aa6" }]} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.driverRowName} numberOfLines={1}>{displayName}</Text>
                       <Text style={styles.metaText}>
@@ -1607,7 +1608,7 @@ function AssignSheet({
                         {load} order{load !== 1 ? "s" : ""}
                       </Text>
                     </View>
-                    <Text style={[styles.driverRowAction, isPreviewed && { color: "#9D6FC8" }]}>
+                    <Text style={[styles.driverRowAction, isPreviewed && { color: theme.colors.purpleBright }]}>
                       {isMulti ? "Assign ›" : isPreviewed ? "● Preview" : "Preview ›"}
                     </Text>
                   </Pressable>
@@ -1654,7 +1655,7 @@ function OrdersTab({ orders, searchQuery, setSearchQuery, onEdit, onUpdateStatus
         value={searchQuery}
         onChangeText={setSearchQuery}
         placeholder="Search orders…"
-        placeholderTextColor="#4A3F60"
+        placeholderTextColor={theme.colors.placeholder}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -1720,7 +1721,7 @@ function OrderFormFields({
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType={opts?.keyboardType ?? "default"}
-          placeholderTextColor="#4A3F60"
+          placeholderTextColor={theme.colors.placeholder}
         />
       </>
     );
@@ -1741,7 +1742,7 @@ function OrderFormFields({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#0B0910" },
+  root: { flex: 1, backgroundColor: theme.colors.bgBase },
   safeArea: { flex: 1 },
 
   // Header
@@ -1752,19 +1753,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#3A2F50",
+    borderBottomColor: theme.colors.borderDefault,
   },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandMark: {
     width: 28,
     height: 28,
     borderRadius: 7,
-    backgroundColor: "#C8973A",
+    backgroundColor: theme.colors.goldPrimary,
     alignItems: "center",
     justifyContent: "center",
   },
-  brandMarkText: { color: "#0B0910", fontWeight: "800", fontSize: 16 },
-  brandName: { color: "#F5D98B", fontSize: 16, fontWeight: "700" },
+  brandMarkText: { color: theme.colors.bgBase, fontWeight: "800", fontSize: 16 },
+  brandName: { color: theme.colors.textHeading, fontSize: 16, fontWeight: "700" },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
 
   // Dispatch layout
@@ -1783,28 +1784,28 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(19,15,26,0.88)",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     paddingHorizontal: 8,
     paddingVertical: 5,
     alignItems: "center",
     minWidth: 52,
   },
-  statChipAccent: { borderColor: "#C8973A", backgroundColor: "rgba(42,30,16,0.92)" },
-  statValue: { color: "#EDE0C4", fontWeight: "700", fontSize: 14 },
-  statLabel: { color: "#968AA8", fontSize: 9, fontWeight: "600", textTransform: "uppercase" },
+  statChipAccent: { borderColor: theme.colors.goldPrimary, backgroundColor: "rgba(42,30,16,0.92)" },
+  statValue: { color: theme.colors.textPrimary, fontWeight: "700", fontSize: 14 },
+  statLabel: { color: theme.colors.textMuted, fontSize: 9, fontWeight: "600", textTransform: "uppercase" },
 
   // Dispatch bottom panel
   dispatchPanel: {
     flex: 2,
-    backgroundColor: "#0F0C16",
+    backgroundColor: theme.colors.bgInput,
     borderTopWidth: 1,
-    borderTopColor: "#3A2F50",
+    borderTopColor: theme.colors.borderDefault,
   },
   sheetHandle: {
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#3A2F50",
+    backgroundColor: theme.colors.borderDefault,
     alignSelf: "center",
     marginTop: 8,
     marginBottom: 4,
@@ -1813,7 +1814,7 @@ const styles = StyleSheet.create({
   dispatchScrollContent: { padding: 12, gap: 8, paddingBottom: 16 },
 
   statusMsg: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 11,
     paddingHorizontal: 12,
     paddingVertical: 3,
@@ -1821,7 +1822,7 @@ const styles = StyleSheet.create({
 
   // Tab bar (now at bottom)
   hamburgerBtn: { padding: 8 },
-  hamburgerIcon: { color: "#EDE0C4", fontSize: 22, lineHeight: 26 },
+  hamburgerIcon: { color: theme.colors.textPrimary, fontSize: 22, lineHeight: 26 },
 
   menuOverlay: {
     position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
@@ -1835,7 +1836,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#130F1E",
     zIndex: 101,
     borderLeftWidth: 1,
-    borderLeftColor: "#3A2F50",
+    borderLeftColor: theme.colors.borderDefault,
     paddingTop: 16,
   },
   menuDrawerHeader: {
@@ -1845,11 +1846,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#3A2F50",
+    borderBottomColor: theme.colors.borderDefault,
     marginBottom: 8,
   },
-  menuDrawerTitle: { color: "#EDE0C4", fontSize: 16, fontWeight: "700" },
-  menuDrawerClose: { color: "#968AA8", fontSize: 18, padding: 4 },
+  menuDrawerTitle: { color: theme.colors.textPrimary, fontSize: 16, fontWeight: "700" },
+  menuDrawerClose: { color: theme.colors.textMuted, fontSize: 18, padding: 4 },
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -1859,13 +1860,13 @@ const styles = StyleSheet.create({
   },
   menuItemActive: { backgroundColor: "#1E1830" },
   menuItemIcon: { fontSize: 18, width: 24, textAlign: "center" },
-  menuItemText: { color: "#968AA8", fontSize: 15, fontWeight: "600", flex: 1 },
-  menuItemTextActive: { color: "#C8973A" },
+  menuItemText: { color: theme.colors.textMuted, fontSize: 15, fontWeight: "600", flex: 1 },
+  menuItemTextActive: { color: theme.colors.goldPrimary },
   menuItemDot: {
     width: 6, height: 6, borderRadius: 3,
-    backgroundColor: "#C8973A",
+    backgroundColor: theme.colors.goldPrimary,
   },
-  menuDivider: { height: 1, backgroundColor: "#3A2F50", marginVertical: 8, marginHorizontal: 20 },
+  menuDivider: { height: 1, backgroundColor: theme.colors.borderDefault, marginVertical: 8, marginHorizontal: 20 },
 
   // Orders / Admin tab scroll
   scroll: { flex: 1 },
@@ -1873,10 +1874,10 @@ const styles = StyleSheet.create({
 
   searchInput: {
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     borderRadius: 10,
-    color: "#EDE0C4",
-    backgroundColor: "#0F0C16",
+    color: theme.colors.textPrimary,
+    backgroundColor: theme.colors.bgInput,
     paddingHorizontal: 12,
     paddingVertical: 9,
     fontSize: 14,
@@ -1884,62 +1885,62 @@ const styles = StyleSheet.create({
   },
 
   sectionCard: {
-    backgroundColor: "#1A1526",
+    backgroundColor: theme.colors.bgSheet,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 10,
     gap: 4,
   },
-  sectionTitle: { color: "#F5D98B", fontSize: 14, fontWeight: "700" },
-  sectionSubtitle: { color: "#EDE0C4", fontSize: 13, fontWeight: "600", marginTop: 4 },
-  metaText: { color: "#968AA8", fontSize: 12 },
+  sectionTitle: { color: theme.colors.textHeading, fontSize: 14, fontWeight: "700" },
+  sectionSubtitle: { color: theme.colors.textPrimary, fontSize: 13, fontWeight: "600", marginTop: 4 },
+  metaText: { color: theme.colors.textMuted, fontSize: 12 },
 
   // Driver pills (horizontal scroll in dispatch panel)
   driverPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#1A1526",
+    backgroundColor: theme.colors.bgSheet,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     paddingHorizontal: 12,
     paddingVertical: 8,
     minWidth: 120,
   },
-  driverPillSelected: { borderColor: "#C8973A", backgroundColor: "#2A1E10" },
-  driverPillName: { color: "#EDE0C4", fontWeight: "700", fontSize: 13, maxWidth: 140 },
+  driverPillSelected: { borderColor: theme.colors.goldPrimary, backgroundColor: theme.colors.goldTintBg },
+  driverPillName: { color: theme.colors.textPrimary, fontWeight: "700", fontSize: 13, maxWidth: 140 },
   driverDot: { width: 10, height: 10, borderRadius: 5 },
 
-  routeStop: { color: "#968AA8", fontSize: 11 },
+  routeStop: { color: theme.colors.textMuted, fontSize: 11 },
 
   orderCard: {
-    backgroundColor: "#1A1526",
+    backgroundColor: theme.colors.bgSheet,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 12,
     gap: 5,
   },
-  orderCardSelected: { borderColor: "#C8973A", backgroundColor: "#2A1E10" },
+  orderCardSelected: { borderColor: theme.colors.goldPrimary, backgroundColor: theme.colors.goldTintBg },
   orderCardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  orderTitle: { color: "#EDE0C4", fontSize: 14, fontWeight: "700", flex: 1 },
-  orderMeta: { color: "#968AA8", fontSize: 12 },
+  orderTitle: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: "700", flex: 1 },
+  orderMeta: { color: theme.colors.textMuted, fontSize: 12 },
   orderCheckRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   checkbox: {
     width: 20,
     height: 20,
     borderRadius: 5,
     borderWidth: 1,
-    borderColor: "#3A2F50",
-    backgroundColor: "#0F0C16",
+    borderColor: theme.colors.borderDefault,
+    backgroundColor: theme.colors.bgInput,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 2,
   },
-  checkboxChecked: { backgroundColor: "#C8973A", borderColor: "#C8973A" },
-  checkboxMark: { color: "#0B0910", fontWeight: "800", fontSize: 12 },
+  checkboxChecked: { backgroundColor: theme.colors.goldPrimary, borderColor: theme.colors.goldPrimary },
+  checkboxMark: { color: theme.colors.bgBase, fontWeight: "800", fontSize: 12 },
   orderChevron: { color: "#6B5F80", fontSize: 22, lineHeight: 22, marginLeft: 6 },
   unassignedHeader: {
     flexDirection: "row",
@@ -1954,20 +1955,20 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 4,
     borderBottomWidth: 1,
-    borderBottomColor: "#241A33",
+    borderBottomColor: theme.colors.bgElevatedAlt,
   },
-  driverRowName: { color: "#EDE0C4", fontSize: 14, fontWeight: "700" },
-  driverRowAction: { color: "#C8973A", fontSize: 13, fontWeight: "700" },
+  driverRowName: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: "700" },
+  driverRowAction: { color: theme.colors.goldPrimary, fontSize: 13, fontWeight: "700" },
   driverRowSelected: {
     backgroundColor: "#1F1730",
-    borderBottomColor: "#9D6FC8",
+    borderBottomColor: theme.colors.purpleBright,
   },
   assignToast: {
     position: "absolute",
     top: 64,
     alignSelf: "center",
-    backgroundColor: "#1C1628",
-    borderColor: "#C8973A",
+    backgroundColor: theme.colors.bgElevated,
+    borderColor: theme.colors.goldPrimary,
     borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -1979,118 +1980,118 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   assignToastText: {
-    color: "#F5D98B",
+    color: theme.colors.textHeading,
     fontSize: 13,
     fontWeight: "700",
     letterSpacing: 0.5,
   },
   editBtn: {
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
     marginLeft: 6,
   },
-  editBtnText: { color: "#968AA8", fontSize: 11, fontWeight: "600" },
+  editBtnText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: "600" },
 
   statusWrap: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 2 },
   statusBtn: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  statusBtnActive: { backgroundColor: "#2A1E10", borderColor: "#C8973A" },
-  statusBtnText: { color: "#EDE0C4", fontSize: 11, fontWeight: "600" },
+  statusBtnActive: { backgroundColor: theme.colors.goldTintBg, borderColor: theme.colors.goldPrimary },
+  statusBtnText: { color: theme.colors.textPrimary, fontSize: 11, fontWeight: "600" },
   btnDisabled: { opacity: 0.5 },
 
   // Orders sub-tabs
   tabContent: { flex: 1 },
   subTabBar: {
     flexDirection: "row",
-    backgroundColor: "#0B0910",
+    backgroundColor: theme.colors.bgBase,
     borderBottomWidth: 1,
-    borderBottomColor: "#3A2F50",
+    borderBottomColor: theme.colors.borderDefault,
   },
   subTab: { flex: 1, paddingVertical: 10, alignItems: "center" },
-  subTabActive: { borderBottomWidth: 2, borderBottomColor: "#C8973A" },
-  subTabText: { color: "#968AA8", fontWeight: "600", fontSize: 12 },
-  subTabTextActive: { color: "#C8973A" },
+  subTabActive: { borderBottomWidth: 2, borderBottomColor: theme.colors.goldPrimary },
+  subTabText: { color: theme.colors.textMuted, fontWeight: "600", fontSize: 12 },
+  subTabTextActive: { color: theme.colors.goldPrimary },
   statusBadge: {
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 3,
     backgroundColor: "#2A2040",
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
   },
   statusBadgeSuccess: { backgroundColor: "#0E2A1A", borderColor: "#3A7A4A" },
   statusBadgeFail: { backgroundColor: "#2A1010", borderColor: "#7A3A3A" },
-  statusBadgeText: { color: "#EDE0C4", fontSize: 11, fontWeight: "600" },
+  statusBadgeText: { color: theme.colors.textPrimary, fontSize: 11, fontWeight: "600" },
 
   // Admin tab
   adminSection: {
-    backgroundColor: "#1A1526",
+    backgroundColor: theme.colors.bgSheet,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 14,
     gap: 4,
   },
-  adminSectionTitle: { color: "#F5D98B", fontSize: 15, fontWeight: "700", marginBottom: 4 },
-  adminStatRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: "#1F1A2E" },
-  adminStatLabel: { color: "#968AA8", fontSize: 12 },
-  adminStatValue: { color: "#EDE0C4", fontSize: 12, fontWeight: "600" },
+  adminSectionTitle: { color: theme.colors.textHeading, fontSize: 15, fontWeight: "700", marginBottom: 4 },
+  adminStatRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: theme.colors.bgPanelAlt },
+  adminStatLabel: { color: theme.colors.textMuted, fontSize: 12 },
+  adminStatValue: { color: theme.colors.textPrimary, fontSize: 12, fontWeight: "600" },
   seatGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
   seatCard: {
     flex: 1,
     minWidth: 100,
-    backgroundColor: "#130F1A",
+    backgroundColor: theme.colors.bgSurface,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 10,
     gap: 2,
   },
-  seatCardLabel: { color: "#968AA8", fontSize: 10, fontWeight: "600", textTransform: "uppercase" },
-  seatCardValue: { color: "#EDE0C4", fontSize: 18, fontWeight: "700" },
+  seatCardLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: "600", textTransform: "uppercase" },
+  seatCardValue: { color: theme.colors.textPrimary, fontSize: 18, fontWeight: "700" },
   roleRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   roleBtn: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     paddingHorizontal: 14,
     paddingVertical: 7,
   },
-  roleBtnActive: { backgroundColor: "#2A1E10", borderColor: "#C8973A" },
-  roleBtnText: { color: "#968AA8", fontSize: 13, fontWeight: "600" },
-  roleBtnTextActive: { color: "#C8973A" },
+  roleBtnActive: { backgroundColor: theme.colors.goldTintBg, borderColor: theme.colors.goldPrimary },
+  roleBtnText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: "600" },
+  roleBtnTextActive: { color: theme.colors.goldPrimary },
   invitationRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#1F1A2E",
+    borderBottomColor: theme.colors.bgPanelAlt,
   },
   auditRow: {
     borderBottomWidth: 1,
-    borderBottomColor: "#1F1A2E",
+    borderBottomColor: theme.colors.bgPanelAlt,
     paddingVertical: 6,
     gap: 2,
   },
-  auditAction: { color: "#EDE0C4", fontSize: 13, fontWeight: "600" },
+  auditAction: { color: theme.colors.textPrimary, fontSize: 13, fontWeight: "600" },
 
   // Modal
   modalBackdrop: { flex: 1, backgroundColor: "rgba(7,5,12,0.88)", justifyContent: "flex-end" },
   modalCard: {
-    backgroundColor: "#130F1A",
+    backgroundColor: theme.colors.bgSurface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 16,
     maxHeight: "92%",
     gap: 8,
@@ -2101,21 +2102,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 8,
   },
-  modalTitle: { color: "#F5D98B", fontSize: 16, fontWeight: "700" },
-  modalClose: { color: "#968AA8", fontSize: 18 },
+  modalTitle: { color: theme.colors.textHeading, fontSize: 16, fontWeight: "700" },
+  modalClose: { color: theme.colors.textMuted, fontSize: 18 },
 
-  label: { color: "#968AA8", fontSize: 11, fontWeight: "600" },
+  label: { color: theme.colors.textMuted, fontSize: 11, fontWeight: "600" },
   input: {
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     borderRadius: 10,
-    color: "#EDE0C4",
-    backgroundColor: "#0F0C16",
+    color: theme.colors.textPrimary,
+    backgroundColor: theme.colors.bgInput,
     paddingHorizontal: 12,
     paddingVertical: 9,
     fontSize: 14,
   },
-  errorText: { color: "#F0C060", fontSize: 12, fontWeight: "600" },
+  errorText: { color: theme.colors.goldBright, fontSize: 12, fontWeight: "600" },
 
   row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   btn: {
@@ -2125,8 +2126,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  btnPrimary: { backgroundColor: "#C8973A" },
-  btnGhost: { borderWidth: 1, borderColor: "#6B4F2A", backgroundColor: "#130F1A" },
-  btnText: { color: "#0B0910", fontWeight: "700", fontSize: 13 },
-  btnGhostText: { color: "#C8973A", fontWeight: "700", fontSize: 13 },
+  btnPrimary: { backgroundColor: theme.colors.goldPrimary },
+  btnGhost: { borderWidth: 1, borderColor: theme.colors.borderAccent, backgroundColor: theme.colors.bgSurface },
+  btnText: { color: theme.colors.bgBase, fontWeight: "700", fontSize: 13 },
+  btnGhostText: { color: theme.colors.goldPrimary, fontWeight: "700", fontSize: 13 },
 });

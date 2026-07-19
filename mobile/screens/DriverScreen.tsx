@@ -1,5 +1,6 @@
 // DriverScreen.tsx — Full-screen map + bottom sheet driver experience
 import * as FileSystem from "expo-file-system";
+import { theme } from "../theme";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -178,8 +179,8 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
   // ── Stop pin colour ────────────────────────────────────────────────────────
   function stopPinColor(order: OrderRecord): string {
     const s = (order.status || "").toLowerCase();
-    if (s === "pickedup" || s === "enroute") return "#4A9E5C";
-    return "#C8973A";
+    if (s === "pickedup" || s === "enroute") return theme.colors.success;
+    return theme.colors.goldPrimary;
   }
 
   // ── Geocode all stops ──────────────────────────────────────────────────────
@@ -664,7 +665,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
         {driverLoc ? (
           <Marker
             coordinate={{ latitude: driverLoc.lat, longitude: driverLoc.lng }}
-            pinColor="#F0C060"
+            pinColor={theme.colors.goldBright}
             title="Your Location"
           />
         ) : null}
@@ -687,7 +688,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
 
         {/* Route polyline */}
         {routeResult && routeResult.coords.length > 1 ? (
-          <Polyline coordinates={routeResult.coords} strokeColor="#C8973A" strokeWidth={5} />
+          <Polyline coordinates={routeResult.coords} strokeColor={theme.colors.goldPrimary} strokeWidth={5} />
         ) : null}
       </MapView>
 
@@ -695,13 +696,13 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
       <SafeAreaView pointerEvents="box-none" style={styles.topBar}>
         <View style={styles.topBarInner} pointerEvents="box-none">
           <View style={styles.locationPill}>
-            <View style={[styles.locationDot, { backgroundColor: locationActive ? "#4A9E5C" : "#9B3A3A" }]} />
+            <View style={[styles.locationDot, { backgroundColor: locationActive ? theme.colors.success : theme.colors.dangerMuted }]} />
             <Text style={styles.locationPillText}>
               {locationActive ? "Sharing location" : "Location off"}
             </Text>
           </View>
           <View style={styles.topBarRight}>
-            {loading ? <ActivityIndicator size="small" color="#C8973A" style={{ marginRight: 8 }} /> : null}
+            {loading ? <ActivityIndicator size="small" color={theme.colors.goldPrimary} style={{ marginRight: 8 }} /> : null}
             <Pressable
               style={styles.profileBtn}
               // The avatar is 36×36; expand the tap target to ~52×52 so it
@@ -954,7 +955,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                     value={pod.notes}
                     onChangeText={(v) => setPodField(selectedOrder.id, "notes", v)}
                     placeholder="Delivery notes…"
-                    placeholderTextColor="#4A3F60"
+                    placeholderTextColor={theme.colors.placeholder}
                     multiline
                   />
 
@@ -995,9 +996,9 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                 descriptionText="Sign below"
                 autoClear
                 webStyle={`
-                  .m-signature-pad--footer { background: #1A1526; }
-                  .m-signature-pad--body { border: 1px solid #3A2F50; }
-                  .button { background: #C8973A; color: #0B0910; border-radius: 8px; }
+                  .m-signature-pad--footer { background: ${theme.colors.bgSheet}; }
+                  .m-signature-pad--body { border: 1px solid ${theme.colors.borderDefault}; }
+                  .button { background: ${theme.colors.goldPrimary}; color: ${theme.colors.bgBase}; border-radius: 8px; }
                 `}
               />
             </View>
@@ -1037,23 +1038,23 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                 )}
                 <Text style={styles.avatarPickerLabel}>Change Photo</Text>
               </Pressable>
-              <Text style={styles.detailLabel}>FIRST NAME <Text style={{ color: "#E05A3B" }}>*</Text></Text>
+              <Text style={styles.detailLabel}>FIRST NAME <Text style={{ color: theme.colors.emberOrange }}>*</Text></Text>
               <TextInput
                 style={styles.input}
                 value={profileFirstName}
                 onChangeText={setProfileFirstName}
                 placeholder="First name"
-                placeholderTextColor="#4A3F60"
+                placeholderTextColor={theme.colors.placeholder}
                 autoCapitalize="words"
                 maxLength={80}
               />
-              <Text style={styles.detailLabel}>LAST NAME <Text style={{ color: "#E05A3B" }}>*</Text></Text>
+              <Text style={styles.detailLabel}>LAST NAME <Text style={{ color: theme.colors.emberOrange }}>*</Text></Text>
               <TextInput
                 style={styles.input}
                 value={profileLastName}
                 onChangeText={setProfileLastName}
                 placeholder="Last name"
-                placeholderTextColor="#4A3F60"
+                placeholderTextColor={theme.colors.placeholder}
                 autoCapitalize="words"
                 maxLength={80}
               />
@@ -1065,7 +1066,7 @@ export default function DriverScreen({ token, apiBase, onSignOut }: Props) {
                 value={profilePhone}
                 onChangeText={(v) => setProfilePhone(formatPhoneNumber(v))}
                 placeholder="(555) 555-5555"
-                placeholderTextColor="#4A3F60"
+                placeholderTextColor={theme.colors.placeholder}
                 keyboardType="phone-pad"
                 maxLength={14}
               />
@@ -1168,7 +1169,7 @@ function statusBg(status: string): string {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#0B0910",
+    backgroundColor: theme.colors.bgBase,
   },
   // Top bar
   topBar: {
@@ -1199,7 +1200,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     gap: 6,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
   },
   locationDot: {
     width: 8,
@@ -1207,7 +1208,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   locationPillText: {
-    color: "#EDE0C4",
+    color: theme.colors.textPrimary,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -1217,7 +1218,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: "rgba(11,9,16,0.82)",
     borderWidth: 1,
-    borderColor: "#C8973A",
+    borderColor: theme.colors.goldPrimary,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1236,7 +1237,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 12,
     borderWidth: 2,
-    borderColor: "#C8973A",
+    borderColor: theme.colors.goldPrimary,
   },
   // Status badge
   statusBadge: {
@@ -1247,14 +1248,14 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(11,9,16,0.88)",
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     paddingHorizontal: 14,
     paddingVertical: 7,
     alignItems: "center",
     zIndex: 5,
   },
   statusBadgeText: {
-    color: "#C8973A",
+    color: theme.colors.goldPrimary,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -1265,11 +1266,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: SHEET_HEIGHT,
-    backgroundColor: "#130F1A",
+    backgroundColor: theme.colors.bgSurface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.5,
@@ -1283,7 +1284,7 @@ const styles = StyleSheet.create({
   handle: {
     width: 40,
     height: 4,
-    backgroundColor: "#3A2F50",
+    backgroundColor: theme.colors.borderDefault,
     borderRadius: 2,
     alignSelf: "center",
     marginTop: 10,
@@ -1292,7 +1293,7 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#3A2F50",
+    borderBottomColor: theme.colors.borderDefault,
     marginHorizontal: 16,
   },
   tab: {
@@ -1302,15 +1303,15 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     borderBottomWidth: 2,
-    borderBottomColor: "#C8973A",
+    borderBottomColor: theme.colors.goldPrimary,
   },
   tabText: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontWeight: "600",
     fontSize: 13,
   },
   tabTextActive: {
-    color: "#C8973A",
+    color: theme.colors.goldPrimary,
   },
   sheetScroll: {
     flex: 1,
@@ -1328,28 +1329,28 @@ const styles = StyleSheet.create({
   stopCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1A1526",
+    backgroundColor: theme.colors.bgSheet,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 12,
     marginBottom: 8,
     gap: 10,
   },
   stopCardSelected: {
-    borderColor: "#C8973A",
-    backgroundColor: "#2A1E10",
+    borderColor: theme.colors.goldPrimary,
+    backgroundColor: theme.colors.goldTintBg,
   },
   stopSeq: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#C8973A",
+    backgroundColor: theme.colors.goldPrimary,
     alignItems: "center",
     justifyContent: "center",
   },
   stopSeqText: {
-    color: "#0B0910",
+    color: theme.colors.bgBase,
     fontWeight: "800",
     fontSize: 13,
   },
@@ -1357,17 +1358,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   stopName: {
-    color: "#EDE0C4",
+    color: theme.colors.textPrimary,
     fontWeight: "700",
     fontSize: 14,
   },
   stopAddr: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 12,
     marginTop: 2,
   },
   stopDist: {
-    color: "#C8973A",
+    color: theme.colors.goldPrimary,
     fontSize: 11,
     marginTop: 2,
   },
@@ -1378,7 +1379,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   statusPillText: {
-    color: "#EDE0C4",
+    color: theme.colors.textPrimary,
     fontSize: 11,
     fontWeight: "700",
   },
@@ -1392,20 +1393,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptyText: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 14,
   },
   // Directions
   routeSummary: {
-    backgroundColor: "#1A1526",
+    backgroundColor: theme.colors.bgSheet,
     borderRadius: 10,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
   },
   routeSummaryText: {
-    color: "#C8973A",
+    color: theme.colors.goldPrimary,
     fontWeight: "700",
     fontSize: 15,
     textAlign: "center",
@@ -1420,19 +1421,19 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#C8973A",
+    backgroundColor: theme.colors.goldPrimary,
     marginTop: 4,
   },
   stepInfo: {
     flex: 1,
   },
   stepInstruction: {
-    color: "#EDE0C4",
+    color: theme.colors.textPrimary,
     fontSize: 13,
     fontWeight: "600",
   },
   stepMeta: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 11,
     marginTop: 2,
   },
@@ -1443,11 +1444,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(7,5,12,0.6)",
   },
   detailPanel: {
-    backgroundColor: "#130F1A",
+    backgroundColor: theme.colors.bgSurface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     maxHeight: "92%",
   },
   detailHeader: {
@@ -1457,16 +1458,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#3A2F50",
+    borderBottomColor: theme.colors.borderDefault,
   },
   detailTitle: {
-    color: "#F5D98B",
+    color: theme.colors.textHeading,
     fontSize: 17,
     fontWeight: "700",
     flex: 1,
   },
   detailClose: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 18,
     paddingLeft: 12,
   },
@@ -1484,21 +1485,21 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   detailLabel: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1,
   },
   detailValue: {
-    color: "#EDE0C4",
+    color: theme.colors.textPrimary,
     fontSize: 14,
   },
   detailLink: {
-    color: "#C8973A",
+    color: theme.colors.goldPrimary,
     fontSize: 14,
   },
   detailMeta: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 12,
   },
   // Status actions
@@ -1512,37 +1513,37 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: "#1A1526",
+    backgroundColor: theme.colors.bgSheet,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
   },
   actionBtnActive: {
-    backgroundColor: "#2A1E10",
-    borderColor: "#C8973A",
+    backgroundColor: theme.colors.goldTintBg,
+    borderColor: theme.colors.goldPrimary,
   },
   actionBtnDanger: {
-    borderColor: "#9B3A3A",
+    borderColor: theme.colors.dangerMuted,
   },
   actionBtnGreen: {
-    borderColor: "#1A5C3A",
+    borderColor: theme.colors.successDim,
   },
   actionBtnDisabled: {
     opacity: 0.5,
   },
   actionBtnText: {
-    color: "#EDE0C4",
+    color: theme.colors.textPrimary,
     fontWeight: "700",
     fontSize: 12,
   },
   // POD
   podSection: {
     borderTopWidth: 1,
-    borderTopColor: "#3A2F50",
+    borderTopColor: theme.colors.borderDefault,
     paddingTop: 14,
     gap: 10,
   },
   podTitle: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1,
@@ -1552,21 +1553,21 @@ const styles = StyleSheet.create({
     height: 160,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#3A2F50",
-    backgroundColor: "#0F0C16",
+    borderColor: theme.colors.borderDefault,
+    backgroundColor: theme.colors.bgInput,
   },
   podCaptured: {
-    color: "#4A9E5C",
+    color: theme.colors.success,
     fontSize: 12,
     fontWeight: "600",
   },
   // Inputs
   input: {
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     borderRadius: 10,
-    color: "#EDE0C4",
-    backgroundColor: "#0F0C16",
+    color: theme.colors.textPrimary,
+    backgroundColor: theme.colors.bgInput,
     paddingHorizontal: 12,
     paddingVertical: 9,
     fontSize: 14,
@@ -1586,23 +1587,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnPrimary: {
-    backgroundColor: "#C8973A",
+    backgroundColor: theme.colors.goldPrimary,
   },
   btnGhost: {
     borderWidth: 1,
-    borderColor: "#6B4F2A",
-    backgroundColor: "#130F1A",
+    borderColor: theme.colors.borderAccent,
+    backgroundColor: theme.colors.bgSurface,
   },
   btnGreen: {
-    backgroundColor: "#1A5C3A",
+    backgroundColor: theme.colors.successDim,
   },
   btnText: {
-    color: "#0B0910",
+    color: theme.colors.bgBase,
     fontWeight: "700",
     fontSize: 13,
   },
   btnGhostText: {
-    color: "#C8973A",
+    color: theme.colors.goldPrimary,
     fontWeight: "700",
     fontSize: 13,
   },
@@ -1613,16 +1614,16 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sigCard: {
-    backgroundColor: "#130F1A",
+    backgroundColor: theme.colors.bgSurface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 16,
     gap: 12,
   },
   sigTitle: {
-    color: "#F5D98B",
+    color: theme.colors.textHeading,
     fontSize: 16,
     fontWeight: "700",
     textAlign: "center",
@@ -1632,21 +1633,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#3A2F50",
-    backgroundColor: "#0F0C16",
+    borderColor: theme.colors.borderDefault,
+    backgroundColor: theme.colors.bgInput,
   },
   // Profile
   profileCard: {
-    backgroundColor: "#130F1A",
+    backgroundColor: theme.colors.bgSurface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 16,
     gap: 10,
   },
   profileMsg: {
-    color: "#C8973A",
+    color: theme.colors.goldPrimary,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -1656,20 +1657,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: "#3A2F50",
-    backgroundColor: "#1A1526",
+    borderColor: theme.colors.borderDefault,
+    backgroundColor: theme.colors.bgSheet,
   },
   toggleChipActive: {
-    backgroundColor: "#1A5C3A",
-    borderColor: "#4A9E5C",
+    backgroundColor: theme.colors.successDim,
+    borderColor: theme.colors.success,
   },
   toggleChipText: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontWeight: "700",
     fontSize: 12,
   },
   toggleChipTextActive: {
-    color: "#EDE0C4",
+    color: theme.colors.textPrimary,
   },
   // Profile photo picker
   avatarPickerBtn: {
@@ -1678,8 +1679,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   avatarPlaceholder: {
-    backgroundColor: "#1A1526",
-    borderColor: "#3A2F50",
+    backgroundColor: theme.colors.bgSheet,
+    borderColor: theme.colors.borderDefault,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1687,7 +1688,7 @@ const styles = StyleSheet.create({
     fontSize: 32,
   },
   avatarPickerLabel: {
-    color: "#C8973A",
+    color: theme.colors.goldPrimary,
     fontSize: 11,
     fontWeight: "600",
     letterSpacing: 0.5,

@@ -1,5 +1,6 @@
 // App.tsx — Auth gateway + workspace router for Discra Mobile
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { theme } from "./theme";
 import {
   AuthenticationDetails,
   CognitoUser,
@@ -355,7 +356,7 @@ export default function App() {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.loadingWrap}>
-          <ActivityIndicator color="#C8973A" />
+          <ActivityIndicator color={theme.colors.goldPrimary} />
           <Text style={styles.loadingText}>Loading…</Text>
         </View>
       </SafeAreaView>
@@ -491,7 +492,7 @@ export default function App() {
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="Enter username"
-            placeholderTextColor="#4A3F60"
+            placeholderTextColor={theme.colors.placeholder}
             returnKeyType="next"
           />
           <Text style={styles.label}>Password</Text>
@@ -504,7 +505,7 @@ export default function App() {
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="••••••••"
-            placeholderTextColor="#4A3F60"
+            placeholderTextColor={theme.colors.placeholder}
             returnKeyType="done"
             onSubmitEditing={() => signIn().catch(() => undefined)}
           />
@@ -518,7 +519,7 @@ export default function App() {
             disabled={loginLoading}
           >
             {loginLoading
-              ? <ActivityIndicator size="small" color="#0B0910" />
+              ? <ActivityIndicator size="small" color={theme.colors.bgBase} />
               : <Text style={styles.btnPrimaryText}>Sign In</Text>}
           </Pressable>
 
@@ -674,7 +675,7 @@ function SimulatorPanel({
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
         <Text style={styles.loginHeading}>Driver Simulator</Text>
         <Pressable onPress={onClose}>
-          <Text style={{ color: "#968AA8", fontSize: 18 }}>✕</Text>
+          <Text style={{ color: theme.colors.textMuted, fontSize: 18 }}>✕</Text>
         </Pressable>
       </View>
 
@@ -685,7 +686,7 @@ function SimulatorPanel({
         value={count}
         onChangeText={setCount}
         keyboardType="number-pad"
-        placeholderTextColor="#4A3F60"
+        placeholderTextColor={theme.colors.placeholder}
       />
 
       <Text style={styles.label}>Area</Text>
@@ -752,7 +753,7 @@ function SimulatorPanel({
       </View>
 
       {/* Seed test orders */}
-      <View style={{ height: 1, backgroundColor: "#241A33", marginVertical: 4 }} />
+      <View style={{ height: 1, backgroundColor: theme.colors.bgElevatedAlt, marginVertical: 4 }} />
       <Text style={styles.label}>Seed test orders ({areaKey})</Text>
       <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
         <View style={{ flex: 1 }}>
@@ -762,7 +763,7 @@ function SimulatorPanel({
             onChangeText={setSeedCount}
             keyboardType="number-pad"
             placeholder="5"
-            placeholderTextColor="#4A3F60"
+            placeholderTextColor={theme.colors.placeholder}
           />
         </View>
         <Pressable
@@ -774,7 +775,7 @@ function SimulatorPanel({
         </Pressable>
       </View>
 
-      {msg ? <Text style={{ color: "#C8973A", fontSize: 12 }}>{msg}</Text> : null}
+      {msg ? <Text style={{ color: theme.colors.goldPrimary, fontSize: 12 }}>{msg}</Text> : null}
 
       {/* Driver list */}
       {status && status.drivers.length > 0 ? (
@@ -797,7 +798,7 @@ function SimulatorPanel({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#0B0910",
+    backgroundColor: theme.colors.bgBase,
   },
   loadingWrap: {
     flex: 1,
@@ -807,7 +808,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   loadingText: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 14,
   },
   loginScreen: {
@@ -819,9 +820,9 @@ const styles = StyleSheet.create({
   loginCard: {
     width: "100%",
     maxWidth: 400,
-    backgroundColor: "#130F1A",
+    backgroundColor: theme.colors.bgSurface,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     borderRadius: 16,
     padding: 24,
     gap: 10,
@@ -836,46 +837,46 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: "#C8973A",
+    backgroundColor: theme.colors.goldPrimary,
     alignItems: "center",
     justifyContent: "center",
   },
   brandMarkText: {
-    color: "#0B0910",
+    color: theme.colors.bgBase,
     fontWeight: "800",
     fontSize: 18,
   },
   brandName: {
-    color: "#F5D98B",
+    color: theme.colors.textHeading,
     fontSize: 20,
     fontWeight: "700",
   },
   loginHeading: {
-    color: "#F5D98B",
+    color: theme.colors.textHeading,
     fontSize: 20,
     fontWeight: "700",
   },
   loginLead: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 13,
   },
   label: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: "600",
   },
   input: {
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     borderRadius: 10,
-    color: "#EDE0C4",
-    backgroundColor: "#0F0C16",
+    color: theme.colors.textPrimary,
+    backgroundColor: theme.colors.bgInput,
     paddingHorizontal: 12,
     paddingVertical: 9,
     fontSize: 14,
   },
   errorText: {
-    color: "#F0C060",
+    color: theme.colors.goldBright,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -887,20 +888,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnPrimary: {
-    backgroundColor: "#C8973A",
+    backgroundColor: theme.colors.goldPrimary,
   },
   btnGhost: {
     borderWidth: 1,
-    borderColor: "#6B4F2A",
-    backgroundColor: "#130F1A",
+    borderColor: theme.colors.borderAccent,
+    backgroundColor: theme.colors.bgSurface,
   },
   btnPrimaryText: {
-    color: "#0B0910",
+    color: theme.colors.bgBase,
     fontWeight: "700",
     fontSize: 14,
   },
   btnGhostText: {
-    color: "#C8973A",
+    color: theme.colors.goldPrimary,
     fontWeight: "700",
     fontSize: 14,
   },
@@ -912,9 +913,9 @@ const styles = StyleSheet.create({
   workspaceBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#0B0910",
+    backgroundColor: theme.colors.bgBase,
     borderBottomWidth: 1,
-    borderBottomColor: "#3A2F50",
+    borderBottomColor: theme.colors.borderDefault,
     paddingHorizontal: 8,
     paddingVertical: 8,
   },
@@ -932,27 +933,27 @@ const styles = StyleSheet.create({
   },
   settingsGearText: {
     fontSize: 18,
-    color: "#968AA8",
+    color: theme.colors.textMuted,
   },
   wsChip: {
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: "#3A2F50",
-    backgroundColor: "#1A1526",
+    borderColor: theme.colors.borderDefault,
+    backgroundColor: theme.colors.bgSheet,
   },
   wsChipActive: {
-    backgroundColor: "#C8973A",
-    borderColor: "#C8973A",
+    backgroundColor: theme.colors.goldPrimary,
+    borderColor: theme.colors.goldPrimary,
   },
   wsChipText: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontWeight: "600",
     fontSize: 13,
   },
   wsChipTextActive: {
-    color: "#0B0910",
+    color: theme.colors.bgBase,
   },
   // Workspace not available
   workspaceSwitcher: {
@@ -965,22 +966,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: "#3A2F50",
-    backgroundColor: "#1A1526",
+    borderColor: theme.colors.borderDefault,
+    backgroundColor: theme.colors.bgSheet,
     minWidth: 160,
     alignItems: "center",
   },
   wsBtnActive: {
-    backgroundColor: "#C8973A",
-    borderColor: "#C8973A",
+    backgroundColor: theme.colors.goldPrimary,
+    borderColor: theme.colors.goldPrimary,
   },
   wsBtnText: {
-    color: "#0B0910",
+    color: theme.colors.bgBase,
     fontWeight: "700",
     fontSize: 14,
   },
   wsBtnGhostText: {
-    color: "#968AA8",
+    color: theme.colors.textMuted,
     fontWeight: "600",
     fontSize: 14,
   },
@@ -991,11 +992,11 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   settingsCard: {
-    backgroundColor: "#130F1A",
+    backgroundColor: theme.colors.bgSurface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 20,
     gap: 10,
     maxHeight: "92%",
@@ -1006,20 +1007,20 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#3A2F50",
-    backgroundColor: "#0F0C16",
+    borderColor: theme.colors.borderDefault,
+    backgroundColor: theme.colors.bgInput,
   },
-  simChipActive: { borderColor: "#C8973A", backgroundColor: "#2A1E10" },
-  simChipText: { color: "#968AA8", fontSize: 12, fontWeight: "600" },
-  simChipTextActive: { color: "#C8973A" },
+  simChipActive: { borderColor: theme.colors.goldPrimary, backgroundColor: theme.colors.goldTintBg },
+  simChipText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: "600" },
+  simChipTextActive: { color: theme.colors.goldPrimary },
   simStatusBar: {
-    backgroundColor: "#0F0C16",
+    backgroundColor: theme.colors.bgInput,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#3A2F50",
+    borderColor: theme.colors.borderDefault,
     padding: 8,
   },
-  simStatusText: { color: "#EDE0C4", fontSize: 12, fontWeight: "600" },
+  simStatusText: { color: theme.colors.textPrimary, fontSize: 12, fontWeight: "600" },
   simDriverRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1027,8 +1028,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#241A33",
+    borderBottomColor: theme.colors.bgElevatedAlt,
   },
-  simDriverName: { color: "#EDE0C4", fontSize: 13, fontWeight: "600", flex: 1 },
-  simDriverState: { color: "#C8973A", fontSize: 12, fontWeight: "700" },
+  simDriverName: { color: theme.colors.textPrimary, fontSize: 13, fontWeight: "600", flex: 1 },
+  simDriverState: { color: theme.colors.goldPrimary, fontSize: 12, fontWeight: "700" },
 });

@@ -1,6 +1,6 @@
 /* Design tokens live in ONE place — tokens.css (see docs/design-system.md).
    This import must stay the first rule in the file. */
-@import url("tokens.css?v=20260705b");
+@import url("tokens.css?v=20260705e");
 
 * {
   box-sizing: border-box;
@@ -1438,9 +1438,15 @@ canvas.signature-pad {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .landing-fog, .landing-ember {
-    animation: none !important;
+  /* Neutralize ALL motion for users who ask for it — covers toasts, order-
+     highlight pulse, panel fade/rise, and anything added later. */
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+  .landing-fog, .landing-ember { animation: none !important; }
   .landing-ember { opacity: 0.25; }
 }
 

@@ -65,14 +65,16 @@ $lines += ""
 $lines += "## Key URLs"
 $lines += ""
 
+# O-1: HealthUrl/VersionUrl dropped 2026-07-26 — those routes 404 (their Lambdas
+# were removed) and this pack goes to pilot testers. Backend* are the live ones.
 $keyUrls = @(
-    "HealthUrl",
-    "VersionUrl",
     "BackendHealthUrl",
     "BackendVersionUrl",
     "AdminUiUrl",
     "DriverUiUrl",
-    "OrdersWebhookUrl"
+    "RegisterUiUrl",
+    "OrdersWebhookUrl",
+    "OpsDashboardUrl"
 )
 
 foreach ($key in $keyUrls) {

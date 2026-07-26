@@ -1473,23 +1473,10 @@ Outputs:
     Description: Base URL for the HTTP API (no stage suffix)
     Value: !GetAtt DiscraApi.ApiEndpoint
 
-  HealthUrl:
-    Description: Full URL for GET /health
-    Value: !Sub
-      - "${Endpoint}/dev/health"
-      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
-
-  VersionUrl:
-    Description: Full URL for GET /version
-    Value: !Sub
-      - "${Endpoint}/dev/version"
-      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
-
-  AdminPingUrl:
-    Description: Full URL for GET /admin/ping
-    Value: !Sub
-      - "${Endpoint}/dev/admin/ping"
-      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+  # O-1: HealthUrl / VersionUrl / AdminPingUrl were removed 2026-07-26. Their
+  # Lambdas (HealthFunction, VersionFunction, AdminPingFunction) no longer exist —
+  # all three URLs returned 404, and export-pilot-summary.ps1 was shipping two of
+  # them to pilot testers. Use BackendHealthUrl / BackendVersionUrl instead.
 
   BackendHealthUrl:
     Description: Full URL for GET /backend/health

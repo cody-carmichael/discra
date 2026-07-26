@@ -32,7 +32,7 @@
   --text-primary: #EDE0C4;
   --text-heading: #F5D98B;
   --text-muted: #968AA8;
-  --text-danger: #D94D4D;
+  --text-danger: #E05F5F;  /* WCAG AA on all surfaces incl. bg-elevated (5.0:1) */
   --text-success: #4A9E5C;
 
   /* Status depth */
@@ -45,7 +45,7 @@
   --status-pickedup: #E0A43B;  /* warm amber — mid-progress */
   --status-enroute: #4A9E5C;   /* == success green — almost there */
   --status-delivered: #4A9E5C;
-  --status-failed: #D94D4D;    /* == text-danger */
+  --status-failed: var(--text-danger);
 
   /* Secondary accents */
   --purple-accent: #7B4FA6;

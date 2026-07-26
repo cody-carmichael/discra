@@ -31,7 +31,7 @@ export const theme = {
     textPrimary: "#EDE0C4",
     textHeading: "#F5D98B",
     textMuted: "#968AA8",
-    danger: "#D94D4D",
+    danger: "#E05F5F",  // WCAG AA on all surfaces (parity with tokens.css --text-danger)
     success: "#4A9E5C",
 
     // Status depth
@@ -43,7 +43,7 @@ export const theme = {
     statusPickedUp: "#E0A43B",
     statusEnRoute: "#4A9E5C",
     statusDelivered: "#4A9E5C",
-    statusFailed: "#D94D4D",
+    statusFailed: "#E05F5F",
 
     // Secondary accents
     purpleAccent: "#7B4FA6",

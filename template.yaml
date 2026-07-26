@@ -116,8 +116,16 @@ Parameters:
     Description: MapLibre style JSON URL used by Admin/Dispatcher map view
   EnableUiDevAuth:
     Type: String
-    Default: "true"
-    Description: Enable cookie-based UI dev auth profiles for no-token manual testing
+    AllowedValues: ["true", "false"]
+    Default: "false"
+    Description: >-
+      Enable cookie-based UI dev auth profiles for no-token manual testing.
+      SECURITY (A-6): when "true", ANYONE can mint an Admin session with no
+      credentials via POST /backend/ui/dev-auth/login. Must stay "false" on any
+      stack reachable by people who are not you — including the pilot stack.
+      NOTE: changing this default does NOT protect an already-deployed stack.
+      CloudFormation keeps a parameter's previous value when a deploy does not
+      pass it, so the deploy workflow pins this explicitly. Do not unpin it.
   DevAuthSecret:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /discra/dev-auth-secret

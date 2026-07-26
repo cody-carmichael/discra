@@ -58,12 +58,29 @@ def test_app_dev_auth_disabled_when_env_unset(monkeypatch):
 
 
 def test_app_dev_auth_enabled_only_by_explicit_optin(monkeypatch):
-    """Positive control: the 404s below mean "disabled", not "route doesn't exist"."""
+    """Positive control: the 404s below mean "disabled", not "route doesn't exist".
+
+    Sets DEV_AUTH_SECRET explicitly rather than relying on the environment. Dev-auth
+    fails closed with 503 when the secret is missing (auth.py::_require_dev_auth_secret),
+    so on a developer machine a local .env supplies it and this passes, while in CI it
+    would 503 — a test that only works in one of the two is worse than no test.
+    """
     monkeypatch.setenv("ENABLE_UI_DEV_AUTH", "true")
+    monkeypatch.setenv("DEV_AUTH_SECRET", "test-only-dev-auth-secret")
     client = TestClient(_app)
     resp = client.post("/backend/ui/dev-auth/login", json={"role": "Admin"})
     assert resp.status_code == 200
     assert "set-cookie" in {k.lower() for k in resp.headers}
+
+
+def test_dev_auth_fails_closed_without_secret(monkeypatch):
+    """Second safety layer: enabling dev-auth without a secret must not mint sessions."""
+    monkeypatch.setenv("ENABLE_UI_DEV_AUTH", "true")
+    monkeypatch.setenv("DEV_AUTH_SECRET", "")
+    client = TestClient(_app)
+    resp = client.post("/backend/ui/dev-auth/login", json={"role": "Admin"})
+    assert resp.status_code == 503
+    assert "set-cookie" not in {k.lower() for k in resp.headers}
 
 
 def test_dev_auth_login_404s_when_disabled(monkeypatch):

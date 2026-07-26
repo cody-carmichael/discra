@@ -5,6 +5,7 @@
 // backdrop, a golden sigil, expanding rune rings, a radiant sunburst, and
 // rising embers.
 import React, { useEffect, useMemo, useRef } from "react";
+import { theme } from "../theme";
 import {
   Animated,
   Easing,
@@ -25,14 +26,14 @@ type Props = {
 };
 
 // ─── Dark-fantasy palette (matches DriverScreen) ──────────────────────────────
-const VOID = "#070510";
-const GOLD = "#C8973A";
-const GOLD_BRIGHT = "#F5D98B";
-const GOLD_PALE = "#F0C060";
-const EMBER = "#E05A3B";
-const CREAM = "#EDE0C4";
-const PANEL = "#130F1A";
-const MUTED = "#968AA8";
+const VOID = theme.colors.bgDeepest;
+const GOLD = theme.colors.goldPrimary;
+const GOLD_BRIGHT = theme.colors.textHeading;
+const GOLD_PALE = theme.colors.goldBright;
+const EMBER = theme.colors.emberOrange;
+const CREAM = theme.colors.textPrimary;
+const PANEL = theme.colors.bgSurface;
+const MUTED = theme.colors.textMuted;
 
 // react-native-web has no native animation module; fall back to the JS driver
 // there so the flourish still plays in the web preview without warnings.

@@ -37,6 +37,14 @@ export const theme = {
     // Status depth
     dangerDim: "#7A2222",
 
+    // Order-status progression (parity with tokens.css --status-*)
+    statusCreated: "#968AA8",
+    statusAssigned: "#C8973A",
+    statusPickedUp: "#E0A43B",
+    statusEnRoute: "#4A9E5C",
+    statusDelivered: "#4A9E5C",
+    statusFailed: "#D94D4D",
+
     // Secondary accents
     purpleAccent: "#7B4FA6",
     purpleLight: "#B18ED0",

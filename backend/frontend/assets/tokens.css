@@ -38,6 +38,15 @@
   /* Status depth */
   --danger-dim: #7A2222;
 
+  /* Order-status progression (dispatch queue, in-flight bar, status dots).
+     Centralized so the bar, dots, and badges never drift apart. */
+  --status-created: #968AA8;   /* == text-muted */
+  --status-assigned: #C8973A;  /* == gold-primary */
+  --status-pickedup: #E0A43B;  /* warm amber — mid-progress */
+  --status-enroute: #4A9E5C;   /* == success green — almost there */
+  --status-delivered: #4A9E5C;
+  --status-failed: #D94D4D;    /* == text-danger */
+
   /* Secondary accents */
   --purple-accent: #7B4FA6;
   --purple-light: #B18ED0;

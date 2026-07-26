@@ -3971,6 +3971,17 @@
   }
 
   async function refreshEmailRules() {
+    // A-8: /email/rules is Admin-only; a Dispatcher viewing the Email panel would
+    // otherwise see the raw "Forbidden: insufficient role" API string. Mirror the
+    // billing panel's graceful gate instead of calling the endpoint.
+    if (!isAdminRole) {
+      if (el.emailRulesList) {
+        el.emailRulesList.innerHTML =
+          '<p class="panel-help">Classification rules require the Admin role. ' +
+          'Ask an administrator to manage email rules.</p>';
+      }
+      return;
+    }
     try {
       var resp = await C.requestJson(apiBase, "/email/rules", { token: token });
       _availableParsers = (resp && resp.available_parsers) || [];

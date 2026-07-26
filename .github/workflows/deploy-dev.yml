@@ -141,6 +141,12 @@ jobs:
           parameter_overrides=(
             "Version=$GITHUB_SHA"
             "AdminToken=$ADMIN_TOKEN"
+            # A-6: pin dev-auth OFF on every deploy. This MUST be passed explicitly —
+            # CloudFormation retains a parameter's previous value when a deploy omits
+            # it, so the template's secure default never reaches an existing stack.
+            # That is exactly how discra-api-dev sat with a credential-free Admin
+            # login long after the template default was believed to be fixed.
+            "EnableUiDevAuth=false"
             "OrdersWebhookAllowedOrgId=$ORDERS_WEBHOOK_ALLOWED_ORG_ID"
             "DevAuthSecret=/discra/dev-auth-secret"
             "VapidPublicKey=/discra/vapid-public-key"

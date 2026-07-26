@@ -40,6 +40,23 @@ Parameters:
     Description: >-
       API Gateway stage burst limit (max concurrent request spike, aggregate per
       route). Should be >= ApiThrottleRateLimit.
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653]
+    Description: >-
+      CloudWatch Logs retention for the Lambda log groups (6.1 ops). Lambda-created
+      groups default to "never expire", which grows cost without bound and holds
+      request data indefinitely (a GDPR storage-limitation concern). 30 days suits
+      a pilot; raise for prod audit needs.
+  OpsAlertEmail:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional email address subscribed to the ops alert SNS topic (6.1). When set,
+      AWS sends a confirmation email that must be accepted before alarms deliver.
+      Leave empty to create the topic without a subscription (alarms still fire and
+      are visible in the console).
   OrsApiKey:
     Type: String
     Default: ""
@@ -204,6 +221,8 @@ Conditions:
   # role carries no geo permission otherwise (S-6 least privilege).
   HasLocationRouteCalculator: !Not [!Equals [!Ref LocationRouteCalculatorName, ""]]
   HasLocationPlaceIndex: !Not [!Equals [!Ref LocationPlaceIndexName, ""]]
+  # 6.1 ops: only create the SNS email subscription when an address is configured.
+  HasOpsAlertEmail: !Not [!Equals [!Ref OpsAlertEmail, ""]]
 
 Globals:
   Function:
@@ -668,6 +687,34 @@ Resources:
           Value: dev
 
 
+  # --- 6.1 ops: explicit log groups with retention -------------------------------
+  # Lambda auto-creates /aws/lambda/<generated-function-name> with retention
+  # "never expire". We instead declare the groups ourselves and point each
+  # function at its group via LoggingConfig, so retention is managed in the
+  # template. Names keep the /aws/lambda/ prefix so the SAM-generated execution
+  # role's basic-execution logs grant still covers them.
+  #
+  # NOTE: this moves logging to NEW groups. The previously auto-created groups
+  # (and those of long-deleted functions) stay behind holding old data with no
+  # retention — see docs/runbook-ops.md for the one-time cleanup.
+  BackendApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-backend-api"
+      RetentionInDays: !Ref LogRetentionDays
+
+  EmailPollerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-email-poller"
+      RetentionInDays: !Ref LogRetentionDays
+
+  WsHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-ws-handler"
+      RetentionInDays: !Ref LogRetentionDays
+
   BackendApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -675,6 +722,8 @@ Resources:
       MemorySize: 512
       Timeout: 30
       Tracing: Active
+      LoggingConfig:
+        LogGroup: !Ref BackendApiLogGroup
       Environment:
         Variables:
           VERSION: !Ref Version
@@ -955,6 +1004,8 @@ Resources:
       MemorySize: 512
       Timeout: 60
       Tracing: Active
+      LoggingConfig:
+        LogGroup: !Ref EmailPollerLogGroup
       Environment:
         Variables:
           EMAIL_CONFIG_TABLE: !Ref EmailConfigTable
@@ -1076,6 +1127,8 @@ Resources:
       MemorySize: 256
       Timeout: 10
       Tracing: Active
+      LoggingConfig:
+        LogGroup: !Ref WsHandlerLogGroup
       Environment:
         Variables:
           WS_CONNECTIONS_TABLE: !Ref WsConnectionsTable
@@ -1104,6 +1157,304 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscraWebSocketApi}/*"
+
+  # --- 6.1 ops: alerting ---------------------------------------------------------
+  # Single topic for every alarm. Alarms fire into it whether or not a subscriber
+  # exists, so the alarm state is always visible in the console/dashboard; the
+  # email subscription just adds push delivery.
+  OpsAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-ops-alerts"
+      DisplayName: Discra ops alerts
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
+  OpsAlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasOpsAlertEmail
+    Properties:
+      TopicArn: !Ref OpsAlertTopic
+      Protocol: email
+      Endpoint: !Ref OpsAlertEmail
+
+  # --- 6.1 ops: alarms -----------------------------------------------------------
+  # TreatMissingData: notBreaching throughout — a quiet pilot stack produces no
+  # datapoints, and "no traffic" must not read as "broken".
+  BackendApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-backend-api-errors"
+      AlarmDescription: >-
+        Backend API Lambda is returning unhandled errors. Check the function log
+        group for tracebacks; this is the primary "the app is broken" signal.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BackendApiFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertTopic]
+      OKActions: [!Ref OpsAlertTopic]
+
+  BackendApiThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-backend-api-throttles"
+      AlarmDescription: >-
+        Backend API Lambda is being throttled (concurrency limit reached).
+        Requests are failing outright — raise reserved concurrency or the account
+        limit.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BackendApiFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertTopic]
+      OKActions: [!Ref OpsAlertTopic]
+
+  BackendApiDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-backend-api-duration-p95"
+      AlarmDescription: >-
+        Backend API p95 duration is within striking distance of the 30s function
+        timeout. Requests are about to start timing out.
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BackendApiFunction
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 20000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertTopic]
+      OKActions: [!Ref OpsAlertTopic]
+
+  ApiGateway5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-api-5xx"
+      AlarmDescription: >-
+        HTTP API is serving 5xx responses. Catches gateway/integration failures
+        that never reach the Lambda error metric.
+      Namespace: AWS/ApiGateway
+      MetricName: 5xx
+      Dimensions:
+        - Name: ApiId
+          Value: !Ref DiscraApi
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertTopic]
+      OKActions: [!Ref OpsAlertTopic]
+
+  ApiGatewayLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-api-latency-p95"
+      AlarmDescription: >-
+        HTTP API p95 end-to-end latency is above 5s — the console and driver PWA
+        will feel broken well before anything errors.
+      Namespace: AWS/ApiGateway
+      MetricName: Latency
+      Dimensions:
+        - Name: ApiId
+          Value: !Ref DiscraApi
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertTopic]
+      OKActions: [!Ref OpsAlertTopic]
+
+  EmailPollerErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-email-poller-errors"
+      AlarmDescription: >-
+        Scheduled email poller is failing. Order intake from email silently stops
+        when this breaks, so even one error is worth surfacing (longer window than
+        the API alarms since it runs on a schedule).
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref EmailPollerFunction
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertTopic]
+      OKActions: [!Ref OpsAlertTopic]
+
+  WsHandlerErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-ws-handler-errors"
+      AlarmDescription: >-
+        WebSocket handler is failing — real-time order/notification pushes are
+        degraded (the app still works via polling, hence the higher threshold).
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref WsHandlerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertTopic]
+      OKActions: [!Ref OpsAlertTopic]
+
+  OrdersTableThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-orders-table-throttles"
+      AlarmDescription: >-
+        The orders table is throttling requests. On-demand tables can still
+        throttle when traffic outruns the auto-scaled partition capacity.
+      Namespace: AWS/DynamoDB
+      MetricName: ThrottledRequests
+      Dimensions:
+        - Name: TableName
+          Value: !Ref OrdersTable
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertTopic]
+      OKActions: [!Ref OpsAlertTopic]
+
+  # --- 6.1 ops: dashboard --------------------------------------------------------
+  # One dashboard (first 3 are free). Traffic/health up top, then per-function
+  # detail, then the data layer.
+  OpsDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${AWS::StackName}-ops"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "HTTP API — requests and errors",
+                "region": "${AWS::Region}",
+                "stat": "Sum", "period": 300, "view": "timeSeries", "stacked": false,
+                "metrics": [
+                  [ "AWS/ApiGateway", "Count", "ApiId", "${DiscraApi}", { "label": "requests" } ],
+                  [ ".", "4xx", ".", ".", { "label": "4xx" } ],
+                  [ ".", "5xx", ".", ".", { "label": "5xx" } ]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "HTTP API — latency",
+                "region": "${AWS::Region}",
+                "period": 300, "view": "timeSeries", "stacked": false,
+                "metrics": [
+                  [ "AWS/ApiGateway", "Latency", "ApiId", "${DiscraApi}", { "stat": "p50", "label": "p50" } ],
+                  [ "...", { "stat": "p95", "label": "p95" } ],
+                  [ "...", { "stat": "p99", "label": "p99" } ],
+                  [ "AWS/ApiGateway", "IntegrationLatency", "ApiId", "${DiscraApi}", { "stat": "p95", "label": "integration p95" } ]
+                ],
+                "yAxis": { "left": { "label": "ms", "showUnits": false } }
+              }
+            },
+            {
+              "type": "metric", "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "Backend API Lambda",
+                "region": "${AWS::Region}",
+                "stat": "Sum", "period": 300, "view": "timeSeries", "stacked": false,
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${BackendApiFunction}", { "label": "invocations" } ],
+                  [ ".", "Errors", ".", ".", { "label": "errors" } ],
+                  [ ".", "Throttles", ".", ".", { "label": "throttles" } ],
+                  [ ".", "ConcurrentExecutions", ".", ".", { "stat": "Maximum", "label": "peak concurrency" } ]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "Backend API duration (timeout 30s)",
+                "region": "${AWS::Region}",
+                "period": 300, "view": "timeSeries", "stacked": false,
+                "metrics": [
+                  [ "AWS/Lambda", "Duration", "FunctionName", "${BackendApiFunction}", { "stat": "Average", "label": "avg" } ],
+                  [ "...", { "stat": "p95", "label": "p95" } ],
+                  [ "...", { "stat": "Maximum", "label": "max" } ]
+                ],
+                "yAxis": { "left": { "label": "ms", "showUnits": false } },
+                "annotations": {
+                  "horizontal": [
+                    { "label": "p95 alarm", "value": 20000 },
+                    { "label": "timeout", "value": 30000, "fill": "above" }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric", "x": 0, "y": 12, "width": 12, "height": 6,
+              "properties": {
+                "title": "Background functions — errors",
+                "region": "${AWS::Region}",
+                "stat": "Sum", "period": 900, "view": "timeSeries", "stacked": false,
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${EmailPollerFunction}", { "label": "email poller invocations" } ],
+                  [ ".", "Errors", ".", ".", { "label": "email poller errors" } ],
+                  [ ".", "Errors", ".", "${WsHandlerFunction}", { "label": "ws handler errors" } ]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 12, "width": 12, "height": 6,
+              "properties": {
+                "title": "DynamoDB — orders table",
+                "region": "${AWS::Region}",
+                "stat": "Sum", "period": 300, "view": "timeSeries", "stacked": false,
+                "metrics": [
+                  [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "${OrdersTable}", { "label": "read units" } ],
+                  [ ".", "ConsumedWriteCapacityUnits", ".", ".", { "label": "write units" } ],
+                  [ ".", "ThrottledRequests", ".", ".", { "label": "throttled" } ],
+                  [ ".", "SystemErrors", ".", ".", { "label": "system errors" } ]
+                ]
+              }
+            }
+          ]
+        }
 
 Outputs:
   ApiId:
@@ -1225,3 +1576,15 @@ Outputs:
   WebSocketApiEndpoint:
     Description: WebSocket API endpoint URL (wss://)
     Value: !Sub "wss://${DiscraWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/dev"
+
+  OpsAlertTopicArn:
+    Description: SNS topic all CloudWatch alarms publish to (6.1 ops)
+    Value: !Ref OpsAlertTopic
+
+  OpsDashboardUrl:
+    Description: CloudWatch dashboard for API/Lambda/DynamoDB health (6.1 ops)
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${OpsDashboard}"
+
+  BackendApiLogGroupName:
+    Description: Backend API Lambda log group (retention-managed, 6.1 ops)
+    Value: !Ref BackendApiLogGroup

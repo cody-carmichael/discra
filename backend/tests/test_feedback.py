@@ -51,12 +51,23 @@ def _submit(client, role="Driver", org="org-1", **payload):
     return client.post("/feedback", json=body, headers=auth_headers(role=role, org_id=org))
 
 
+def _assert_status(resp, expected):
+    """Assert status, but put the response body in the message.
+
+    A bare `assert resp.status_code == 200` reports "assert 500 == 200" and nothing
+    about why — useless when the failure only reproduces in CI.
+    """
+    assert resp.status_code == expected, (
+        f"expected {expected}, got {resp.status_code}; body={resp.text[:800]!r}"
+    )
+
+
 # --- submit -----------------------------------------------------------------
 
 @pytest.mark.parametrize("role", ["Admin", "Dispatcher", "Driver"])
 def test_any_signed_in_role_can_submit(client, role):
     resp = _submit(client, role=role)
-    assert resp.status_code == 200
+    _assert_status(resp, 200)
     assert resp.json()["ok"] is True
     assert resp.json()["feedback_id"]
 
@@ -75,7 +86,7 @@ def test_submit_captures_context_and_identity(client):
         page="/backend/ui/driver",
         app_version="20260726",
     )
-    assert resp.status_code == 200
+    _assert_status(resp, 200)
 
     listed = client.get("/feedback", headers=auth_headers(role="Admin", org_id="org-1")).json()
     assert len(listed) == 1
@@ -123,7 +134,7 @@ def test_org_id_comes_from_token_not_body(client):
 def test_admin_and_dispatcher_can_list(client, role):
     _submit(client)
     resp = client.get("/feedback", headers=auth_headers(role=role, org_id="org-1"))
-    assert resp.status_code == 200
+    _assert_status(resp, 200)
     assert len(resp.json()) == 1
 
 

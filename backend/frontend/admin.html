@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/admin-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/styles.css?v=20260705e">
+  <link rel="stylesheet" href="assets/styles.css?v=20260726a">
 </head>
 <body class="theme-admin">
 
@@ -584,6 +584,37 @@
               <button class="btn btn-ghost" type="submit">Manage Billing Portal</button>
             </form>
           </div>
+        </section>
+
+        <!-- Pilot Feedback (6.3) -->
+        <section class="panel" id="feedback-panel">
+          <div class="panel-title-row">
+            <h2>Pilot Feedback</h2>
+            <button id="refresh-feedback" class="btn btn-ghost" type="button">Refresh</button>
+          </div>
+          <p class="panel-help">In-app feedback submitted by anyone in this org. Drivers can send it but cannot read it.</p>
+          <form id="feedback-form" class="form-grid">
+            <label class="field">
+              <span>Category</span>
+              <select id="feedback-category" name="category">
+                <option value="bug">Something is broken</option>
+                <option value="confusing">Something is confusing</option>
+                <option value="idea">Idea or suggestion</option>
+                <option value="praise">This worked well</option>
+                <option value="general" selected>General comment</option>
+              </select>
+            </label>
+            <label class="field field-wide">
+              <span>Your feedback</span>
+              <textarea id="feedback-message" name="message" rows="3" maxlength="4000"
+                placeholder="What happened, and what did you expect?"></textarea>
+            </label>
+            <div class="form-actions">
+              <button id="feedback-submit" class="btn btn-primary" type="submit">Send Feedback</button>
+            </div>
+          </form>
+          <p id="feedback-status" class="form-message"></p>
+          <ul id="feedback-list" class="driver-list"></ul>
         </section>
 
         <!-- Audit Logs -->

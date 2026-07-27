@@ -1,6 +1,6 @@
 /* Design tokens live in ONE place — tokens.css (see docs/design-system.md).
    This import must stay the first rule in the file. */
-@import url("tokens.css?v=20260705e");
+@import url("tokens.css?v=20260726a");
 
 * {
   box-sizing: border-box;
@@ -4063,4 +4063,51 @@ body.theme-admin .billing-seat-cards .stat-card small {
   background: rgba(200, 151, 58, 0.95);
   color: #1A1208;
   border-color: var(--gold-primary, #C8973A);
+}
+
+/* --- Pilot feedback panel (6.3) ------------------------------------------- */
+.feedback-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.feedback-item-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.feedback-item-meta {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.feedback-item-body {
+  color: var(--text-primary);
+  /* Feedback is free text from a tester — keep their line breaks, and make sure a
+     long unbroken paste cannot widen the panel (no horizontal page scroll, 5.5). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.feedback-item-context {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.empty-row {
+  color: var(--text-muted);
+  padding: var(--space-3);
+  text-align: center;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
 }

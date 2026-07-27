@@ -74,6 +74,13 @@
     inflightMessage: document.getElementById("inflight-message"),
     refreshInflight: document.getElementById("refresh-inflight"),
     refreshAuditLogs: document.getElementById("refresh-audit-logs"),
+    refreshFeedback: document.getElementById("refresh-feedback"),
+    feedbackForm: document.getElementById("feedback-form"),
+    feedbackCategory: document.getElementById("feedback-category"),
+    feedbackMessage: document.getElementById("feedback-message"),
+    feedbackSubmit: document.getElementById("feedback-submit"),
+    feedbackStatus: document.getElementById("feedback-status"),
+    feedbackList: document.getElementById("feedback-list"),
     auditFilterForm: document.getElementById("audit-filter-form"),
     auditActionFilter: document.getElementById("audit-action-filter"),
     auditTargetFilter: document.getElementById("audit-target-filter"),
@@ -2995,6 +3002,86 @@
     }
   }
 
+  // --- Pilot feedback (6.3) -------------------------------------------------
+  var FEEDBACK_CATEGORY_LABELS = {
+    bug: "Broken",
+    confusing: "Confusing",
+    idea: "Idea",
+    praise: "Worked well",
+    general: "General",
+  };
+
+  function renderFeedback(rows) {
+    if (!el.feedbackList) return;
+    if (!rows || !rows.length) {
+      el.feedbackList.innerHTML = "<li class=\"empty-row\">No feedback submitted yet.</li>";
+      return;
+    }
+    el.feedbackList.innerHTML = rows.map(function (row) {
+      var category = FEEDBACK_CATEGORY_LABELS[row.category] || "General";
+      var who = row.submitted_by_email || row.submitted_by || "unknown";
+      var roles = (row.submitted_by_roles || []).join(", ");
+      var when = row.created_at ? new Date(row.created_at).toLocaleString() : "";
+      var where = [row.surface, row.page].filter(Boolean).join(" · ");
+      return "<li class=\"feedback-item\">" +
+        "<div class=\"feedback-item-head\">" +
+          "<span class=\"pill\">" + C.escapeHtml(category) + "</span>" +
+          "<span class=\"feedback-item-meta\">" + C.escapeHtml(who) +
+            (roles ? " (" + C.escapeHtml(roles) + ")" : "") +
+            (when ? " · " + C.escapeHtml(when) : "") +
+          "</span>" +
+        "</div>" +
+        "<div class=\"feedback-item-body\">" + C.escapeHtml(row.message || "") + "</div>" +
+        (where ? "<div class=\"feedback-item-context\">" + C.escapeHtml(where) + "</div>" : "") +
+      "</li>";
+    }).join("");
+  }
+
+  async function refreshFeedback() {
+    if (!requireAuthorized(el.feedbackStatus)) {
+      renderFeedback([]);
+      return;
+    }
+    try {
+      const rows = await C.requestJson(apiBase, "/feedback?limit=50", { token });
+      renderFeedback(rows || []);
+    } catch (error) {
+      C.showMessage(el.feedbackStatus, error.message, "error");
+    }
+  }
+
+  async function submitFeedback() {
+    if (!el.feedbackMessage) return;
+    var message = (el.feedbackMessage.value || "").trim();
+    if (!message) {
+      C.showMessage(el.feedbackStatus, "Please enter some feedback first.", "error");
+      return;
+    }
+    // Double-submit guard (A-3 pattern): disable synchronously so the Enter path
+    // is blocked too, and re-enable in finally.
+    if (el.feedbackSubmit) el.feedbackSubmit.disabled = true;
+    try {
+      await C.requestJson(apiBase, "/feedback", {
+        token: token,
+        method: "POST",
+        json: {
+          message: message,
+          category: el.feedbackCategory ? el.feedbackCategory.value : "general",
+          surface: "admin-console",
+          page: window.location.pathname,
+          app_version: (window.DISCRA_APP_VERSION || ""),
+        },
+      });
+      el.feedbackMessage.value = "";
+      C.showMessage(el.feedbackStatus, "Thanks — your feedback was sent.", "success");
+      await refreshFeedback();
+    } catch (error) {
+      C.showMessage(el.feedbackStatus, error.message, "error");
+    } finally {
+      if (el.feedbackSubmit) el.feedbackSubmit.disabled = false;
+    }
+  }
+
   function _pillFromBoolean(value) {
     return value
       ? "<span class=\"pill pill-yes\">Enabled</span>"
@@ -3533,6 +3620,7 @@
         refreshDrivers(),
         refreshInflight(),
         refreshAuditLogs(),
+        refreshFeedback(),
       ]);
       if (isAdminRole) {
         await Promise.all([refreshBillingSummary(), refreshBillingInvitations()]);
@@ -3751,6 +3839,15 @@
     });
   }
   el.refreshAuditLogs.addEventListener("click", refreshAuditLogs);
+
+  // Feedback (6.3)
+  if (el.refreshFeedback) el.refreshFeedback.addEventListener("click", refreshFeedback);
+  if (el.feedbackForm) {
+    el.feedbackForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      submitFeedback();
+    });
+  }
   el.auditFilterForm.addEventListener("submit", function (event) {
     applyAuditFilters(event).catch(function (error) {
       C.showMessage(el.auditMessage, error.message, "error");

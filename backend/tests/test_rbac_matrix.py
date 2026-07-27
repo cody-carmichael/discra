@@ -144,6 +144,10 @@ ENDPOINTS = [
     EP("billing_invitation_cancel", "POST", "/billing/invitations/abc/cancel", {}, {"Admin"}),
     # push
     EP("push_subscribe", "POST", "/push/subscribe", {"json": {"endpoint": "https://e", "p256dh": "p", "auth": "a"}}, {"Admin", "Dispatcher", "Driver"}),
+    # feedback (6.3): anyone signed in may submit; only Admin/Dispatcher may read the
+    # queue — a Driver reading colleagues' feedback is a privacy problem.
+    EP("feedback_submit", "POST", "/feedback", {"json": {"message": "rbac probe"}}, {"Admin", "Dispatcher", "Driver"}),
+    EP("feedback_list", "GET", "/feedback", {}, {"Admin", "Dispatcher"}),
     # email
     EP("email_connect", "POST", "/email/connect", {"json": {"code": "x", "redirect_uri": "https://x"}}, {"Admin"}),
     EP("email_disconnect", "POST", "/email/disconnect", {}, {"Admin"}),

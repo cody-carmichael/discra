@@ -34,6 +34,19 @@ def auth_headers(role: str, org_id: str = "org-1"):
 
 
 @pytest.fixture(autouse=True)
+def _test_env(monkeypatch):
+    """Pin the auth mode instead of inheriting it.
+
+    The unsigned tokens above are only accepted when signature verification is off.
+    Without this the suite passes on a dev machine (a local .env sets it) and 500s in
+    CI with "Auth misconfigured: missing COGNITO_ISSUER/COGNITO_AUDIENCE" — the same
+    environment dependence that bit test_dev_auth_disabled_by_default. Matches the
+    _test_env fixture in test_rbac_matrix.py.
+    """
+    monkeypatch.setenv("JWT_VERIFY_SIGNATURE", "false")
+
+
+@pytest.fixture(autouse=True)
 def _clean_store():
     reset_in_memory_feedback_store()
     yield

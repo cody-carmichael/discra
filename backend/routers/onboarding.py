@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -77,6 +78,8 @@ except ModuleNotFoundError:  # local run from backend/ directory
         OrganizationRecord,
         UserRecord,
     )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["onboarding"])
 
@@ -337,7 +340,16 @@ def _apply_review_decision_for_registration(
                 reason=decision_reason,
             )
         except Exception:
-            pass
+            # Notification is best-effort: the approval itself already succeeded and
+            # must not be rolled back. But swallowing this silently meant a whole
+            # class of delivery failure was invisible — notably SES sandbox mode,
+            # which rejects any recipient that isn't a verified identity, i.e. every
+            # external pilot tester. Log it (no address — S-5 PII rule).
+            logger.warning(
+                "Onboarding approval email failed to send for registration %s",
+                saved.registration_id,
+                exc_info=True,
+            )
 
         _audit_event(
             request=request,
@@ -388,7 +400,12 @@ def _apply_review_decision_for_registration(
             reason=decision_reason,
         )
     except Exception:
-        pass
+        # Best-effort, same rationale as the approval path above.
+        logger.warning(
+            "Onboarding rejection email failed to send for registration %s",
+            saved.registration_id,
+            exc_info=True,
+        )
 
     _audit_event(
         request=request,

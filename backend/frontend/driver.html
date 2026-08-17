@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="manifest" href="assets/driver-manifest.json">
   <meta name="theme-color" content="#0b1117">
-  <link rel="stylesheet" href="assets/driver-mobile.css?v=20260705e">
+  <link rel="stylesheet" href="assets/driver-mobile.css?v=20260726a">
 </head>
 <body>
 
@@ -36,6 +36,7 @@
       </div>
       <div class="drv-topbar-right">
         <span id="driver-auth-state" class="drv-status-pill drv-status-off">Offline</span>
+        <button id="feedback-btn" class="drv-btn drv-btn-ghost drv-btn-sm" type="button" title="Send feedback" aria-label="Send feedback">Feedback</button>
         <button id="profile-btn" class="drv-profile-btn" type="button" title="Profile" aria-label="Profile">
           <span id="profile-avatar" class="drv-profile-avatar">?</span>
         </button>
@@ -139,6 +140,42 @@
           </div>
           <p id="profile-message" class="drv-msg"></p>
           <button type="submit" class="drv-btn drv-btn-accent" style="width:100%;">Save Profile</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- FEEDBACK MODAL (pilot feedback loop, 6.3) -->
+    <div id="feedback-modal" class="drv-detail" style="display:none;">
+      <div class="drv-detail-header">
+        <h3>Send Feedback</h3>
+        <button id="feedback-close" class="drv-close-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="drv-detail-body">
+        <form id="feedback-form">
+          <div class="drv-detail-section">
+            <div class="drv-field">
+              <label class="drv-field-label" for="feedback-category">What kind of feedback?</label>
+              <select id="feedback-category" class="drv-input">
+                <option value="bug">Something is broken</option>
+                <option value="confusing">Something is confusing</option>
+                <option value="idea">Idea or suggestion</option>
+                <option value="praise">This worked well</option>
+                <option value="general" selected>General comment</option>
+              </select>
+            </div>
+          </div>
+          <div class="drv-detail-section">
+            <div class="drv-field">
+              <label class="drv-field-label" for="feedback-message">Your feedback</label>
+              <textarea id="feedback-message" class="drv-input" rows="5" maxlength="4000"
+                placeholder="What happened, and what did you expect?"></textarea>
+            </div>
+          </div>
+          <p class="drv-msg" style="opacity:.75;">
+            Your role, the screen you were on, and the app version are included automatically.
+          </p>
+          <p id="feedback-status" class="drv-msg"></p>
+          <button id="feedback-submit" type="submit" class="drv-btn drv-btn-accent" style="width:100%;">Send Feedback</button>
         </form>
       </div>
     </div>

@@ -58,6 +58,14 @@
     profilePhotoFile: document.getElementById("profile-photo-file"),
     profilePhotoPreview: document.getElementById("profile-photo-preview"),
     profileTsa: document.getElementById("profile-tsa"),
+    feedbackBtn: document.getElementById("feedback-btn"),
+    feedbackModal: document.getElementById("feedback-modal"),
+    feedbackClose: document.getElementById("feedback-close"),
+    feedbackForm: document.getElementById("feedback-form"),
+    feedbackCategory: document.getElementById("feedback-category"),
+    feedbackMessage: document.getElementById("feedback-message"),
+    feedbackStatus: document.getElementById("feedback-status"),
+    feedbackSubmit: document.getElementById("feedback-submit"),
     profileMessage: document.getElementById("profile-message"),
   };
 
@@ -1010,6 +1018,51 @@
     } catch (e) { /* ok */ }
   }
 
+  // --- Pilot feedback (6.3) -------------------------------------------------
+  // Deliberately a plain form, not a bug-report template: a driver mid-shift will
+  // not fill in reproduction steps. Context is captured automatically instead.
+  function openFeedbackModal() {
+    if (!el.feedbackModal) return;
+    if (el.feedbackStatus) C.showMessage(el.feedbackStatus, "", "");
+    el.feedbackModal.style.display = "flex";
+    if (el.feedbackMessage) el.feedbackMessage.focus();
+  }
+
+  function closeFeedbackModal() {
+    if (el.feedbackModal) el.feedbackModal.style.display = "none";
+  }
+
+  async function submitFeedback() {
+    if (!el.feedbackMessage) return;
+    const message = (el.feedbackMessage.value || "").trim();
+    if (!message) {
+      C.showMessage(el.feedbackStatus, "Please enter some feedback first.", "error");
+      return;
+    }
+    // Double-submit guard, same pattern as the status actions (M-2).
+    if (el.feedbackSubmit) el.feedbackSubmit.disabled = true;
+    try {
+      await C.requestJson(apiBase, "/feedback", {
+        token: token,
+        method: "POST",
+        json: {
+          message: message,
+          category: el.feedbackCategory ? el.feedbackCategory.value : "general",
+          surface: "driver-pwa",
+          page: window.location.pathname,
+          app_version: (window.DISCRA_APP_VERSION || ""),
+        },
+      });
+      el.feedbackMessage.value = "";
+      C.showMessage(el.feedbackStatus, "Thanks — your feedback was sent.", "success");
+      setTimeout(closeFeedbackModal, 1200);
+    } catch (e) {
+      C.showMessage(el.feedbackStatus, e.message || "Could not send feedback.", "error");
+    } finally {
+      if (el.feedbackSubmit) el.feedbackSubmit.disabled = false;
+    }
+  }
+
   function openProfileModal() {
     if (!el.profileModal) return;
     if (currentProfile) {
@@ -1233,6 +1286,11 @@
   if (el.profileForm) el.profileForm.addEventListener("submit", function (e) { e.preventDefault(); saveProfile(); });
   if (el.profilePhotoFile) el.profilePhotoFile.addEventListener("change", handleProfilePhotoFile);
   if (el.profilePhotoUrl) el.profilePhotoUrl.addEventListener("input", updateProfilePhotoPreview);
+
+  // Feedback (6.3)
+  if (el.feedbackBtn) el.feedbackBtn.addEventListener("click", openFeedbackModal);
+  if (el.feedbackClose) el.feedbackClose.addEventListener("click", closeFeedbackModal);
+  if (el.feedbackForm) el.feedbackForm.addEventListener("submit", function (e) { e.preventDefault(); submitFeedback(); });
 
   // Login screen button
   if (el.loginScreenBtn) {

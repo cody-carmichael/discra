@@ -92,10 +92,27 @@ Use when a table is gone or wholly corrupt.
 
 ### 2c. Restore drill
 
-The procedures in §2a/§2b are **UNDRILLED** — designed against the AWS API contract
-but never executed here. Before the pilot carries real customer data, run §2a once
-against `discra-orders-discra-api-dev`, restoring to a throwaway table, and record
-the result in §6. A drill that has never run is a guess.
+**§2a has now been drilled end to end against the live table (2026-07-26).** Results in
+§6. What the drill established, beyond "it works":
+
+- **Restore is not instant, but it is fast at this scale:** ~4–5 minutes wall clock for a
+  27-item / 14 KB table. Most of that is fixed overhead, so plan minutes, not seconds —
+  and expect materially longer for a table with real pilot volume.
+- **Fidelity was exact:** 27/27 items, identical key set, and zero items differing in
+  content (full attribute-level comparison, not just a count).
+- **`ItemCount` reads 0 on a freshly restored table.** DynamoDB refreshes that metric
+  roughly every 6 hours. **Do not use it to verify a restore** — scan the table. Reading
+  `ItemCount` would have made a perfectly good restore look like a total failure.
+- **PITR is genuinely not inherited** — confirmed by measurement, not assumption: source
+  `ENABLED`, restored `DISABLED`. This is the step most likely to be forgotten.
+- **Tags are not inherited** (0 tags on the restored table).
+- **SSE *is* inherited** — both `ENABLED`. Encryption does not need re-applying.
+- **TTL: not proven either way.** The orders table has no TTL configured, so the drill
+  could not test it. Treat "TTL is not carried over" as unverified and check it explicitly
+  if you ever restore one of the TTL'd tables.
+
+§2b (whole-table loss) remains **UNDRILLED** — it requires either destroying a live table
+or a full stack redeploy, neither of which is drillable without a dedicated scratch stack.
 
 ---
 
@@ -198,13 +215,21 @@ actually executed against AWS.
 
 | Date | Procedure | Result | Run by |
 |---|---|---|---|
-| — | — | *no drill has been run yet* | — |
+| 2026-07-26 | §2a scoped repair — PITR restore of `discra-orders-discra-api-dev` to `discra-orders-restore-drill-20260726`, verify, delete | **PASS.** Restore point 14:30:31Z, table created 14:35:31Z, `ACTIVE` by ~14:40Z (**~4–5 min**). Verified by full scan: **27/27 items, matching key-set fingerprint `59b81e6774eaebdc`, 0 items differing in content**. Confirmed PITR **not** inherited (source `ENABLED` → restored `DISABLED`) and tags not inherited; SSE **was** inherited. Throwaway table deleted; source table untouched (27 items, `ACTIVE`) and the live API unaffected. Gotcha found: restored `ItemCount` reads 0 for ~6h — verify by scanning, not by that metric. | Claude (agent), authorized by Cody |
 
 ---
 
 ## 7. Known gaps
 
-- **Restore procedures are undrilled** (§2c) — the highest-value next ops action.
+- **§2b (whole-table loss) is still undrilled** — it needs a scratch stack to exercise
+  safely. §2a (scoped repair) passed on 2026-07-26.
+- **SES is in sandbox** (`ProductionAccessEnabled: false`, 200 sends/day, 1/sec). Only
+  `pdahs1@gmail.com` is a verified identity, and sandbox mode rejects any recipient that
+  is not verified. Approver notifications work; **the approve/reject email to an external
+  pilot tester will not be delivered.** The approval itself still succeeds (the send is
+  best-effort inside a try block), so this is a notification gap, not a data-integrity one.
+  **Requesting production access is a support ticket with ~24h turnaround — start it before
+  cutover day, not on it.**
 - **No per-IP rate limiting.** API Gateway stage throttling (S-3, 100 req/s
   aggregate) is the only limiter; per-IP abuse limiting needs CloudFront + WAF
   (S-3b), deferred by decision.

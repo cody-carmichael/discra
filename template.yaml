@@ -431,6 +431,36 @@ Resources:
         - Key: Env
           Value: dev
 
+  # 6.3: in-app pilot feedback. Persistent business data (not TTL'd), so it gets
+  # PITR like the other 9 — losing tester feedback mid-pilot would be losing the
+  # whole point of running one.
+  FeedbackTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "discra-feedback-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: org_id
+          AttributeType: S
+        - AttributeName: feedback_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: org_id
+          KeyType: HASH
+        # feedback_id is timestamp-prefixed, so a reverse Query on the range key
+        # returns newest-first without a secondary index.
+        - AttributeName: feedback_id
+          KeyType: RANGE
+      Tags:
+        - Key: App
+          Value: Discra
+        - Key: Env
+          Value: dev
+
   PushSubscriptionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -765,6 +795,7 @@ Resources:
           ORDERS_WEBHOOK_MAX_SKEW_SECONDS: !Ref OrdersWebhookMaxSkewSeconds
           AUDIT_LOGS_TABLE: !Ref AuditLogsTable
           PUSH_SUBSCRIPTIONS_TABLE: !Ref PushSubscriptionsTable
+          FEEDBACK_TABLE: !Ref FeedbackTable
           VAPID_PUBLIC_KEY: !Ref VapidPublicKey
           VAPID_PRIVATE_KEY_PARAM: /discra/vapid-private-key
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
@@ -820,6 +851,7 @@ Resources:
               - !GetAtt SeatInvitationsTable.Arn
               - !GetAtt AuditLogsTable.Arn
               - !GetAtt PushSubscriptionsTable.Arn
+              - !GetAtt FeedbackTable.Arn
               - !GetAtt OnboardingRegistrationsTable.Arn
               - !Sub "${OnboardingRegistrationsTable.Arn}/index/*"
               - !GetAtt EmailConfigTable.Arn
@@ -1473,23 +1505,10 @@ Outputs:
     Description: Base URL for the HTTP API (no stage suffix)
     Value: !GetAtt DiscraApi.ApiEndpoint
 
-  HealthUrl:
-    Description: Full URL for GET /health
-    Value: !Sub
-      - "${Endpoint}/dev/health"
-      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
-
-  VersionUrl:
-    Description: Full URL for GET /version
-    Value: !Sub
-      - "${Endpoint}/dev/version"
-      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
-
-  AdminPingUrl:
-    Description: Full URL for GET /admin/ping
-    Value: !Sub
-      - "${Endpoint}/dev/admin/ping"
-      - { Endpoint: !GetAtt DiscraApi.ApiEndpoint }
+  # O-1: HealthUrl / VersionUrl / AdminPingUrl were removed 2026-07-26. Their
+  # Lambdas (HealthFunction, VersionFunction, AdminPingFunction) no longer exist —
+  # all three URLs returned 404, and export-pilot-summary.ps1 was shipping two of
+  # them to pilot testers. Use BackendHealthUrl / BackendVersionUrl instead.
 
   BackendHealthUrl:
     Description: Full URL for GET /backend/health
@@ -1556,6 +1575,10 @@ Outputs:
   DriverLocationsTableName:
     Description: DynamoDB table for latest driver GPS locations
     Value: !Ref DriverLocationsTable
+
+  FeedbackTableName:
+    Description: DynamoDB table for in-app pilot feedback (6.3)
+    Value: !Ref FeedbackTable
 
   PushSubscriptionsTableName:
     Description: DynamoDB table for Web Push notification subscriptions

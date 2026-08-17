@@ -666,3 +666,27 @@ class SkippedEmail(BaseModel):
     skip_reason: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at_epoch: int = 0
+
+
+class FeedbackRecord(BaseModel):
+    """Pilot feedback submitted from inside the app (Step 6.3).
+
+    Org-scoped like every other record so tenant isolation applies for free.
+    `feedback_id` is a sortable ULID-ish key (timestamp prefix) so a Query
+    returns newest-first without a secondary index.
+    """
+
+    org_id: str
+    feedback_id: str
+    category: str = "general"
+    message: str
+    # Context captured automatically so a tester doesn't have to describe it.
+    surface: str = ""
+    page: str = ""
+    app_version: str = ""
+    user_agent: str = ""
+    # Who sent it — needed to follow up during a pilot.
+    submitted_by: str = ""
+    submitted_by_email: str = ""
+    submitted_by_roles: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
